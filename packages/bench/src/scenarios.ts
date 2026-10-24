@@ -5,7 +5,7 @@
 import type { Check } from "./rubric.ts";
 
 /** Bump when scenarios or checks change: baselines and cassettes record it. */
-export const BENCH_VERSION = 1;
+export const BENCH_VERSION = 2;
 
 /** Simulated interaction with the UI the previous turn produced. */
 export interface Act {
@@ -130,13 +130,13 @@ export const SCENARIOS: Scenario[] = [
     id: "bug-report",
     category: "form",
     intent: "A bug report form with a severity choice and steps to reproduce.",
-    turns: [{ say: "Give me a form to report a bug with severity and steps to reproduce", expect: [count("form"), count("select"), text("severity"), text("steps"), bound] }],
+    turns: [{ say: "Give me a form to report a bug with severity and steps to reproduce", expect: [count("form"), count("select"), text("severity"), text("steps?"), bound] }],
   },
   {
     id: "wedding-rsvp",
     category: "form",
     intent: "An RSVP for a June 14 wedding with a meal choice and a plus-one option.",
-    turns: [{ say: "Make an RSVP form for a wedding on June 14 with meal choice and plus-one", expect: [actionable, count(["select", "checkbox"]), text("meal"), text("plus.?one|guest"), bound] }],
+    turns: [{ say: "Make an RSVP form for a wedding on June 14 with meal choice and plus-one", expect: [actionable, count(["select", "checkbox"]), text("meal|dinner|dish|menu|entr[eé]e"), text("plus.?one|guest"), bound] }],
   },
   {
     id: "csat-survey",
@@ -249,7 +249,7 @@ export const SCENARIOS: Scenario[] = [
     intent: "File a bug through a form, then see the ticket confirmation.",
     turns: [
       { say: "Give me a form to report a bug with severity and steps to reproduce", expect: [count("form"), count("select")] },
-      { act: { target: "form", fill: { "title|summary": "Login button does nothing", "steps": "1. Open app 2. Tap login" } }, expect: [changed, text("ticket|#\\d+|bug-\\d+|submitted|thank|received")] },
+      { act: { target: "form", fill: { "title|summary": "Login button does nothing", "steps?": "1. Open app 2. Tap login" } }, expect: [changed, text("ticket|#\\d+|bug-\\d+|submitted|thank|received")] },
     ],
   },
   {

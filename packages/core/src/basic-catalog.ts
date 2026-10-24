@@ -337,12 +337,14 @@ export const basicCatalog = defineCatalog(
         ["label", "action"],
       ),
       defaults: buttonDefaults,
+      role: "action",
       aliases: ["btn", "cta", { name: "link", props: { style: "link" } }, { name: "submit", props: { style: "primary" } }],
     },
     form: {
       description: "Form; its children are inputs. On submit you receive the bound values.",
       props: props({ submit: str({ description: "action name", aliases: ["action", "onSubmit"] }), submitLabel: str({ aliases: ["buttonLabel", "submitText", "cta"] }) }),
       children: true,
+      role: "form",
       aliases: ["signup", "signupform", "contactform"],
     },
     input: {

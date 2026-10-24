@@ -436,13 +436,35 @@ export class SurfaceStore {
   // -------------------------------------------------------------------------
   // Validation
 
+  /**
+   * Bound inputs that nothing can submit collect values that go nowhere. An
+   * error, so the model adds a form or an action. Inputs that only drive
+   * visibility (their path is used by some visibleIf) are exempt.
+   */
+  private lintSubmittable(state: SurfaceState): Diagnostic[] {
+    const nodes = [...state.nodes.values()];
+    const canSubmit = nodes.some((n) => this.role(n) === "form" || (this.role(n) === "action" && typeof n.props?.action === "string" && n.props.action));
+    if (canSubmit) return [];
+    const toggles = new Set(nodes.map((n) => n.props?.visibleIf).filter((v): v is string => typeof v === "string").map((v) => v.replace(/^\{|\}$/g, "")));
+    const stranded = nodes.filter((n) => typeof n.props?.bind === "string" && !toggles.has(n.props.bind as string));
+    if (!stranded.length) return [];
+    const forms = Object.entries(this.catalog.components).filter(([, d]) => d.role === "form").map(([name]) => name);
+    const actions = Object.entries(this.catalog.components).filter(([, d]) => d.role === "action").map(([name]) => name);
+    return [{
+      severity: "error",
+      surface: state.id,
+      node: stranded[0]!.id,
+      message: `inputs ${stranded.map((n) => `"${n.id}"`).join(", ")} collect values but nothing submits them: put them in a ${forms.join("/") || "form"} or add a ${actions.join("/") || "button"} with an action`,
+    }];
+  }
+
   private rootId(state: SurfaceState): string | undefined {
     if (state.nodes.has("root")) return "root";
     return state.nodes.keys().next().value;
   }
 
   lint(state: SurfaceState): Diagnostic[] {
-    const diags: Diagnostic[] = [];
+    const diags: Diagnostic[] = [...this.lintSubmittable(state)];
     const skip = (v: unknown) => isBinding(v);
     for (const node of state.nodes.values()) {
       if (node.type === "$invalid") {
@@ -519,6 +541,10 @@ export class SurfaceStore {
   // -------------------------------------------------------------------------
   // Interaction
 
+  private role(node: { type: string }): "form" | "action" | undefined {
+    return this.catalog.components[node.type]?.role;
+  }
+
   /**
    * A user activated `sourceId` (a button or a form). Validates bound inputs in
    * the enclosing form and returns the action to send back to the model.
@@ -538,9 +564,9 @@ export class SurfaceStore {
     // container) the nearest ancestor of a button that holds bound inputs.
     const ancestors = trail.slice(0, -1).reverse();
     const form =
-      (source.type === "form" ? source : undefined) ??
-      ancestors.find((n) => n.type === "form") ??
-      (source.type === "button" ? ancestors.find(hasInputs) : undefined);
+      (this.role(source) === "form" ? source : undefined) ??
+      ancestors.find((n) => this.role(n) === "form") ??
+      (this.role(source) === "action" ? ancestors.find(hasInputs) : undefined);
 
     let name = typeof source.props.action === "string" ? source.props.action : undefined;
     const payload = source.props.payload;

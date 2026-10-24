@@ -35,6 +35,12 @@ export interface ComponentDef {
    */
   finalize?: (props: Record<string, unknown>) => Record<string, unknown>;
   /**
+   * How the engine treats activation. "form": activating it submits the bound
+   * inputs inside it. "action": activating it sends its `action` prop (with any
+   * bound inputs in its nearest container). Inputs are any node with `bind`.
+   */
+  role?: "form" | "action";
+  /**
    * "core": always offered. "extended": offered only to models the policy
    * judges capable of using a larger vocabulary well. Defaults to "core".
    */

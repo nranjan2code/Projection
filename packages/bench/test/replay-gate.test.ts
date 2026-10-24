@@ -9,9 +9,10 @@ import { BENCH_VERSION } from "../src/scenarios.ts";
 import { readCassettes } from "../src/summary.ts";
 
 const cassettes = readCassettes();
+const current = cassettes.flatMap((c) => c.entries).filter((e) => e.benchVersion === BENCH_VERSION).length;
 
-test("replay gate has cassettes to check", { skip: cassettes.length === 0 && "no cassettes recorded yet" }, () => {
-  assert.ok(cassettes.some((c) => c.entries.length > 0));
+test(`replay gate has cassettes for bench v${BENCH_VERSION}`, { skip: current === 0 && `no cassettes at bench v${BENCH_VERSION} yet; re-record with: npm run bench -- run <provider:model> --save` }, () => {
+  assert.ok(current > 0);
 });
 
 for (const { file, entries } of cassettes) {

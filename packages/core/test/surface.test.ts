@@ -371,3 +371,25 @@ test("bench-driven: HTML in markdown props becomes markdown; scalar payloads are
   assert.equal(store.resolve("h")!.root!.children[0]!.props.content, "**Steps**\n\n1. Open\n2. Tap");
   assert.deepEqual(store.submit("h", "b").action?.data, { value: "frontend-role" });
 });
+
+test("inputs nothing can submit are an error; visibility toggles and forms are fine", () => {
+  const store = new SurfaceStore(basicCatalog);
+  const stranded = store.render({
+    surface: "s",
+    nodes: [
+      { id: "root", type: "stack", children: ["name", "email"] },
+      { id: "name", type: "input", props: { label: "Name", bind: "/f/name" } },
+      { id: "email", type: "input", props: { label: "Email", bind: "/f/email" } },
+    ],
+  });
+  assert.match(stranded.find((d) => d.severity === "error")!.message, /"name", "email" collect values but nothing submits them: put them in a form or add a button/);
+  const toggle = store.render({
+    surface: "t",
+    nodes: [
+      { id: "root", type: "stack", children: ["more", "details"] },
+      { id: "more", type: "checkbox", props: { label: "Show details", bind: "/ui/more" } },
+      { id: "details", type: "text", props: { content: "…", visibleIf: "{/ui/more}" } },
+    ],
+  });
+  assert.deepEqual(toggle.filter((d) => d.severity === "error"), []);
+});

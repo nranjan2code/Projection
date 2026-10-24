@@ -319,7 +319,7 @@ if (command === "run") {
     title: `Benchmark · ${providerId} / ${model}${b.slice ? ` · ${b.slice}` : ""}${cmp ? " · baseline vs latest" : ""}`,
     nodes: [
       { id: "root", type: "stack", children: ["meta", "kpis", "split", "scenarios"] },
-      { id: "meta", type: "text", props: { variant: "caption", content: `${b.finished < b.planned ? `PARTIAL ${b.finished}/${b.planned} runs · ` : ""}bench v${b.benchVersion} · plan ${b.config.generation}/${b.config.tier}/${b.config.examples ? "examples" : "plain"} · baseline commit ${b.commit} · ${b.at.slice(0, 16).replace("T", " ")} · intervals are 95%${cmp ? ` · latest: ${compareFile!.split("/").pop()}` : ""}` } },
+      { id: "meta", type: "text", props: { variant: "caption", content: `${b.finished < b.planned ? `PARTIAL ${b.finished}/${b.planned} runs · ` : ""}bench v${b.benchVersion} · plan ${b.config.generation}/${b.config.tier}/${b.config.examples ? "examples" : "plain"} · baseline commit \`${b.commit}\` · ${b.at.slice(0, 16).replace("T", " ")} · intervals are 95%${cmp ? ` · latest: \`${compareFile!.split("/").pop()}\`` : ""}` } },
       { id: "kpis", type: "grid", props: { columns: 4, minItemWidth: "sm" }, children: ["k1", "k2", "k3", "k4"] },
       { id: "k1", type: "stat", props: kpi("Complete", s.complete, cmp?.complete) },
       { id: "k2", type: "stat", props: kpi("Check score", s.score, cmp?.score) },
