@@ -4,6 +4,17 @@ import { ProviderError } from "./types.ts";
 
 export { readNdjson, readSse, type SseMessage } from "@vak/core";
 
+import { setDefaultAutoSelectFamilyAttemptTimeout } from "node:net";
+
+/**
+ * Node tries each resolved address (IPv6/IPv4 "happy eyeballs") with a 250 ms
+ * connect window by default; over slower routes every attempt times out even
+ * though the host is reachable. Long-running entry points call this once.
+ */
+export function hardenNetwork(attemptTimeoutMs = 2500): void {
+  setDefaultAutoSelectFamilyAttemptTimeout(attemptTimeoutMs);
+}
+
 const RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 504, 529]);
 
 /** POST JSON; retries connection failures and retryable statuses before any body is read. */

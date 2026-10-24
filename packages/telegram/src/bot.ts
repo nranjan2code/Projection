@@ -9,6 +9,15 @@ import type { TelegramApi, TgUpdate } from "./api.ts";
 import { FormFlow, stepsOf } from "./flow.ts";
 import { type Control, projectTelegram, telegramProfile } from "./project.ts";
 
+const START_TEXT = [
+  "Hi! Ask me anything and I'll answer with an interactive view: tables, cards, forms and buttons right here in the chat.",
+  "",
+  "Try:",
+  "• Compare three hotels in Kyoto and let me book one",
+  "• Show a Q3 sales dashboard",
+  "• Make a newsletter signup form",
+].join("\n");
+
 export interface BotOptions {
   api: TelegramApi;
   provider: Provider;
@@ -75,6 +84,10 @@ export class TelegramBot {
     }
     const text = update.message?.text?.trim();
     if (!text) return;
+    if (/^\/start(@\w+)?$/.test(text)) {
+      chat.flow = undefined;
+      return void (await api.sendMessage(chat.id, START_TEXT));
+    }
     if (chat.flow) return this.flowAnswer(chat, { text });
     chat.messages.push({ role: "user", content: text });
     return this.turn(chat);

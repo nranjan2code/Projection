@@ -16,6 +16,7 @@ import { basicCatalog, encodeSse, formatDiagnostics, projectText, SurfaceStore, 
 import {
   actionMessage,
   calibrate,
+  hardenNetwork,
   CALIBRATION_CASES,
   choosePlan,
   loadEnvFile,
@@ -32,6 +33,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "../..");
 
 loadEnvFile(path.join(repo, ".env"));
+hardenNetwork();
 const PORT = Number(process.env.PORT ?? 5177);
 const PROVIDERS = providersFromEnv();
 const profiles = new ProfileCache(path.join(repo, ".vak/models.json"));
