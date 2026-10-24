@@ -549,24 +549,35 @@ export class SurfaceStore {
    * A user activated `sourceId` (a button or a form). Validates bound inputs in
    * the enclosing form and returns the action to send back to the model.
    */
-  submit(surfaceId: string, sourceId: string, target?: string): SubmitResult {
+  /**
+   * What activating a control submits: the control itself, and the scope whose
+   * bound inputs travel with it — the enclosing form, or (when inputs sit in a
+   * plain container) the nearest ancestor of an action that holds bound inputs.
+   * Every projector uses this, so web and chat targets submit the same values.
+   */
+  submitScope(surfaceId: string, sourceId: string): { resolved: ResolvedSurface; source: ResolvedNode; scope?: ResolvedNode } | undefined {
     const resolved = this.resolve(surfaceId);
-    if (!resolved?.root) return { errors: { [sourceId]: ["surface not found"] } };
+    if (!resolved?.root) return undefined;
     const trail = findTrail(resolved.root, sourceId);
-    if (!trail) return { errors: { [sourceId]: ["control not found"] } };
+    if (!trail) return undefined;
     const source = trail[trail.length - 1]!;
     const hasInputs = (n: ResolvedNode) => {
       let found = false;
       walk(n, (c) => (found ||= c.bindPath !== undefined));
       return found;
     };
-    // The enclosing form, or (when the model grouped inputs in a plain
-    // container) the nearest ancestor of a button that holds bound inputs.
     const ancestors = trail.slice(0, -1).reverse();
-    const form =
+    const scope =
       (this.role(source) === "form" ? source : undefined) ??
       ancestors.find((n) => this.role(n) === "form") ??
       (this.role(source) === "action" ? ancestors.find(hasInputs) : undefined);
+    return { resolved, source, scope };
+  }
+
+  submit(surfaceId: string, sourceId: string, target?: string): SubmitResult {
+    const found = this.submitScope(surfaceId, sourceId);
+    if (!found) return { errors: { [sourceId]: [this.surfaces.has(surfaceId) ? "control not found" : "surface not found"] } };
+    const { resolved, source, scope: form } = found;
 
     let name = typeof source.props.action === "string" ? source.props.action : undefined;
     const payload = source.props.payload;

@@ -61,6 +61,15 @@ Surfaces appear in the playground viewer, so start it first (`npm run playground
 - **Claude Code:** this repo's `.mcp.json` registers the server; approve it when prompted.
 - **Other hosts:** run `node --disable-warning=ExperimentalWarning /absolute/path/to/packages/mcp/src/main.ts` over stdio. Set `VAK_URL` and `VAK_SESSION` to change the viewer and session.
 
+## Telegram
+
+`packages/telegram` projects surfaces into Telegram **rich messages** (Bot API 10.1+). Containers flatten in priority order, tabs become collapsible `<details>`, and tables and lists are native. Consecutive stats group into a compact table, and charts become data tables. Buttons are inline buttons. Forms become a conversation: one question per message, choices as buttons, yes/no for checkboxes, typed replies for text, each answer checked with the same rules as the web. When the model updates a surface, its message is edited in place, and every action goes back to the model.
+
+```
+TELEGRAM_BOT_TOKEN=…   # in .env, from @BotFather
+npm run telegram       # long polling; VAK_PROVIDER / VAK_MODEL pick the model
+```
+
 ## Benchmark
 
 `npm run bench -- run <provider:model> --runs 2 --save` runs 30 scenarios, single- and multi-turn, and scores them with structural checks plus an optional semantic judge (`--judge provider:model`). Results come with 95% intervals. Each record is saved as soon as it finishes, so a stopped run keeps what it measured.
@@ -76,6 +85,7 @@ Surfaces appear in the playground viewer, so start it first (`npm run playground
 | `packages/providers` | provider adapters, agent loop, calibration, policy, profiles |
 | `packages/web` | `<vak-surface>` renderer, charts, markdown, client |
 | `packages/mcp` | MCP server exposing vak tools over stdio |
+| `packages/telegram` | Telegram projector, form flow, Bot API client, bot |
 | `packages/bench` | scenarios, rubric, runner, replay, stats, judge |
 | `apps/playground` | dev server + chat UI + `/api/project` for direct projection |
 | `scripts` | eval and smoke tests |
