@@ -24,6 +24,11 @@
         <button type="button" class="ghost" id="settings-toggle" aria-expanded="false" aria-controls="settings">Options</button>
         <button type="button" class="ghost" id="reset">New chat</button>
       </div>
+      <div class="planbar" id="planbar" aria-live="polite">
+        <span class="plan-label">Plan</span>
+        <span id="plan-text" class="plan-text">…</span>
+        <button type="button" class="ghost small" id="calibrate">Calibrate</button>
+      </div>
       <div id="settings" class="settings" hidden>
         <label class="check"><input type="checkbox" id="think" /> Model thinking (Ollama)</label>
         <label class="ctl"><span>Generation</span><select id="generation"><option value="auto">auto</option><option value="tools">tools</option><option value="constrained">constrained</option></select></label>

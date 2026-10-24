@@ -13,7 +13,20 @@ import { stripTypeScriptTypes } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { basicCatalog, encodeSse, formatDiagnostics, SurfaceStore, type AgentEvent, type VpsAction } from "@vak/core";
-import { actionMessage, loadEnvFile, type Message, providersFromEnv, runAgent } from "@vak/providers";
+import {
+  actionMessage,
+  calibrate,
+  CALIBRATION_CASES,
+  choosePlan,
+  loadEnvFile,
+  type Message,
+  ProfileCache,
+  type ProjectionConfig,
+  type ProjectionPlan,
+  providersFromEnv,
+  resolveProfile,
+  runAgent,
+} from "@vak/providers";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "../..");
@@ -21,6 +34,29 @@ const repo = path.resolve(here, "../..");
 loadEnvFile(path.join(repo, ".env"));
 const PORT = Number(process.env.PORT ?? 5177);
 const PROVIDERS = providersFromEnv();
+const profiles = new ProfileCache(path.join(repo, ".vak/models.json"));
+
+/** Profile + plan for a provider/model; errors surface as a reason, never a guess. */
+async function planFor(providerId: string, model: string): Promise<{ plan?: ProjectionPlan; profile?: unknown; error?: string }> {
+  const entry = PROVIDERS.find((p) => p.id === providerId);
+  if (!entry?.available) return { error: `provider ${providerId} unavailable` };
+  try {
+    const profile = await resolveProfile(entry.id, entry.make(), model, profiles, AbortSignal.timeout(8000));
+    return { profile, plan: choosePlan(profile) };
+  } catch (err) {
+    return { error: (err as Error).message };
+  }
+}
+
+/** Configurations calibration measures for a provider. */
+function calibrationConfigs(constrained: boolean): ProjectionConfig[] {
+  const configs: ProjectionConfig[] = [
+    { generation: "tools", tier: "extended", examples: false },
+    { generation: "tools", tier: "core", examples: true },
+  ];
+  if (constrained) configs.push({ generation: "constrained", tier: "core", examples: true });
+  return configs;
+}
 
 // --- sessions ----------------------------------------------------------------
 interface Session {
@@ -144,8 +180,16 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
     s.messages.push({ role: "user", content: text });
   }
 
+  // The capability policy picks how to ask this model; explicit options still win.
+  const planned = await planFor(entry.id, body.model);
+  if (planned.plan) {
+    const { generation, tier, examples, maxSteps, reasons } = planned.plan;
+    emit({ type: "plan", generation, tier, examples, maxSteps, reasons });
+  }
+
   const started = Date.now();
   const result = await runAgent({
+    plan: planned.plan,
     provider: entry.make({ think: Boolean(body.think) }),
     model: body.model,
     store: s.store,
@@ -187,6 +231,48 @@ const server = createServer(async (req, res) => {
       }
     }
     if (req.method === "POST" && p === "/api/chat") return await handleChat(req, res);
+
+    if (req.method === "GET" && p === "/api/profile") {
+      const out = await planFor(url.searchParams.get("provider") ?? "", url.searchParams.get("model") ?? "");
+      const entry = PROVIDERS.find((x) => x.id === url.searchParams.get("provider"));
+      const configs = entry?.available ? calibrationConfigs(Boolean(entry.make().capabilities?.constrainedOutput)) : [];
+      return json(res, out.error ? 502 : 200, { ...out, calibrationCalls: configs.length * CALIBRATION_CASES.length });
+    }
+
+    // Calibrate a model: runs the suite under each configuration, streams
+    // progress as SSE, stores the result in the profile cache.
+    if (req.method === "POST" && p === "/api/calibrate") {
+      const body = await readJson(req);
+      const entry = PROVIDERS.find((x) => x.id === body.provider);
+      if (!entry?.available || typeof body.model !== "string") return json(res, 400, { error: "provider/model required" });
+      const provider = entry.make();
+      const profile = await resolveProfile(entry.id, provider, body.model, profiles);
+      const ctrl = new AbortController();
+      res.on("close", () => {
+        if (!res.writableFinished) ctrl.abort();
+      });
+      res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+      const send = (event: string, data: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      const configs = calibrationConfigs(Boolean(provider.capabilities?.constrainedOutput));
+      send("start", { calls: configs.length * CALIBRATION_CASES.length, configs });
+      try {
+        const calibration = await calibrate({
+          provider,
+          model: body.model,
+          fingerprint: profile.facts.fingerprint,
+          configs,
+          signal: ctrl.signal,
+          onCase: (o) => send("case", o),
+        });
+        profiles.update(entry.id, body.model, { calibration });
+        const plan = choosePlan({ ...profile, calibration });
+        console.log(`[calibrate] ${entry.id}/${body.model}: ${calibration.results.map((r) => `${r.complete}/${r.runs}`).join(" ")}`);
+        send("done", { calibration, plan });
+      } catch (err) {
+        send("error", { message: (err as Error).message });
+      }
+      return void res.end();
+    }
 
     // Direct projection: any caller (a script, another agent, Claude) applies
     // a vak_* tool call to a session; open viewers update live.

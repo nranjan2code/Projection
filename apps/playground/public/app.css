@@ -63,6 +63,11 @@ code { font: 0.88em ui-monospace, SFMono-Regular, Menlo, monospace; background: 
 .seg button[aria-pressed="true"] { background: var(--soft); color: var(--accent); }
 .ghost { font: 600 0.85rem inherit; font-family: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 8px 12px; min-height: 36px; cursor: pointer; }
 .ghost:hover { border-color: var(--muted); }
+.planbar { flex-basis: 100%; display: flex; align-items: center; gap: 8px; font-size: 0.84rem; color: var(--muted); min-width: 0; }
+.plan-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: var(--accent); background: var(--soft); padding: 2px 8px; border-radius: 999px; }
+.plan-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-text b { color: var(--fg); font-weight: 600; }
+.ghost.small { min-height: 28px; padding: 4px 10px; font-size: 0.8rem; }
 .settings { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 12px 18px; align-items: end; justify-content: flex-end; font-size: 0.9rem; }
 .settings[hidden] { display: none; }
 .check { display: inline-flex; align-items: center; gap: 8px; }

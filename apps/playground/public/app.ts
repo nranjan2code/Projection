@@ -1,4 +1,4 @@
-import type { AgentEvent, SurfaceSnapshot } from "@vak/core";
+import { type AgentEvent, readSse, type SurfaceSnapshot } from "@vak/core";
 import { defineVakElements, renderMarkdown, type VakActionDetail, VakClient, type VakSurfaceElement } from "@vak/web";
 
 defineVakElements();
@@ -90,8 +90,124 @@ async function loadModels(): Promise<void> {
     /* keep whatever is typed */
   }
 }
-providerSel.addEventListener("change", loadModels);
-modelInput.addEventListener("input", () => store.set(`model:${providerSel.value}`, modelInput.value));
+providerSel.addEventListener("change", () => void loadModels().then(loadPlan));
+modelInput.addEventListener("input", () => {
+  store.set(`model:${providerSel.value}`, modelInput.value);
+  clearTimeout(planTimer);
+  planTimer = setTimeout(loadPlan, 500);
+});
+
+// --- capability plan -------------------------------------------------------------------
+interface PlanInfo { generation: string; tier: string; examples: boolean; maxSteps: number; reasons: string[] }
+const planText = $<HTMLElement>("plan-text");
+const calibrateBtn = $<HTMLButtonElement>("calibrate");
+let planTimer: ReturnType<typeof setTimeout> | undefined;
+let calibrationCalls = 0;
+
+function describePlan(p: PlanInfo): string {
+  const parts = [p.generation, p.tier === "core" ? "core components" : "full catalog", p.examples ? "worked examples" : "no examples"];
+  return parts.join(" · ");
+}
+
+function showPlan(p: PlanInfo | undefined, error?: string): void {
+  planText.replaceChildren();
+  if (!p) {
+    planText.textContent = error ? `unavailable: ${error}` : "choose a model";
+    planText.title = "";
+    return;
+  }
+  const b = document.createElement("b");
+  b.textContent = describePlan(p);
+  planText.append(b, document.createTextNode(` — ${p.reasons.join("; ")}`));
+  planText.title = p.reasons.join("\n");
+}
+
+async function loadPlan(): Promise<void> {
+  const provider = providerSel.value;
+  const model = modelInput.value.trim();
+  if (!model) return showPlan(undefined);
+  planText.textContent = "reading model capabilities…";
+  try {
+    const res = await (await fetch(`/api/profile?provider=${encodeURIComponent(provider)}&model=${encodeURIComponent(model)}`)).json();
+    if (providerSel.value !== provider || modelInput.value.trim() !== model) return;
+    calibrationCalls = res.calibrationCalls ?? 0;
+    showPlan(res.plan, res.error);
+  } catch (err) {
+    showPlan(undefined, (err as Error).message);
+  }
+}
+
+interface CaseOutcome { config: { generation: string; tier: string; examples: boolean }; prompt: string; valid: boolean; complete: boolean; ms: number }
+interface ConfigResult { config: CaseOutcome["config"]; runs: number; valid: number; complete: number; medianMs: number; usage?: { input?: number; output?: number; cachedInput?: number } }
+
+calibrateBtn.addEventListener("click", async () => {
+  const provider = providerSel.value;
+  const model = modelInput.value.trim();
+  if (!model) return;
+  if (provider !== "ollama" && !confirm(`Calibration makes ${calibrationCalls} model calls on ${provider} / ${model} and spends tokens. Continue?`)) return;
+  calibrateBtn.disabled = true;
+  const turn = newTurn(`Calibrating ${model}…`);
+  let done = 0;
+  try {
+    const res = await fetch("/api/calibrate", { method: "POST", body: JSON.stringify({ provider, model }) });
+    for await (const msg of readSse(res.body!)) {
+      const data = JSON.parse(msg.data);
+      if (msg.event === "start") setStatus(turn, `Calibrating ${model}: 0/${data.calls} runs`);
+      if (msg.event === "case") {
+        const o = data as CaseOutcome;
+        done++;
+        setStatus(turn, `Calibrating ${model}: ${done}/${calibrationCalls} · ${o.config.generation}/${o.config.tier} ${o.complete ? "✓ complete" : o.valid ? "~ valid" : "✖"} (${(o.ms / 1000).toFixed(1)}s)`);
+      }
+      if (msg.event === "done") {
+        showCalibration(turn, provider, model, data.calibration.results as ConfigResult[], data.plan as PlanInfo);
+        showPlan(data.plan);
+      }
+      if (msg.event === "error") setStatus(turn, data.message, "error");
+    }
+  } catch (err) {
+    setStatus(turn, (err as Error).message, "error");
+  } finally {
+    calibrateBtn.disabled = false;
+  }
+});
+
+/** Calibration results, rendered by vak itself. */
+function showCalibration(turn: Turn, provider: string, model: string, results: ConfigResult[], plan: PlanInfo): void {
+  const id = `calibration-${provider}-${model}`.replace(/[^\w-]/g, "_");
+  const pct = (a: number, b: number) => (b ? Math.round((a / b) * 100) : 0);
+  const rows = results.map((r) => ({
+    config: `${r.config.generation} · ${r.config.tier} · ${r.config.examples ? "examples" : "plain"}`,
+    complete: `${r.complete}/${r.runs}`,
+    valid: `${r.valid}/${r.runs}`,
+    median: `${(r.medianMs / 1000).toFixed(1)}s`,
+    tokens: r.usage?.input !== undefined ? `${r.usage.input} in · ${r.usage.output ?? 0} out` : "local",
+  }));
+  client.store.render({
+    surface: id,
+    title: `Calibration: ${provider} / ${model}`,
+    nodes: [
+      { id: "root", type: "stack", children: ["chosen", "split"] },
+      { id: "chosen", type: "alert", props: { tone: "success", title: `Plan: ${describePlan(plan)}`, body: plan.reasons.join("\n\n") } },
+      { id: "split", type: "grid", props: { columns: 2, minItemWidth: "lg" }, children: ["table", "chart"] },
+      { id: "table", type: "table", props: { columns: ["Config", "Complete", "Valid", "Median", "Tokens"], rows: "{/rows}" } },
+      {
+        id: "chart",
+        type: "chart",
+        props: {
+          kind: "bar",
+          labels: results.map((r) => `${r.config.generation}/${r.config.tier}`),
+          series: [
+            { name: "complete %", values: results.map((r) => pct(r.complete, r.runs)) },
+            { name: "valid %", values: results.map((r) => pct(r.valid, r.runs)) },
+          ],
+        },
+      },
+    ],
+    data: { rows },
+  });
+  mount(turn, client.store.snapshot(id)!);
+  setStatus(turn, `Calibrated ${model}`, "done");
+}
 
 // --- viewport + settings ---------------------------------------------------------------
 document.body.dataset.w = store.get("viewport") ?? "fluid";
@@ -208,6 +324,9 @@ async function runTurn(req: { message?: string; action?: VakActionDetail["action
           });
         }
         break;
+      case "plan":
+        setStatus(turn, `Plan: ${describePlan(e)} — thinking…`);
+        break;
       case "tool_start":
         setStatus(turn, e.name.startsWith("vak_") ? "Projecting interface…" : `Running ${e.name}…`);
         break;
@@ -322,5 +441,5 @@ function watch(): void {
 }
 
 watch();
-void loadProviders();
+void loadProviders().then(loadPlan);
 input.focus();
