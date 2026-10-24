@@ -14,7 +14,7 @@
 // raw model output (packages/bench/data/cassettes) that `npm test` replays.
 
 import { execFileSync } from "node:child_process";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import {
   appendCassette,
   BENCH_VERSION,
@@ -140,13 +140,17 @@ async function live(
   return { records, summary, plan, fingerprint: profile.facts.fingerprint, provider: providerId, model };
 }
 
+/** Every live run's records go here as they finish; a stopped run loses nothing. */
+function resultsFile(kind: string): string {
+  mkdirSync(`${repo}packages/bench/data/results`, { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return `${repo}packages/bench/data/results/${stamp}_${kind}_${target.replace(/[^\w.-]+/g, "_")}.jsonl`;
+}
+
 if (command === "run") {
   const runs = Number(flag("runs") ?? 1);
   const save = Boolean(flag("save"));
-  // Every record is written the moment it finishes; a stopped run loses nothing.
-  mkdirSync(`${repo}packages/bench/data/results`, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const resultFile = `${repo}packages/bench/data/results/${stamp}_${target.replace(/[^\w.-]+/g, "_")}.jsonl`;
+  const resultFile = resultsFile("run");
   console.log(`recording to ${resultFile}${save ? " (and the cassette + baseline)" : ""}`);
   if (save) startCassette(...split(target));
   const out = await live(target, runs, (r, ctx) => {
@@ -178,7 +182,9 @@ if (command === "run") {
   if (baseline.finished < baseline.planned) {
     throw new Error(`baseline for ${target} is partial (${baseline.finished}/${baseline.planned} runs); finish it with: run ${target} --runs N --save`);
   }
-  const out = await live(target, Number(flag("runs") ?? 2));
+  const resultFile = resultsFile("gate");
+  console.log(`recording to ${resultFile}`);
+  const out = await live(target, Number(flag("runs") ?? 2), (r) => appendFileSync(resultFile, JSON.stringify(r) + "\n"));
   printSummary("baseline", baseline.summary);
   printSummary("now", out.summary);
   const failures: string[] = [];
@@ -265,29 +271,72 @@ if (command === "run") {
   const ci = (i: { value: number; lo: number; hi: number }) => `${pct(i.value)} (${pct(i.lo)}–${pct(i.hi)})`;
   const s = b.summary;
   if (b.finished < b.planned) console.log(`note: partial baseline (${b.finished}/${b.planned} runs)`);
+  // --compare <results.jsonl>: a later live run shown beside the baseline.
+  const compareFile = flag("compare");
+  const cmp = compareFile
+    ? summarize(readFileSync(compareFile, "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l) as RunRecord))
+    : undefined;
   const categories = Object.entries(s.byCategory);
-  const scenarioRows = Object.entries(s.byScenario).map(([id, r]) => ({
-    scenario: id,
-    category: SCENARIOS.find((x) => x.id === id)?.category ?? "",
-    complete: `${r.complete}/${r.runs}`,
-    score: pct(r.score),
-  }));
+  const delta = (now: number, was: number) => `${now >= was ? "+" : ""}${Math.round((now - was) * 100)} pts`;
+  const scenarioRows = Object.entries(s.byScenario).map(([id, r]) => {
+    const c = cmp?.byScenario[id];
+    return {
+      scenario: id,
+      category: SCENARIOS.find((x) => x.id === id)?.category ?? "",
+      baseline: `${r.complete}/${r.runs} · ${pct(r.score)}`,
+      ...(cmp ? { latest: c ? `${c.complete}/${c.runs} · ${pct(c.score)}` : "—", change: c ? (c.complete > r.complete ? "▲ now complete" : c.complete < r.complete ? "▼ regressed" : c.score > r.score ? "▲ score" : c.score < r.score ? "▼ score" : "=") : "" } : {}),
+    };
+  });
+  const kpi = (label: string, base: { value: number; lo: number; hi: number }, now?: { value: number; lo: number; hi: number }) => ({
+    label,
+    value: now ? `${pct(base.value)} → ${pct(now.value)}` : pct(base.value),
+    delta: now ? `${delta(now.value, base.value)} · now ${pct(now.lo)}–${pct(now.hi)}` : `95% CI ${pct(base.lo)}–${pct(base.hi)}`,
+    ...(now ? { trend: now.value > base.value ? "up" : now.value < base.value ? "down" : "flat" } : {}),
+  });
   const render = {
     surface: `bench-${providerId}-${model}`.replace(/[^\w-]/g, "_"),
-    title: `Benchmark · ${providerId} / ${model}`,
+    title: `Benchmark · ${providerId} / ${model}${cmp ? " · baseline vs latest" : ""}`,
     nodes: [
       { id: "root", type: "stack", children: ["meta", "kpis", "split", "scenarios"] },
-      { id: "meta", type: "text", props: { variant: "caption", content: `${b.finished < b.planned ? `PARTIAL ${b.finished}/${b.planned} runs · ` : ""}bench v${b.benchVersion} · plan ${b.config.generation}/${b.config.tier}/${b.config.examples ? "examples" : "plain"} · commit ${b.commit} · ${b.at.slice(0, 16).replace("T", " ")} · intervals are 95%` } },
+      { id: "meta", type: "text", props: { variant: "caption", content: `${b.finished < b.planned ? `PARTIAL ${b.finished}/${b.planned} runs · ` : ""}bench v${b.benchVersion} · plan ${b.config.generation}/${b.config.tier}/${b.config.examples ? "examples" : "plain"} · baseline commit ${b.commit} · ${b.at.slice(0, 16).replace("T", " ")} · intervals are 95%${cmp ? ` · latest: ${compareFile!.split("/").pop()}` : ""}` } },
       { id: "kpis", type: "grid", props: { columns: 4, minItemWidth: "sm" }, children: ["k1", "k2", "k3", "k4"] },
-      { id: "k1", type: "stat", props: { label: "Complete", value: pct(s.complete.value), delta: `95% CI ${pct(s.complete.lo)}–${pct(s.complete.hi)}` } },
-      { id: "k2", type: "stat", props: { label: "Check score", value: pct(s.score.value), delta: `95% CI ${pct(s.score.lo)}–${pct(s.score.hi)}` } },
-      { id: "k3", type: "stat", props: { label: "Runs", value: s.runs, delta: `${Object.keys(s.byScenario).length} scenarios` } },
-      { id: "k4", type: "stat", props: { label: "Median per scenario", value: `${(s.medianMs / 1000).toFixed(1)}s`, delta: s.usage ? `${s.usage.input} in · ${s.usage.output} out tokens` : "" } },
+      { id: "k1", type: "stat", props: kpi("Complete", s.complete, cmp?.complete) },
+      { id: "k2", type: "stat", props: kpi("Check score", s.score, cmp?.score) },
+      { id: "k3", type: "stat", props: { label: "Runs", value: cmp ? `${s.runs} · ${cmp.runs}` : s.runs, delta: `${Object.keys(s.byScenario).length} scenarios` } },
+      { id: "k4", type: "stat", props: { label: "Median per scenario", value: `${(s.medianMs / 1000).toFixed(1)}s${cmp ? ` → ${(cmp.medianMs / 1000).toFixed(1)}s` : ""}`, delta: s.usage ? `${s.usage.input} in · ${s.usage.output} out tokens` : "" } },
       { id: "split", type: "grid", props: { columns: 2, minItemWidth: "lg" }, children: ["catTable", "catChart"] },
-      { id: "catTable", type: "table", props: { columns: ["Category", "Runs", "Complete", "Score"], rows: categories.map(([cat, c]) => ({ category: cat, runs: c.runs, complete: ci(c.complete), score: ci(c.score) })) } },
-      { id: "catChart", type: "chart", props: { kind: "bar", labels: categories.map(([c]) => c), series: [{ name: "complete %", values: categories.map(([, c]) => Math.round(c.complete.value * 100)) }, { name: "score %", values: categories.map(([, c]) => Math.round(c.score.value * 100)) }] } },
-      { id: "scenarios", type: "section", props: { title: "Scenarios", description: "Per-scenario results; complete means every check passed in that run." }, children: ["scenTable"] },
-      { id: "scenTable", type: "table", props: { columns: ["Scenario", "Category", "Complete", "Score"], rows: scenarioRows } },
+      {
+        id: "catTable",
+        type: "table",
+        props: {
+          columns: cmp ? ["Category", "Baseline complete", "Latest complete", "Score change"] : ["Category", "Runs", "Complete", "Score"],
+          rows: categories.map(([cat, c]) => {
+            const n = cmp?.byCategory[cat];
+            return cmp
+              ? { category: cat, baselineComplete: ci(c.complete), latestComplete: n ? ci(n.complete) : "—", scoreChange: n ? delta(n.score.value, c.score.value) : "—" }
+              : { category: cat, runs: c.runs, complete: ci(c.complete), score: ci(c.score) };
+          }),
+        },
+      },
+      {
+        id: "catChart",
+        type: "chart",
+        props: {
+          kind: "bar",
+          labels: categories.map(([c]) => c),
+          series: cmp
+            ? [
+                { name: "baseline complete %", values: categories.map(([, c]) => Math.round(c.complete.value * 100)) },
+                { name: "latest complete %", values: categories.map(([cat]) => Math.round((cmp.byCategory[cat]?.complete.value ?? 0) * 100)) },
+              ]
+            : [
+                { name: "complete %", values: categories.map(([, c]) => Math.round(c.complete.value * 100)) },
+                { name: "score %", values: categories.map(([, c]) => Math.round(c.score.value * 100)) },
+              ],
+        },
+      },
+      { id: "scenarios", type: "section", props: { title: "Scenarios", description: "complete runs / runs · mean share of checks passed" }, children: ["scenTable"] },
+      { id: "scenTable", type: "table", props: { columns: cmp ? ["Scenario", "Category", "Baseline", "Latest", "Change"] : ["Scenario", "Category", "Baseline"], rows: scenarioRows } },
     ],
   };
   const url = flag("url") ?? "http://127.0.0.1:5177";
