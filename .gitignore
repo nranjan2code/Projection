@@ -3,3 +3,4 @@ node_modules/
 .env
 .vak/
 *.tmp
+packages/bench/data/results/

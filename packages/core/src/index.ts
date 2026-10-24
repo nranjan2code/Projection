@@ -11,3 +11,4 @@ export * from "./stream.ts";
 export * from "./projector.ts";
 export * from "./events.ts";
 export * from "./sse.ts";
+export * from "./text-projector.ts";
