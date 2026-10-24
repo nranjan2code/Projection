@@ -215,16 +215,22 @@ export function toolDefinitions(catalog: Catalog, opts: ToolOptions = {}): ToolD
           title: { type: "string" },
           nodes: { type: "array", items: nodeSchema(catalog, "compact", true) },
           data: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                op: { type: "string", enum: ["add", "replace", "remove"] },
-                path: { type: "string" },
-                value: {},
+            description: "JSON Patch ops, or an object deep-merged into the data model",
+            anyOf: [
+              {
+                type: "array",
+                items: {
+                  type: "object",
+                  properties: {
+                    op: { type: "string", enum: ["add", "replace", "remove"] },
+                    path: { type: "string" },
+                    value: {},
+                  },
+                  required: ["op", "path"],
+                },
               },
-              required: ["op", "path"],
-            },
+              { type: "object" },
+            ],
           },
         },
         required: ["surface"],
@@ -303,7 +309,10 @@ export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts
     "- nodes is a FLAT list. Put the node with id \"root\" first. Parents reference children by id in \"children\".",
     "- Put values in data and bind them: \"{/path}\" inside any string. A string that is only \"{/path}\" keeps the raw value.",
     "- Repeat a node per list item with children: {\"each\": \"/items\", \"template\": \"tplId\"}; inside the template use relative paths like \"{name}\".",
-    "- Inputs use bind: \"/form/field\". A form's submit is an action name; you receive {action, data} when the user submits.",
+    "- Inputs use bind: \"/form/field\". A form's submit is an action name.",
+    "- Put data in the surface's data field (vak_update: ops, or an object to merge), not inside nodes.",
+    "- When the user acts on your UI you get a message starting with \"[ui action]\" holding {action, surface, data}.",
+    "  Always answer it visibly: update that surface (vak_update) or render the next step. Never leave an action without feedback.",
     "- checks: \"required\", \"email\", \"url\", \"number\", \"minLength:3\", \"maxLength:80\", \"min:0\", \"max:10\".",
     "- Only use the components and props listed below. * marks required props.",
     "",

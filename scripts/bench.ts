@@ -4,6 +4,9 @@
 //                              [--plan auto|tools/core/examples|...] [--judge provider:model] [--save]
 //   node scripts/bench.ts gate <provider:model> [--runs N]     live run vs stored baseline
 //   node scripts/bench.ts replay [--update]                    recorded outputs through today's engine
+//   node scripts/bench.ts analyze <provider:model> [--show scenario-id]
+//                              failing checks by frequency and category; --show prints what the
+//                              user saw each turn and the model's raw calls
 //   node scripts/bench.ts report <provider:model> [--url http://127.0.0.1:5177]
 //                              project the stored baseline into the playground (session "bench")
 //
@@ -213,6 +216,47 @@ if (command === "run") {
   }
   console.log(`\nreplay: ${regressions} regressions, ${improvements} improvements${update ? (regressions ? " (not updated: fix regressions first)" : " (expected scores updated)") : ""}`);
   if (regressions) process.exit(1);
+} else if (command === "analyze") {
+  const [providerId, model] = split(target);
+  const entries = readCassettes().flatMap((c) => c.entries).filter((e) => e.provider === providerId && e.model === model);
+  if (!entries.length) throw new Error(`no cassette for ${target}`);
+  const show = flag("show");
+  if (show) {
+    for (const e of entries.filter((x) => x.scenario === show)) {
+      const rp = replay(e);
+      console.log(`\n=== ${e.scenario} #${e.run}: ${rp.passed}/${rp.total}  failing: ${rp.failing.join("; ") || "none"}`);
+      e.turns.forEach((t, i) => {
+        const turn = SCENARIOS.find((s) => s.id === e.scenario)!.turns[i]!;
+        console.log(`\n--- turn ${i + 1}: ${turn.say ?? `[${turn.act?.target}] ${t.action ? JSON.stringify(t.action) : t.actError ?? ""}`}`);
+        t.calls.forEach((c, k) => {
+          console.log(`model → ${c.tool} ${c.args.length > 1500 ? `${c.args.slice(0, 1500)}… (${c.args.length} chars)` : c.args}`);
+          const errs = rp.errors[i]?.[k] ?? [];
+          if (errs.length) console.log(`  engine errors: ${errs.join(" | ")}`);
+        });
+        console.log(`user sees:\n${rp.views[i] ?? "(nothing)"}`);
+      });
+    }
+  } else {
+    const freq = new Map<string, number>();
+    const byCat = new Map<string, Map<string, number>>();
+    for (const e of entries) {
+      const cat = SCENARIOS.find((s) => s.id === e.scenario)?.category ?? "?";
+      for (const f of replay(e).failing) {
+        freq.set(f, (freq.get(f) ?? 0) + 1);
+        const m = byCat.get(cat) ?? new Map<string, number>();
+        m.set(f, (m.get(f) ?? 0) + 1);
+        byCat.set(cat, m);
+      }
+    }
+    console.log(`${entries.length} runs; failing checks by frequency:`);
+    for (const [f, n] of [...freq].sort((a, b) => b[1] - a[1])) console.log(`${String(n).padStart(3)}  ${f}`);
+    for (const [cat, m] of byCat) console.log(`\n${cat}: ${[...m].sort((a, b) => b[1] - a[1]).map(([f, n]) => `${n}× ${f}`).join(" · ")}`);
+    console.log("\nper scenario:");
+    for (const e of entries) {
+      const rp = replay(e);
+      console.log(`${rp.complete ? "✔" : "✖"} ${e.scenario.padEnd(22)} ${rp.passed}/${rp.total}${rp.failing.length ? `  ✗ ${rp.failing.join("; ")}` : ""}`);
+    }
+  }
 } else if (command === "report") {
   const [providerId, model] = split(target);
   const b = readBaseline(providerId, model);

@@ -88,6 +88,16 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v);
 }
 
+/** Deep merge: objects recursively, everything else (arrays included) replaced by `src`. */
+function mergeDeep(target: Record<string, unknown>, src: Record<string, unknown>): Record<string, unknown> {
+  for (const [k, v] of Object.entries(src)) {
+    if (k === "__proto__" || k === "constructor" || k === "prototype") continue;
+    const cur = target[k];
+    target[k] = isObject(cur) && isObject(v) ? mergeDeep({ ...cur }, v) : structuredClone(v);
+  }
+  return target;
+}
+
 /** Models sometimes double-encode structured args as a JSON string; unwrap it. */
 function unwrapJson(v: unknown): unknown {
   if (typeof v !== "string") return v;
@@ -105,6 +115,8 @@ export class SurfaceStore {
   readonly normalizer: Normalizer;
   private surfaces = new Map<string, SurfaceState>();
   private autoId = 0;
+  /** Data models wrote inside nodes during the current ingest, merged into the surface after. */
+  private nodeData: Record<string, unknown> | undefined;
 
   constructor(catalog: Catalog) {
     this.catalog = catalog;
@@ -184,7 +196,10 @@ export class SurfaceStore {
       rawNodes = [node];
     }
     const raw = Array.isArray(rawNodes) ? rawNodes : isObject(rawNodes) ? [rawNodes] : [];
+    this.nodeData = undefined;
     for (const n of raw) this.ingest(n, nodes, surfaceId, diags);
+    const nodeData = this.nodeData as Record<string, unknown> | undefined;
+    this.nodeData = undefined;
     if (nodes.size === 0 && !opts.partial) {
       return [{ severity: "error", surface: surfaceId, message: "nodes is empty: send a JSON array of node objects, root first" }];
     }
@@ -194,12 +209,14 @@ export class SurfaceStore {
       title: typeof args.title === "string" ? args.title : undefined,
       nodes,
       data: (() => {
+        // Data written inside nodes, overridden by the surface's own data on conflict.
         const d = unwrapJson(args.data);
-        return isObject(d) ? structuredClone(d) : {};
+        return mergeDeep(mergeDeep({}, nodeData ?? {}), isObject(d) ? d : {});
       })(),
       version: (prev?.version ?? 0) + 1,
     };
     this.surfaces.set(surfaceId, state);
+    if (nodeData && !opts.partial) diags.push({ severity: "warning", surface: surfaceId, message: "data written inside nodes was merged into the surface data model" });
     if (!opts.partial) {
       diags.push(...this.repair(state));
       diags.push(...this.lint(state));
@@ -213,11 +230,20 @@ export class SurfaceStore {
     if (!state) return [{ severity: "error", surface: surfaceId, message: `no surface "${surfaceId}"; call vak_render first` }];
     const diags: Diagnostic[] = [];
     if (typeof args.title === "string") state.title = args.title;
+    this.nodeData = undefined;
     for (const patch of Array.isArray(args.nodes) ? args.nodes : []) {
       if (!isObject(patch)) continue;
       // Known ids are patched, unknown ids become new nodes.
       this.ingest(patch, state.nodes, surfaceId, diags, true);
     }
+    const nodeData = this.nodeData as Record<string, unknown> | undefined;
+    this.nodeData = undefined;
+    if (nodeData) {
+      state.data = mergeDeep(state.data, nodeData);
+      diags.push({ severity: "warning", surface: surfaceId, message: "data written inside nodes was merged into the surface data model" });
+    }
+    // An object instead of ops: merge it into the data model.
+    if (isObject(args.data)) state.data = mergeDeep(state.data, args.data);
     for (const op of Array.isArray(args.data) ? args.data : []) {
       if (!isObject(op) || typeof op.path !== "string") continue;
       const mode = op.op === "add" ? "add" : "replace";
@@ -329,6 +355,7 @@ export class SurfaceStore {
         return undefined;
       }
     }
+    this.takeNodeData(props, match?.type);
     const id = givenId ?? this.nextId(match?.type ?? "node");
     if (existing) diags.push({ severity: "warning", surface, node: id, message: "duplicate id; later node replaced earlier one" });
     if (match && rawType !== undefined) match = this.checkDeclared(match, rawType, props, id, rawChildren !== undefined, surface, diags);
@@ -341,6 +368,18 @@ export class SurfaceStore {
     const children = this.normalizeChildren(rawChildren, into, surface, diags, merge);
     if (children) node.children = children;
     return id;
+  }
+
+  /**
+   * `data` written on a node belongs to the surface's data model (VPS keeps
+   * structure and data apart) unless the component declares a `data` prop.
+   */
+  private takeNodeData(props: Record<string, unknown>, type: string | undefined): void {
+    const declared = type ? this.catalog.components[type]?.props.properties?.data : undefined;
+    const d = unwrapJson(props.data);
+    if (declared || !isObject(d)) return;
+    this.nodeData = mergeDeep(this.nodeData ?? {}, d);
+    delete props.data;
   }
 
   /** A declared type that its props contradict yields to the type they describe (see Normalizer.reinterpret). */
@@ -368,6 +407,7 @@ export class SurfaceStore {
       if (v === null) delete props[k];
       else props[k] = v;
     }
+    this.takeNodeData(props, node.type);
     const typeKey = NODE_TYPE_KEYS.find((k) => raw[k] !== undefined && raw[k] !== null && raw[k] !== "");
     let presets: Record<string, unknown> | undefined;
     if (typeKey) {
@@ -503,7 +543,8 @@ export class SurfaceStore {
       (source.type === "button" ? ancestors.find(hasInputs) : undefined);
 
     let name = typeof source.props.action === "string" ? source.props.action : undefined;
-    const data: Record<string, unknown> = isObject(source.props.payload) ? { ...source.props.payload } : {};
+    const payload = source.props.payload;
+    const data: Record<string, unknown> = isObject(payload) ? { ...payload } : payload !== undefined ? { value: payload } : {};
     const errors: Record<string, string[]> = {};
 
     if (form) {

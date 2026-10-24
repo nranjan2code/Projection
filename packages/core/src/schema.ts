@@ -27,6 +27,10 @@ export interface JSONSchema {
   maxLength?: number;
   minItems?: number;
   maxItems?: number;
+  /** Regular expression a string must match. */
+  pattern?: string;
+  /** Annotation; "markdown" marks prose the engine normalizes (see Normalizer). */
+  format?: string;
   default?: unknown;
   /** Extension: alternative property names models use for this property. */
   aliases?: readonly string[];
@@ -111,6 +115,7 @@ export function validate(
   if (typeof value === "string") {
     if (schema.minLength !== undefined && value.length < schema.minLength) fail(`shorter than ${schema.minLength}`);
     if (schema.maxLength !== undefined && value.length > schema.maxLength) fail(`longer than ${schema.maxLength}`);
+    if (schema.pattern !== undefined && !new RegExp(schema.pattern).test(value)) fail(`does not match ${schema.pattern}`);
   } else if (typeof value === "number") {
     if (schema.minimum !== undefined && value < schema.minimum) fail(`less than ${schema.minimum}`);
     if (schema.maximum !== undefined && value > schema.maximum) fail(`greater than ${schema.maximum}`);

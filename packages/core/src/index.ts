@@ -12,3 +12,4 @@ export * from "./projector.ts";
 export * from "./events.ts";
 export * from "./sse.ts";
 export * from "./text-projector.ts";
+export * from "./markdown.ts";

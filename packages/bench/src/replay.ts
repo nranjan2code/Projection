@@ -15,6 +15,10 @@ export interface ReplayResult {
   complete: boolean;
   /** Checks that fail on replay, for diagnosis. */
   failing: string[];
+  /** What the user saw after each turn (text projection), for diagnosis. */
+  views: string[];
+  /** Engine errors per turn, per call, for diagnosis. */
+  errors: string[][][];
 }
 
 export function replay(record: RunRecord, catalog: Catalog = basicCatalog): ReplayResult {
@@ -24,6 +28,8 @@ export function replay(record: RunRecord, catalog: Catalog = basicCatalog): Repl
   const turns: TurnRecord[] = [];
   let active: string | undefined;
   let before: ReturnType<typeof snapshotOf>;
+  const views: string[] = [];
+  const errors: string[][][] = [];
 
   for (const [i, turn] of scenario.turns.entries()) {
     const recorded = record.turns[i];
@@ -38,6 +44,8 @@ export function replay(record: RunRecord, catalog: Catalog = basicCatalog): Repl
       }
     }
     let errored = false;
+    const turnErrors: string[][] = [];
+    errors.push(turnErrors);
     for (const call of recorded.calls) {
       let args: unknown;
       try {
@@ -49,6 +57,7 @@ export function replay(record: RunRecord, catalog: Catalog = basicCatalog): Repl
       const diagnostics = store.apply(call.tool, args);
       // Like the live run: the turn's last projection decides cleanliness.
       errored = diagnostics.some((d) => d.severity === "error");
+      turnErrors.push(diagnostics.filter((d) => d.severity === "error").map((d) => `${d.node ? `[${d.node}] ` : ""}${d.message}`));
       // The surface this call created or changed becomes the one on screen.
       const touched = store.list().find((st) => versions.get(st.id) !== st.version);
       if (touched) active = touched.id;
@@ -56,6 +65,7 @@ export function replay(record: RunRecord, catalog: Catalog = basicCatalog): Repl
     const ctx = checkContext(store, active, before);
     const clean = Boolean(ctx.surface) && !errored && recorded.stop !== "error";
     rec.checks = [{ check: RENDERS_CLEANLY, pass: clean }, ...evaluate(turn.expect, ctx)];
+    views.push(ctx.text);
     before = snapshotOf(ctx);
   }
   const score = scoreTurns(turns);
@@ -64,5 +74,7 @@ export function replay(record: RunRecord, catalog: Catalog = basicCatalog): Repl
     run: record.run,
     ...score,
     failing: turns.flatMap((t) => t.checks.filter((c) => !c.pass).map((c) => c.check)),
+    views,
+    errors,
   };
 }

@@ -12,7 +12,7 @@
 import { defineCatalog } from "./catalog.ts";
 import type { JSONSchema } from "./schema.ts";
 
-type Extra = Pick<JSONSchema, "aliases" | "enumAliases" | "description" | "default">;
+type Extra = Pick<JSONSchema, "aliases" | "enumAliases" | "description" | "default" | "format">;
 
 const str = (extra: Extra = {}): JSONSchema => ({ type: "string", ...extra });
 const oneOf = (values: string[], extra: Extra = {}): JSONSchema => ({ type: "string", enum: values, ...extra });
@@ -22,6 +22,13 @@ const props = (properties: Record<string, JSONSchema>, required: string[] = []):
   properties,
   required,
 });
+
+/** A string standing for data: only a `{/path}` binding, so JSON-looking strings are parsed instead. */
+const binding: JSONSchema = { type: "string", pattern: "^\\{/?[^{}]*\\}$", description: "{/path}" };
+/** A list prop: the list itself, or a binding to one in the data model. */
+const listOr = (list: JSONSchema, extra: Extra = {}): JSONSchema => ({ anyOf: [list, binding], ...extra });
+/** Prose the engine treats as markdown (inline HTML is converted). */
+const md = (extra: Extra = {}): JSONSchema => str({ description: "markdown", format: "markdown", ...extra });
 
 const tone = oneOf(["neutral", "info", "success", "warning", "danger"], {
   aliases: ["variant", "status", "severity", "color"],
@@ -162,7 +169,7 @@ export const basicCatalog = defineCatalog(
     },
     section: {
       description: "Titled group of content.",
-      props: props({ title: str({ aliases: ["heading", "header", "name", "label"] }), description: str({ aliases: ["subtitle", "text", "summary"] }) }),
+      props: props({ title: str({ aliases: ["heading", "header", "name", "label"] }), description: md({ aliases: ["subtitle", "text", "summary"] }) }),
       children: true,
       aliases: ["panel", "group", "fieldset", "header", "footer", "region", "tab", "tabpanel"],
     },
@@ -178,7 +185,7 @@ export const basicCatalog = defineCatalog(
       props: props({
         title: str({ aliases: ["heading", "header", "name"] }),
         subtitle: str({ aliases: ["subheading", "subheader", "caption"] }),
-        body: str({ description: "markdown", aliases: ["text", "content", "description", "summary"] }),
+        body: md({ aliases: ["text", "content", "description", "summary"] }),
         image: str({ description: "url", aliases: ["imageUrl", "img", "src", "thumbnail", "photo"] }),
         badge: str({ aliases: ["tag", "chip", "label"] }),
         tone,
@@ -190,7 +197,7 @@ export const basicCatalog = defineCatalog(
       description: "Markdown text.",
       props: props(
         {
-          content: str({ description: "markdown", aliases: ["text", "markdown", "body", "value"] }),
+          content: md({ aliases: ["text", "markdown", "body", "value"] }),
           variant: oneOf(["body", "heading", "subheading", "caption", "code"], {
             aliases: ["style", "size", "kind"],
             enumAliases: { h1: "heading", h2: "heading", title: "heading", h3: "subheading", subtitle: "subheading", small: "caption", muted: "caption", paragraph: "body", p: "body", mono: "code" },
@@ -248,7 +255,7 @@ export const basicCatalog = defineCatalog(
               ],
             },
           },
-          rows: { type: ["array", "string"], description: "array of row objects, or \"{/path}\"", aliases: ["data", "items", "records"] },
+          rows: listOr({ type: "array" }, { description: "array of row objects, or \"{/path}\"", aliases: ["data", "items", "records"] }),
         },
         ["columns", "rows"],
       ),
@@ -258,7 +265,7 @@ export const basicCatalog = defineCatalog(
     list: {
       description: "Simple list of text items.",
       props: props({
-        items: { type: ["array", "string"], items: { type: "string" }, aliases: ["list", "entries", "bullets", "values", "points"] },
+        items: listOr({ type: "array", items: { type: "string" } }, { aliases: ["list", "entries", "bullets", "values", "points"] }),
         ordered: bool({ aliases: ["numbered"] }),
       }),
       aliases: ["ul", "bullets", "checklist", "bulletlist", { name: "ol", props: { ordered: true } }, { name: "numberedlist", props: { ordered: true } }],
@@ -272,7 +279,7 @@ export const basicCatalog = defineCatalog(
             aliases: ["chartType", "variant"],
             enumAliases: { column: "bar", columns: "bar", barchart: "bar", histogram: "bar", linechart: "line", trend: "line", areachart: "area", piechart: "pie", donut: "pie", doughnut: "pie" },
           }),
-          labels: { type: ["array", "string"], items: { type: "string" }, aliases: ["categories", "xAxis", "x", "keys"] },
+          labels: listOr({ type: "array", items: { type: "string" } }, { aliases: ["categories", "xAxis", "x", "keys"] }),
           series: {
             description: "[{name, values}], or shorthand: a list of numbers (one series) or of number lists",
             aliases: ["datasets", "data", "values"],
@@ -286,7 +293,7 @@ export const basicCatalog = defineCatalog(
               },
               { type: "array", items: { type: "number" } },
               { type: "array", items: { type: "array", items: { type: "number" } } },
-              { type: "string", description: "{/path}" },
+              binding,
             ],
           },
         },
@@ -304,7 +311,7 @@ export const basicCatalog = defineCatalog(
     },
     alert: {
       description: "Callout message.",
-      props: props({ title: str({ aliases: ["heading", "header"] }), body: str({ description: "markdown", aliases: ["text", "content", "message", "description"] }), tone }),
+      props: props({ title: str({ aliases: ["heading", "header"] }), body: md({ aliases: ["text", "content", "message", "description"] }), tone }),
       aliases: ["callout", "notice", "banner", "message", "note", "notification", "toast"],
     },
     image: {
@@ -321,7 +328,7 @@ export const basicCatalog = defineCatalog(
         {
           label: str({ aliases: ["text", "title", "caption"] }),
           action: str({ description: "action name", aliases: ["onClick", "onPress", "event"] }),
-          payload: { type: "object", aliases: ["data", "params", "value"] },
+          payload: { description: "sent back with the action; any JSON value", aliases: ["data", "params", "value"] },
           style: oneOf(["primary", "secondary", "danger", "link"], {
             aliases: ["variant", "kind"],
             enumAliases: { main: "primary", cta: "primary", solid: "primary", outline: "secondary", default: "secondary", ghost: "link", text: "link", destructive: "danger", delete: "danger" },
@@ -374,11 +381,10 @@ export const basicCatalog = defineCatalog(
         {
           label: fieldLabel,
           bind: fieldBind,
-          options: {
-            type: ["array", "string"],
-            aliases: ["choices", "items", "values"],
-            items: { anyOf: [{ type: "string" }, props({ label: str({ aliases: ["text", "name", "title"] }), value: str({ aliases: ["id", "key"] }) }, ["label", "value"])] },
-          },
+          options: listOr(
+            { type: "array", items: { anyOf: [{ type: "string" }, props({ label: str({ aliases: ["text", "name", "title"] }), value: str({ aliases: ["id", "key"] }) }, ["label", "value"])] } },
+            { aliases: ["choices", "items", "values"] },
+          ),
           multiple: bool({ aliases: ["multi", "multiSelect"] }),
           checks,
         },

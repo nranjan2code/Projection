@@ -57,3 +57,8 @@ test("ignores __proto__ keys", () => {
 test("a value with no key continues the previous member", () => {
   assert.deepEqual(parseLenient('{"body": "- a", "- b", "- c", "tags": ["x"], "y", "n": 1}'), { body: "- a\n- b\n- c", tags: ["x", "y"], n: 1 });
 });
+
+test("an array closed too early continues with the values after it", () => {
+  assert.deepEqual(parseLenient('[{"id":"root"}], {"id":"a"}, {"id":"b"}]'), [{ id: "root" }, { id: "a" }, { id: "b" }]);
+  assert.deepEqual(parseLenient("[1, 2]"), [1, 2]);
+});

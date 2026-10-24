@@ -11,6 +11,7 @@
 //      explains every prop sent and validates: the props say what was meant
 //   3. props   — alias presets → schema coercion → component normalize → coercion
 //                → derived defaults → schema defaults for missing required props
+//                → markdown-format prose: inline HTML converted to markdown
 // Structure pipeline (per surface, after a complete render/update):
 //   4. children that never arrived: prose becomes text, ids are dropped
 //   5. children on components that can't hold them move beside their parent
@@ -19,6 +20,7 @@
 
 import { isBinding } from "./bindings.ts";
 import { type Catalog, type ComponentDef, propsSchema } from "./catalog.ts";
+import { htmlToMarkdown } from "./markdown.ts";
 import { coerce, type JSONSchema, validate } from "./schema.ts";
 
 /** Keys starting with "_" or "$" are metadata (e.g. "__v__", "$error"), never props. */
@@ -176,6 +178,10 @@ export class Normalizer {
     for (const req of schema.required ?? []) {
       const d = (schema.properties?.[req] as JSONSchema | undefined)?.default;
       if (p[req] === undefined && d !== undefined) p[req] = structuredClone(d);
+    }
+    // Prose declared as markdown: inline HTML becomes markdown.
+    for (const [k, sub] of Object.entries(schema.properties ?? {})) {
+      if (sub.format === "markdown" && typeof p[k] === "string") p[k] = htmlToMarkdown(p[k] as string);
     }
     return p;
   }

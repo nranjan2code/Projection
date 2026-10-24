@@ -5,7 +5,8 @@
 // - Repairs what models commonly emit: code fences and prose around the JSON,
 //   comments, trailing commas, single quotes, unquoted keys, raw newlines in
 //   strings, Python-style True/False/None, and keyless values inside an object
-//   ({"body": "a", "b"} — the stray value continues the previous member).
+//   ({"body": "a", "b"} — the stray value continues the previous member), and
+//   values after a closed top-level array ("[a], b, c" — they continue the array).
 // - Reports which containers are unfinished and which object keys hold a
 //   string that was cut off, so callers never act on a half-written id.
 
@@ -47,6 +48,21 @@ class Parser {
 
   get sawTruncation(): boolean {
     return this.truncated;
+  }
+
+  /** "[a], b, c": an array closed too early; comma-separated values after it belong to it. */
+  continueArray(arr: unknown[]): void {
+    for (;;) {
+      this.skip();
+      if (this.s[this.i] !== ",") return;
+      this.i++;
+      this.skip();
+      if (this.eof) return;
+      const v = this.value();
+      if (v === MISSING) return;
+      arr.push(v);
+      if (this.s[this.i] === "]") this.i++;
+    }
   }
 
   skip(): void {
@@ -282,6 +298,7 @@ function startOfJson(text: string): number {
 export function parsePartial(text: string, opts: { final?: boolean } = {}): PartialResult {
   const p = new Parser(text.slice(startOfJson(text)), opts.final ?? false);
   const v = p.value();
+  if (Array.isArray(v)) p.continueArray(v);
   return {
     value: v === MISSING ? undefined : v,
     complete: v !== MISSING && !p.sawTruncation,

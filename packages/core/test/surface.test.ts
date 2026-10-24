@@ -324,3 +324,50 @@ test("text projector reads a surface the way a user would", async () => {
   assert.match(beta, /\[Select\] Role: Developer \/ Designer \/ Other/);
   assert.match(projectText(store.resolve("trips")!), /\[Card\] Mountain cabin — \$240[\s\S]*\[Button: Choose → choose_trip\]/);
 });
+
+test("bench-driven: data inside nodes and update merge objects reach the data model", () => {
+  const store = new SurfaceStore(basicCatalog);
+  store.render({
+    surface: "d",
+    nodes: [
+      { id: "root", type: "stack", children: ["k"] },
+      { id: "k", type: "stat", props: { label: "CPU", value: "{/cpu}" }, data: { cpu: "42%" } },
+    ],
+    data: { title: "x" },
+  } as never);
+  assert.equal(store.resolve("d")!.root!.children[0]!.props.value, "42%");
+  assert.equal(store.get("d")!.data.title, "x");
+  store.update({ surface: "d", data: { cpu: "51%" } } as never);
+  assert.equal(store.resolve("d")!.root!.children[0]!.props.value, "51%");
+});
+
+test("bench-driven: a JSON string where a list belongs is parsed, a binding is kept", () => {
+  const store = new SurfaceStore(basicCatalog);
+  const diags = store.render({
+    surface: "t",
+    nodes: [
+      { id: "root", type: "stack", children: ["a", "b"] },
+      { id: "a", type: "table", props: { columns: ["Task"], rows: '[{"task":"Buy oat milk"}]' } },
+      { id: "b", type: "list", props: { items: "{/todo}" } },
+    ],
+    data: { todo: ["x"] },
+  });
+  assert.deepEqual(diags.filter((d) => d.severity === "error"), []);
+  const [a, b] = store.resolve("t")!.root!.children;
+  assert.deepEqual(a!.props.rows, [{ task: "Buy oat milk" }]);
+  assert.deepEqual(b!.props.items, ["x"]);
+});
+
+test("bench-driven: HTML in markdown props becomes markdown; scalar payloads are sent as {value}", () => {
+  const store = new SurfaceStore(basicCatalog);
+  store.render({
+    surface: "h",
+    nodes: [
+      { id: "root", type: "stack", children: ["t", "b"] },
+      { id: "t", type: "text", props: { content: "<p><strong>Steps</strong></p><ol><li>Open</li><li>Tap</li></ol>" } },
+      { id: "b", type: "button", props: { label: "Apply", action: "apply", payload: "frontend-role" } },
+    ],
+  });
+  assert.equal(store.resolve("h")!.root!.children[0]!.props.content, "**Steps**\n\n1. Open\n2. Tap");
+  assert.deepEqual(store.submit("h", "b").action?.data, { value: "frontend-role" });
+});

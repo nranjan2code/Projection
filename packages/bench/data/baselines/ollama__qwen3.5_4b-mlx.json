@@ -1,0 +1,279 @@
+{
+  "benchVersion": 1,
+  "planned": 30,
+  "finished": 30,
+  "provider": "ollama",
+  "model": "qwen3.5:4b-mlx",
+  "fingerprint": "61aa3858e9d3022e8fca725550089addd9289c4446f33bd09dfd12f95f2a6792",
+  "config": {
+    "generation": "tools",
+    "tier": "core",
+    "examples": true
+  },
+  "commit": "5f70269-dirty",
+  "at": "2026-10-24T15:32:06.710Z",
+  "summary": {
+    "runs": 30,
+    "complete": {
+      "value": 0.5,
+      "lo": 0.33154125522739103,
+      "hi": 0.6684587447726089,
+      "n": 30
+    },
+    "score": {
+      "value": 0.8031746031746032,
+      "lo": 0.7079640646821274,
+      "hi": 0.8983851416670791,
+      "n": 30
+    },
+    "byCategory": {
+      "comparison": {
+        "runs": 5,
+        "complete": {
+          "value": 0.6,
+          "lo": 0.23072427940911855,
+          "hi": 0.8823792268590028,
+          "n": 5
+        },
+        "score": {
+          "value": 0.8166666666666668,
+          "lo": 0.5615365300701882,
+          "hi": 1,
+          "n": 5
+        }
+      },
+      "dashboard": {
+        "runs": 5,
+        "complete": {
+          "value": 0.8,
+          "lo": 0.375534627029995,
+          "hi": 0.9637758917743693,
+          "n": 5
+        },
+        "score": {
+          "value": 0.95,
+          "lo": 0.8520017999999999,
+          "hi": 1,
+          "n": 5
+        }
+      },
+      "form": {
+        "runs": 5,
+        "complete": {
+          "value": 0.4,
+          "lo": 0.11762077314099711,
+          "hi": 0.7692757205908813,
+          "n": 5
+        },
+        "score": {
+          "value": 0.64,
+          "lo": 0.2696180823275439,
+          "hi": 1,
+          "n": 5
+        }
+      },
+      "planning": {
+        "runs": 5,
+        "complete": {
+          "value": 0.4,
+          "lo": 0.11762077314099711,
+          "hi": 0.7692757205908813,
+          "n": 5
+        },
+        "score": {
+          "value": 0.7866666666666666,
+          "lo": 0.6143086612959971,
+          "hi": 0.9590246720373361,
+          "n": 5
+        }
+      },
+      "information": {
+        "runs": 2,
+        "complete": {
+          "value": 1,
+          "lo": 0.3423802239546494,
+          "hi": 1,
+          "n": 2
+        },
+        "score": {
+          "value": 1,
+          "lo": 1,
+          "hi": 1,
+          "n": 2
+        }
+      },
+      "interaction": {
+        "runs": 8,
+        "complete": {
+          "value": 0.25,
+          "lo": 0.07147921209795555,
+          "hi": 0.5907245720727483,
+          "n": 8
+        },
+        "score": {
+          "value": 0.7660714285714286,
+          "lo": 0.5877490810537378,
+          "hi": 0.9443937760891195,
+          "n": 8
+        }
+      }
+    },
+    "byScenario": {
+      "hotels-compare": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "laptops-compare": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "phone-plans": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.3333333333333333
+      },
+      "restaurants": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "flights": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.75
+      },
+      "sales-q3": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "web-analytics": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "budget-pie": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "server-health": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.75
+      },
+      "running-week": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "newsletter": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "job-application": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.2
+      },
+      "bug-report": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.16666666666666666
+      },
+      "wedding-rsvp": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.8333333333333334
+      },
+      "csat-survey": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "workout-tabs": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.6666666666666666
+      },
+      "rome-itinerary": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "recipe": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.6
+      },
+      "sql-study-plan": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "onboarding-checklist": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.6666666666666666
+      },
+      "rest-vs-graphql": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "paris-weather": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "hotel-booking-flow": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "beta-signup-flow": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "dashboard-filter": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.8571428571428571
+      },
+      "todo-add": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.7142857142857143
+      },
+      "quiz": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.8333333333333334
+      },
+      "pizza-order": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.8571428571428571
+      },
+      "bug-ticket-flow": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.6666666666666666
+      },
+      "itinerary-edit": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.2
+      }
+    },
+    "medianMs": 19749,
+    "usage": {
+      "input": 219724,
+      "output": 37161
+    }
+  }
+}
