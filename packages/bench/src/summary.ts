@@ -58,6 +58,9 @@ export function summarize(records: RunRecord[]): Summary {
 
 export interface Baseline {
   benchVersion: number;
+  /** Runs planned and finished; a baseline is partial until they match. */
+  planned: number;
+  finished: number;
   provider: string;
   model: string;
   fingerprint: string;
@@ -88,10 +91,19 @@ export function writeBaseline(b: Baseline): void {
 
 /** Replace a model's cassette with these records (one JSON object per line). */
 export function writeCassette(provider: string, model: string, records: RunRecord[]): void {
+  startCassette(provider, model);
+  for (const r of records) appendCassette(provider, model, r);
+}
+
+/** Begin a fresh cassette for a model (records are then appended as they finish). */
+export function startCassette(provider: string, model: string): void {
   mkdirSync(paths.cassettes, { recursive: true });
-  const file = paths.cassette(provider, model);
-  writeFileSync(file, "");
-  for (const r of records) appendFileSync(file, JSON.stringify({ provider, model, ...r }) + "\n");
+  writeFileSync(paths.cassette(provider, model), "");
+}
+
+/** Persist one record immediately, so a stopped run keeps everything it measured. */
+export function appendCassette(provider: string, model: string, record: RunRecord): void {
+  appendFileSync(paths.cassette(provider, model), JSON.stringify({ provider, model, ...record }) + "\n");
 }
 
 export interface CassetteEntry extends RunRecord {

@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "vak": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["--disable-warning=ExperimentalWarning", "packages/mcp/src/main.ts"],
+      "env": { "VAK_URL": "http://127.0.0.1:5177", "VAK_SESSION": "mcp" }
+    }
+  }
+}

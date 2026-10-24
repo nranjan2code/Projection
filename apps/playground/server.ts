@@ -12,7 +12,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { stripTypeScriptTypes } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { basicCatalog, encodeSse, formatDiagnostics, SurfaceStore, type AgentEvent, type VpsAction } from "@vak/core";
+import { basicCatalog, encodeSse, formatDiagnostics, projectText, SurfaceStore, type AgentEvent, type VpsAction } from "@vak/core";
 import {
   actionMessage,
   calibrate,
@@ -286,25 +286,45 @@ const server = createServer(async (req, res) => {
       const snap = s.store.snapshot(id);
       const event: AgentEvent = snap ? { type: "surface", snapshot: snap } : { type: "surface_removed", id };
       for (const v of s.viewers) v(event);
-      return json(res, 200, { result: formatDiagnostics(diagnostics), diagnostics, viewers: s.viewers.size });
+      const resolved = s.store.resolve(id);
+      return json(res, 200, {
+        result: formatDiagnostics(diagnostics),
+        diagnostics,
+        viewers: s.viewers.size,
+        surface: id,
+        // What the user sees, so the caller can verify its own output.
+        text: resolved ? projectText(resolved) : "",
+        url: `http://127.0.0.1:${PORT}/?session=${encodeURIComponent(String(body.session ?? "default"))}`,
+      });
     }
     // Long-poll for user actions on externally projected surfaces.
     if (req.method === "GET" && p === "/api/actions") {
       const s = session(url.searchParams.get("session") ?? "default");
       const timeout = Math.min(Number(url.searchParams.get("timeout") ?? 0), 600) * 1000;
-      if (!s.inbox.length && timeout > 0) {
+      const only = url.searchParams.get("surface");
+      const matches = (a: VpsAction) => !only || a.surface === only;
+      if (!s.inbox.some(matches) && timeout > 0) {
         await new Promise<void>((resolve) => {
-          const done = () => {
-            clearTimeout(t);
-            s.waiters.delete(done);
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            s.waiters.delete(wake);
             resolve();
           };
-          const t = setTimeout(done, timeout);
-          s.waiters.add(done);
-          req.on("close", done);
+          // Wake only for actions this caller is waiting for.
+          const wake = () => {
+            if (s.inbox.some(matches)) finish();
+          };
+          const timer = setTimeout(finish, timeout);
+          s.waiters.add(wake);
+          res.on("close", finish);
         });
       }
-      return json(res, 200, { actions: s.inbox.splice(0) });
+      const taken = s.inbox.filter(matches);
+      s.inbox = s.inbox.filter((a) => !matches(a));
+      return json(res, 200, { actions: taken });
     }
     if (req.method === "GET" && p === "/api/events") {
       const s = session(url.searchParams.get("session") ?? "default");
@@ -313,7 +333,7 @@ const server = createServer(async (req, res) => {
       for (const st of s.store.list()) send({ type: "surface", snapshot: s.store.snapshot(st.id)! });
       s.viewers.add(send);
       const ping = setInterval(() => res.write(": ping\n\n"), 25000);
-      req.on("close", () => {
+      res.on("close", () => {
         clearInterval(ping);
         s.viewers.delete(send);
       });
