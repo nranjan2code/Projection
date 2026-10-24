@@ -13,7 +13,7 @@
 //                → derived defaults → schema defaults for missing required props
 //                → markdown-format prose: inline HTML converted to markdown
 // Structure pipeline (per surface, after a complete render/update):
-//   4. children that never arrived: prose becomes text, ids are dropped
+//   4. prose in children becomes text; ids never sent stay (pending, reported as errors)
 //   5. children on components that can't hold them move beside their parent
 //   6. no "root": a single container is promoted, otherwise top-level nodes are wrapped
 //   7. unreferenced subtrees attach to the root
@@ -208,22 +208,18 @@ export function repairStructure(
   const repairs: Repair[] = [];
   const canHold = (n: VpsNode) => normalizer.canHoldChildren(n.type);
 
-  // 4. Child refs that never arrived.
+  // 4. Child refs that are prose, not ids, become text. Ids that were never
+  //    sent stay referenced: they render as pending, lint reports them as
+  //    errors so the model sends them, and a later update slots them in.
   for (const node of [...nodes.values()]) {
     if (!Array.isArray(node.children)) continue;
-    const kept: string[] = [];
-    for (const ref of node.children) {
-      if (nodes.has(ref)) kept.push(ref);
-      else if (!ID_LIKE.test(ref) && /\p{L}{2}/u.test(ref)) {
-        const id = nextId("text");
-        nodes.set(id, { id, type: "text", props: { content: ref } });
-        kept.push(id);
-        repairs.push({ node: node.id, message: `child "${ref}" is prose, not a node id; shown as text` });
-      } else {
-        repairs.push({ node: node.id, message: `child "${ref}" was never sent; removed` });
-      }
-    }
-    node.children = kept;
+    node.children = node.children.map((ref) => {
+      if (nodes.has(ref) || ID_LIKE.test(ref) || !/\p{L}{2}/u.test(ref)) return ref;
+      const id = nextId("text");
+      nodes.set(id, { id, type: "text", props: { content: ref } });
+      repairs.push({ node: node.id, message: `child "${ref}" is prose, not a node id; shown as text` });
+      return id;
+    });
   }
 
   // 5. Children on leaf components.

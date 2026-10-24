@@ -1,0 +1,80 @@
+{
+  "benchVersion": 1,
+  "slice": "form",
+  "planned": 15,
+  "finished": 15,
+  "provider": "ollama",
+  "model": "qwen3.5:4b-mlx",
+  "fingerprint": "61aa3858e9d3022e8fca725550089addd9289c4446f33bd09dfd12f95f2a6792",
+  "config": {
+    "generation": "tools",
+    "tier": "core",
+    "examples": true
+  },
+  "commit": "d608b93-dirty",
+  "at": "2026-10-24T15:59:10.009Z",
+  "summary": {
+    "runs": 15,
+    "complete": {
+      "value": 0.5333333333333333,
+      "lo": 0.3011697987531101,
+      "hi": 0.751904647673791,
+      "n": 15
+    },
+    "score": {
+      "value": 0.8177777777777777,
+      "lo": 0.6923733571851615,
+      "hi": 0.943182198370394,
+      "n": 15
+    },
+    "byCategory": {
+      "form": {
+        "runs": 15,
+        "complete": {
+          "value": 0.5333333333333333,
+          "lo": 0.3011697987531101,
+          "hi": 0.751904647673791,
+          "n": 15
+        },
+        "score": {
+          "value": 0.8177777777777777,
+          "lo": 0.6923733571851615,
+          "hi": 0.943182198370394,
+          "n": 15
+        }
+      }
+    },
+    "byScenario": {
+      "newsletter": {
+        "runs": 3,
+        "complete": 3,
+        "score": 1
+      },
+      "job-application": {
+        "runs": 3,
+        "complete": 1,
+        "score": 0.8666666666666667
+      },
+      "bug-report": {
+        "runs": 3,
+        "complete": 2,
+        "score": 0.7777777777777777
+      },
+      "wedding-rsvp": {
+        "runs": 3,
+        "complete": 0,
+        "score": 0.6111111111111112
+      },
+      "csat-survey": {
+        "runs": 3,
+        "complete": 2,
+        "score": 0.8333333333333334
+      }
+    },
+    "medianMs": 12730,
+    "usage": {
+      "input": 41250,
+      "output": 7472
+    }
+  }
+}

@@ -30,6 +30,8 @@ const IDENT_VALUES: Record<string, unknown> = {
 
 class Parser {
   private i = 0;
+  /** Open containers, innermost last, for repairing mismatched closers. */
+  private open: ("{" | "[")[] = [];
   private truncated = false;
   readonly incomplete = new WeakSet<object>();
   readonly partialKeys = new WeakMap<object, Set<string>>();
@@ -94,6 +96,34 @@ class Parser {
   }
 
   object(): Parsed {
+    this.open.push("{");
+    try {
+      return this.objectBody();
+    } finally {
+      this.open.pop();
+    }
+  }
+
+  array(): Parsed {
+    this.open.push("[");
+    try {
+      return this.arrayBody();
+    } finally {
+      this.open.pop();
+    }
+  }
+
+  /** After the character at the cursor: does an object member (`, key:`) follow? */
+  private memberFollows(): boolean {
+    return /^.\s*,\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[A-Za-z_$][\w$-]*)\s*[:=]/s.test(this.s.slice(this.i, this.i + 400));
+  }
+
+  /** True when a container of `kind` encloses the current (innermost) one. */
+  private enclosedBy(kind: "{" | "["): boolean {
+    return this.open.slice(0, -1).includes(kind);
+  }
+
+  private objectBody(): Parsed {
     this.i++;
     const obj: Record<string, unknown> = {};
     let lastKey: string | undefined;
@@ -114,7 +144,12 @@ class Parser {
         continue;
       }
       if (c === "]") {
-        // Mismatched bracket from a sloppy model: treat as close.
+        // Mismatched closer: read it the way the text after it parses. If an
+        // object member follows, the "]" really closes the enclosing array
+        // (this object's "}" was omitted): end here, leave it to that array.
+        // Otherwise it was typed for this object's "}". No enclosing array:
+        // treat it as this object's closer too.
+        if (this.enclosedBy("[") && this.memberFollows()) return obj;
         this.i++;
         return obj;
       }
@@ -157,7 +192,7 @@ class Parser {
     }
   }
 
-  array(): Parsed {
+  private arrayBody(): Parsed {
     this.i++;
     const arr: unknown[] = [];
     for (;;) {
@@ -168,7 +203,16 @@ class Parser {
         return arr;
       }
       const c = this.s[this.i]!;
-      if (c === "]" || c === "}") {
+      if (c === "]") {
+        this.i++;
+        return arr;
+      }
+      if (c === "}") {
+        // Mismatched closer: read it the way the text after it parses. If an
+        // object member follows, it was typed for this array's "]" (we are
+        // back in the enclosing object). Otherwise this array's "]" was
+        // omitted and the "}" closes the enclosing object: end here, leave it.
+        if (this.enclosedBy("{") && !this.memberFollows()) return arr;
         this.i++;
         return arr;
       }

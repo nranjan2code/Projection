@@ -48,6 +48,8 @@ export interface RunRecord {
   judge?: { score: number; reason: string };
   /** Replay score at record time; the replay gate must never go below it. */
   expected?: number;
+  /** Set when an expected score was deliberately lowered, with the reason. */
+  accepted?: { reason: string; from: number; at: string };
 }
 
 /** Implicit first check of every turn: a surface exists and the engine reported no errors. */

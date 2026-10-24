@@ -457,7 +457,7 @@ export class SurfaceStore {
       const ch = node.children;
       if (Array.isArray(ch)) {
         for (const c of ch) {
-          if (!state.nodes.has(c)) diags.push({ severity: "error", surface: state.id, node: node.id, message: `child "${c}" does not exist` });
+          if (!state.nodes.has(c)) diags.push({ severity: "error", surface: state.id, node: node.id, message: `child "${c}" was never sent: send that node with vak_update, or remove it from children` });
         }
       } else if (ch && !state.nodes.has(ch.template)) {
         diags.push({ severity: "error", surface: state.id, node: node.id, message: `template "${ch.template}" does not exist` });

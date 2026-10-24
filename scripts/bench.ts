@@ -3,7 +3,9 @@
 //   node scripts/bench.ts run  <provider:model> [--runs N] [--only id,id] [--category c]
 //                              [--plan auto|tools/core/examples|...] [--judge provider:model] [--save]
 //   node scripts/bench.ts gate <provider:model> [--runs N]     live run vs stored baseline
-//   node scripts/bench.ts replay [--update]                    recorded outputs through today's engine
+//   node scripts/bench.ts replay [--update] [--accept "reason"] recorded outputs through today's engine;
+//                              --update raises expected scores; lowering any needs --accept with the reason,
+//                              which is stored on each changed record
 //   node scripts/bench.ts analyze <provider:model> [--show scenario-id]
 //                              failing checks by frequency and category; --show prints what the
 //                              user saw each turn and the model's raw calls
@@ -60,6 +62,13 @@ function commit(): string {
   } catch {
     return "unknown";
   }
+}
+
+/** Saved artifacts are per slice: --slice, else the --category, else the full suite. */
+function sliceName(): string | undefined {
+  const named = flag("slice") ?? flag("category");
+  if (!named && flag("only") && flag("save")) throw new Error("--only with --save needs --slice <name>, so the full baseline is not overwritten");
+  return named;
 }
 
 function split(spec: string): [string, string] {
@@ -150,17 +159,20 @@ function resultsFile(kind: string): string {
 if (command === "run") {
   const runs = Number(flag("runs") ?? 1);
   const save = Boolean(flag("save"));
+  const [saveProvider, saveModel] = split(target);
+  const key = { provider: saveProvider, model: saveModel, slice: sliceName() };
   const resultFile = resultsFile("run");
   console.log(`recording to ${resultFile}${save ? " (and the cassette + baseline)" : ""}`);
-  if (save) startCassette(...split(target));
+  if (save) startCassette(key);
   const out = await live(target, runs, (r, ctx) => {
     appendFileSync(resultFile, JSON.stringify(r) + "\n");
     if (!save) return;
     // Expected replay score is measured now, through this engine, so the gate compares like with like.
     const rp = replay(r);
-    appendCassette(ctx.provider, ctx.model, { ...r, expected: rp.total ? rp.passed / rp.total : 0 });
+    appendCassette(key, { ...r, expected: rp.total ? rp.passed / rp.total : 0 });
     writeBaseline({
       benchVersion: BENCH_VERSION,
+      ...(key.slice ? { slice: key.slice } : {}),
       planned: ctx.planned,
       finished: ctx.records.length,
       provider: ctx.provider,
@@ -173,10 +185,10 @@ if (command === "run") {
     });
   });
   printSummary(`${target} · bench v${BENCH_VERSION}`, out.summary);
-  console.log(`\nresults: ${resultFile}${save ? `\nsaved baseline and cassette for ${target}` : ""}`);
+  console.log(`\nresults: ${resultFile}${save ? `\nsaved baseline and cassette for ${target}${key.slice ? ` (slice ${key.slice})` : ""}` : ""}`);
 } else if (command === "gate") {
   const [providerId, model] = split(target);
-  const baseline = readBaseline(providerId, model);
+  const baseline = readBaseline({ provider: providerId, model, slice: sliceName() });
   if (!baseline) throw new Error(`no baseline for ${target}; record one with: run ${target} --runs 2 --save`);
   if (baseline.benchVersion !== BENCH_VERSION) throw new Error(`baseline is bench v${baseline.benchVersion}, suite is v${BENCH_VERSION}: re-record it`);
   if (baseline.finished < baseline.planned) {
@@ -201,6 +213,9 @@ if (command === "run") {
   console.log("\n✔ no significant regression against the baseline");
 } else if (command === "replay") {
   const update = Boolean(flag("update") ?? (target === "--update" ? "true" : undefined));
+  const acceptIdx = process.argv.indexOf("--accept");
+  const accepted = acceptIdx > 0 ? process.argv[acceptIdx + 1] : undefined;
+  if (accepted !== undefined && (!accepted || accepted.startsWith("--"))) throw new Error('--accept needs a reason, e.g. --accept "missing children are now errors"');
   let regressions = 0, improvements = 0;
   for (const { file, entries } of readCassettes()) {
     const updated = entries.map((e) => {
@@ -213,18 +228,24 @@ if (command === "run") {
         improvements++;
         console.log(`▲ ${file} ${e.scenario}#${e.run}: ${e.expected.toFixed(2)} → ${now.toFixed(2)}`);
       }
-      return { ...e, expected: now };
+      const lowered = e.expected !== undefined && now < e.expected - 1e-9;
+      return { ...e, expected: now, ...(lowered && accepted ? { accepted: { reason: accepted, from: e.expected!, at: new Date().toISOString() } } : {}) };
     });
-    if (update && regressions === 0) {
-      const { provider, model } = entries[0]!;
-      writeCassette(provider, model, updated);
+    if (update && (regressions === 0 || accepted)) {
+      const { provider, model, slice } = entries[0]!;
+      writeCassette({ provider, model, slice }, updated);
     }
   }
-  console.log(`\nreplay: ${regressions} regressions, ${improvements} improvements${update ? (regressions ? " (not updated: fix regressions first)" : " (expected scores updated)") : ""}`);
-  if (regressions) process.exit(1);
+  const updated = update && (regressions === 0 || accepted);
+  console.log(
+    `\nreplay: ${regressions} regressions, ${improvements} improvements` +
+      (update ? (updated ? ` (expected scores updated${regressions ? `; ${regressions} accepted: ${accepted}` : ""})` : " (not updated: fix regressions, or --accept with a reason)") : ""),
+  );
+  if (regressions && !updated) process.exit(1);
 } else if (command === "analyze") {
   const [providerId, model] = split(target);
-  const entries = readCassettes().flatMap((c) => c.entries).filter((e) => e.provider === providerId && e.model === model);
+  const slice = sliceName();
+  const entries = readCassettes().flatMap((c) => c.entries).filter((e) => e.provider === providerId && e.model === model && e.slice === slice);
   if (!entries.length) throw new Error(`no cassette for ${target}`);
   const show = flag("show");
   if (show) {
@@ -265,7 +286,7 @@ if (command === "run") {
   }
 } else if (command === "report") {
   const [providerId, model] = split(target);
-  const b = readBaseline(providerId, model);
+  const b = readBaseline({ provider: providerId, model, slice: sliceName() });
   if (!b) throw new Error(`no baseline for ${target}`);
   const pct = (x: number) => `${Math.round(x * 100)}%`;
   const ci = (i: { value: number; lo: number; hi: number }) => `${pct(i.value)} (${pct(i.lo)}–${pct(i.hi)})`;
@@ -294,8 +315,8 @@ if (command === "run") {
     ...(now ? { trend: now.value > base.value ? "up" : now.value < base.value ? "down" : "flat" } : {}),
   });
   const render = {
-    surface: `bench-${providerId}-${model}`.replace(/[^\w-]/g, "_"),
-    title: `Benchmark · ${providerId} / ${model}${cmp ? " · baseline vs latest" : ""}`,
+    surface: `bench-${providerId}-${model}${b.slice ? `-${b.slice}` : ""}`.replace(/[^\w-]/g, "_"),
+    title: `Benchmark · ${providerId} / ${model}${b.slice ? ` · ${b.slice}` : ""}${cmp ? " · baseline vs latest" : ""}`,
     nodes: [
       { id: "root", type: "stack", children: ["meta", "kpis", "split", "scenarios"] },
       { id: "meta", type: "text", props: { variant: "caption", content: `${b.finished < b.planned ? `PARTIAL ${b.finished}/${b.planned} runs · ` : ""}bench v${b.benchVersion} · plan ${b.config.generation}/${b.config.tier}/${b.config.examples ? "examples" : "plain"} · baseline commit ${b.commit} · ${b.at.slice(0, 16).replace("T", " ")} · intervals are 95%${cmp ? ` · latest: ${compareFile!.split("/").pop()}` : ""}` } },

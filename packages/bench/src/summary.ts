@@ -56,8 +56,20 @@ export function summarize(records: RunRecord[]): Summary {
   };
 }
 
+/**
+ * What saved artifacts are keyed by. A slice names a subset of scenarios
+ * (a category, or a named --only set) so partial runs never overwrite the
+ * model's full baseline.
+ */
+export interface BenchKey {
+  provider: string;
+  model: string;
+  slice?: string;
+}
+
 export interface Baseline {
   benchVersion: number;
+  slice?: string;
   /** Runs planned and finished; a baseline is partial until they match. */
   planned: number;
   finished: number;
@@ -71,44 +83,45 @@ export interface Baseline {
 }
 
 const DATA = new URL("../data/", import.meta.url).pathname;
-const slug = (provider: string, model: string) => `${provider}__${model}`.replace(/[^\w.-]+/g, "_");
+const slug = (k: BenchKey) => `${k.provider}__${k.model}${k.slice ? `__${k.slice}` : ""}`.replace(/[^\w.-]+/g, "_");
 
 export const paths = {
-  baseline: (provider: string, model: string) => `${DATA}baselines/${slug(provider, model)}.json`,
-  cassette: (provider: string, model: string) => `${DATA}cassettes/${slug(provider, model)}.jsonl`,
+  baseline: (k: BenchKey) => `${DATA}baselines/${slug(k)}.json`,
+  cassette: (k: BenchKey) => `${DATA}cassettes/${slug(k)}.jsonl`,
   cassettes: `${DATA}cassettes/`,
 };
 
-export function readBaseline(provider: string, model: string): Baseline | undefined {
-  const p = paths.baseline(provider, model);
+export function readBaseline(k: BenchKey): Baseline | undefined {
+  const p = paths.baseline(k);
   return existsSync(p) ? (JSON.parse(readFileSync(p, "utf8")) as Baseline) : undefined;
 }
 
 export function writeBaseline(b: Baseline): void {
   mkdirSync(`${DATA}baselines`, { recursive: true });
-  writeFileSync(paths.baseline(b.provider, b.model), JSON.stringify(b, null, 2) + "\n");
+  writeFileSync(paths.baseline(b), JSON.stringify(b, null, 2) + "\n");
 }
 
-/** Replace a model's cassette with these records (one JSON object per line). */
-export function writeCassette(provider: string, model: string, records: RunRecord[]): void {
-  startCassette(provider, model);
-  for (const r of records) appendCassette(provider, model, r);
+/** Replace a cassette with these records (one JSON object per line). */
+export function writeCassette(k: BenchKey, records: RunRecord[]): void {
+  startCassette(k);
+  for (const r of records) appendCassette(k, r);
 }
 
-/** Begin a fresh cassette for a model (records are then appended as they finish). */
-export function startCassette(provider: string, model: string): void {
+/** Begin a fresh cassette (records are then appended as they finish). */
+export function startCassette(k: BenchKey): void {
   mkdirSync(paths.cassettes, { recursive: true });
-  writeFileSync(paths.cassette(provider, model), "");
+  writeFileSync(paths.cassette(k), "");
 }
 
 /** Persist one record immediately, so a stopped run keeps everything it measured. */
-export function appendCassette(provider: string, model: string, record: RunRecord): void {
-  appendFileSync(paths.cassette(provider, model), JSON.stringify({ provider, model, ...record }) + "\n");
+export function appendCassette(k: BenchKey, record: RunRecord): void {
+  appendFileSync(paths.cassette(k), JSON.stringify({ provider: k.provider, model: k.model, ...(k.slice ? { slice: k.slice } : {}), ...record }) + "\n");
 }
 
 export interface CassetteEntry extends RunRecord {
   provider: string;
   model: string;
+  slice?: string;
 }
 
 export function readCassettes(): { file: string; entries: CassetteEntry[] }[] {

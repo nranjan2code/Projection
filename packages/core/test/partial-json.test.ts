@@ -62,3 +62,16 @@ test("an array closed too early continues with the values after it", () => {
   assert.deepEqual(parseLenient('[{"id":"root"}], {"id":"a"}, {"id":"b"}]'), [{ id: "root" }, { id: "a" }, { id: "b" }]);
   assert.deepEqual(parseLenient("[1, 2]"), [1, 2]);
 });
+
+test("a mismatched closer is read the way the text after it parses", () => {
+  // "}" typed instead of "]": a member follows, so we are still in the card.
+  assert.deepEqual(parseLenient('[{"id":"card","children":[{"id":"a"}}, "data": {"x": 1}}, {"id":"b"}]'), [
+    { id: "card", children: [{ id: "a" }], data: { x: 1 } },
+    { id: "b" },
+  ]);
+  // "]" omitted: an array element follows, so the "}" closes the stack.
+  assert.deepEqual(parseLenient('[{"id":"stack","children":[{"id":"a"}}, {"id":"b"}]'), [
+    { id: "stack", children: [{ id: "a" }] },
+    { id: "b" },
+  ]);
+});
