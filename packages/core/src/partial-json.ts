@@ -1,0 +1,298 @@
+// Lenient, streaming-tolerant JSON parser.
+//
+// - Parses any prefix of a JSON document, closing whatever is still open, so a
+//   UI can render while tool-call arguments stream in.
+// - Repairs what models commonly emit: code fences and prose around the JSON,
+//   comments, trailing commas, single quotes, unquoted keys, raw newlines in
+//   strings, Python-style True/False/None, and keyless values inside an object
+//   ({"body": "a", "b"} — the stray value continues the previous member).
+// - Reports which containers are unfinished and which object keys hold a
+//   string that was cut off, so callers never act on a half-written id.
+
+export interface PartialResult {
+  value: unknown;
+  /** The root value closed and nothing was cut off. */
+  complete: boolean;
+  /** Objects/arrays whose closing bracket has not arrived. */
+  incomplete: WeakSet<object>;
+  /** Keys whose string value was truncated, per object. */
+  partialKeys: WeakMap<object, Set<string>>;
+}
+
+const MISSING = Symbol("missing");
+type Parsed = unknown | typeof MISSING;
+
+const IDENT_VALUES: Record<string, unknown> = {
+  true: true, false: false, null: null,
+  True: true, False: false, None: null, undefined: null,
+};
+
+class Parser {
+  private i = 0;
+  private truncated = false;
+  readonly incomplete = new WeakSet<object>();
+  readonly partialKeys = new WeakMap<object, Set<string>>();
+  private s: string;
+  /** The text is finished: values touching EOF are not still growing. */
+  private final: boolean;
+
+  constructor(s: string, final: boolean) {
+    this.s = s;
+    this.final = final;
+  }
+
+  get eof(): boolean {
+    return this.i >= this.s.length;
+  }
+
+  get sawTruncation(): boolean {
+    return this.truncated;
+  }
+
+  skip(): void {
+    const s = this.s;
+    while (this.i < s.length) {
+      const c = s[this.i]!;
+      if (c === " " || c === "\n" || c === "\r" || c === "\t") this.i++;
+      else if (c === "/" && s[this.i + 1] === "/") {
+        while (this.i < s.length && s[this.i] !== "\n") this.i++;
+      } else if (c === "/" && s[this.i + 1] === "*") {
+        const end = s.indexOf("*/", this.i + 2);
+        this.i = end < 0 ? s.length : end + 2;
+      } else break;
+    }
+  }
+
+  value(): Parsed {
+    this.skip();
+    if (this.eof) {
+      this.truncated = true;
+      return MISSING;
+    }
+    const c = this.s[this.i]!;
+    if (c === "{") return this.object();
+    if (c === "[") return this.array();
+    if (c === '"' || c === "'") return this.string().value;
+    if (c === "-" || c === "+" || c === "." || (c >= "0" && c <= "9")) return this.number();
+    return this.ident();
+  }
+
+  object(): Parsed {
+    this.i++;
+    const obj: Record<string, unknown> = {};
+    let lastKey: string | undefined;
+    for (;;) {
+      this.skip();
+      if (this.eof) {
+        this.truncated = true;
+        this.incomplete.add(obj);
+        return obj;
+      }
+      const c = this.s[this.i]!;
+      if (c === "}") {
+        this.i++;
+        return obj;
+      }
+      if (c === ",") {
+        this.i++;
+        continue;
+      }
+      if (c === "]") {
+        // Mismatched bracket from a sloppy model: treat as close.
+        this.i++;
+        return obj;
+      }
+      const key = this.key();
+      if (key === MISSING) {
+        this.incomplete.add(obj);
+        return obj;
+      }
+      this.skip();
+      const next = this.s[this.i];
+      if (next === "," || next === "}") {
+        // A value with no key: it continues the previous member.
+        if (lastKey !== undefined) {
+          const prev = obj[lastKey];
+          if (typeof prev === "string") obj[lastKey] = `${prev}\n${key as string}`;
+          else if (Array.isArray(prev)) prev.push(key);
+        }
+        continue;
+      }
+      if (next === ":" || next === "=") this.i++;
+      const before = this.truncated;
+      const isString = this.peekString();
+      const v = this.value();
+      if (v === MISSING) {
+        this.incomplete.add(obj);
+        return obj;
+      }
+      if (key === "__proto__") continue;
+      obj[key as string] = v;
+      lastKey = key as string;
+      if (isString && this.truncated && !before) {
+        let set = this.partialKeys.get(obj);
+        if (!set) this.partialKeys.set(obj, (set = new Set()));
+        set.add(key as string);
+      }
+      if (this.truncated) {
+        this.incomplete.add(obj);
+        return obj;
+      }
+    }
+  }
+
+  array(): Parsed {
+    this.i++;
+    const arr: unknown[] = [];
+    for (;;) {
+      this.skip();
+      if (this.eof) {
+        this.truncated = true;
+        this.incomplete.add(arr);
+        return arr;
+      }
+      const c = this.s[this.i]!;
+      if (c === "]" || c === "}") {
+        this.i++;
+        return arr;
+      }
+      if (c === ",") {
+        this.i++;
+        continue;
+      }
+      const v = this.value();
+      if (v === MISSING) {
+        this.incomplete.add(arr);
+        return arr;
+      }
+      arr.push(v);
+      if (this.truncated) {
+        this.incomplete.add(arr);
+        return arr;
+      }
+    }
+  }
+
+  peekString(): boolean {
+    this.skip();
+    const c = this.s[this.i];
+    return c === '"' || c === "'";
+  }
+
+  key(): Parsed {
+    const c = this.s[this.i]!;
+    if (c === '"' || c === "'") {
+      const { value, closed } = this.string();
+      return closed ? value : MISSING;
+    }
+    const m = /^[A-Za-z_$][\w$-]*/.exec(this.s.slice(this.i));
+    if (!m) {
+      // Unparseable junk: skip a char so we always make progress.
+      this.i++;
+      return this.eof ? MISSING : this.key();
+    }
+    this.i += m[0].length;
+    if (this.eof && !this.final) {
+      this.truncated = true;
+      return MISSING;
+    }
+    return m[0];
+  }
+
+  string(): { value: string; closed: boolean } {
+    const quote = this.s[this.i++]!;
+    let out = "";
+    const s = this.s;
+    while (this.i < s.length) {
+      const c = s[this.i++]!;
+      if (c === quote) return { value: out, closed: true };
+      if (c !== "\\") {
+        out += c;
+        continue;
+      }
+      if (this.i >= s.length) break;
+      const e = s[this.i++]!;
+      switch (e) {
+        case "n": out += "\n"; break;
+        case "t": out += "\t"; break;
+        case "r": out += "\r"; break;
+        case "b": out += "\b"; break;
+        case "f": out += "\f"; break;
+        case "u": {
+          const hex = s.slice(this.i, this.i + 4);
+          if (hex.length < 4) {
+            this.i = s.length;
+            break;
+          }
+          out += String.fromCharCode(parseInt(hex, 16));
+          this.i += 4;
+          break;
+        }
+        default: out += e;
+      }
+    }
+    this.truncated = true;
+    return { value: out, closed: false };
+  }
+
+  number(): Parsed {
+    const m = /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?/.exec(this.s.slice(this.i));
+    if (!m) {
+      this.i++;
+      if (this.eof) this.truncated = true;
+      return MISSING;
+    }
+    this.i += m[0].length;
+    // A number touching EOF may still be growing ("12" -> "123"); drop it.
+    if (this.eof && !this.final) {
+      this.truncated = true;
+      return MISSING;
+    }
+    return Number(m[0]);
+  }
+
+  ident(): Parsed {
+    const m = /^[A-Za-z_]\w*/.exec(this.s.slice(this.i));
+    if (!m) {
+      this.i++;
+      return this.eof ? ((this.truncated = true), MISSING) : this.value();
+    }
+    this.i += m[0].length;
+    if (m[0] in IDENT_VALUES) return IDENT_VALUES[m[0]];
+    if (this.eof && !this.final) {
+      // Probably the prefix of true/false/null.
+      this.truncated = true;
+      return MISSING;
+    }
+    // Bare word: keep it as a string rather than failing.
+    return m[0];
+  }
+}
+
+function startOfJson(text: string): number {
+  const fence = /```(?:json|jsonc)?\s*/i.exec(text);
+  const from = fence ? fence.index + fence[0].length : 0;
+  const obj = text.indexOf("{", from);
+  const arr = text.indexOf("[", from);
+  if (obj < 0) return arr < 0 ? from : arr;
+  if (arr < 0) return obj;
+  return Math.min(obj, arr);
+}
+
+export function parsePartial(text: string, opts: { final?: boolean } = {}): PartialResult {
+  const p = new Parser(text.slice(startOfJson(text)), opts.final ?? false);
+  const v = p.value();
+  return {
+    value: v === MISSING ? undefined : v,
+    complete: v !== MISSING && !p.sawTruncation,
+    incomplete: p.incomplete,
+    partialKeys: p.partialKeys,
+  };
+}
+
+/** Parse a finished (possibly sloppy) JSON string; throws if nothing usable. */
+export function parseLenient(text: string): unknown {
+  const r = parsePartial(text, { final: true });
+  if (r.value === undefined) throw new SyntaxError("No JSON value found");
+  return r.value;
+}

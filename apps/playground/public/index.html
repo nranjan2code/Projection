@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>vak playground</title>
+    <link rel="stylesheet" href="/app/app.css" />
+    <script type="importmap">
+      { "imports": { "@vak/core": "/pkg/core/index.ts", "@vak/web": "/pkg/web/index.ts" } }
+    </script>
+    <script type="module" src="/app/app.ts"></script>
+  </head>
+  <body>
+    <header class="bar">
+      <div class="brand"><span class="logo" aria-hidden="true"></span><strong>vak</strong><span class="muted">projection playground</span></div>
+      <div class="controls">
+        <label class="ctl"><span>Provider</span><select id="provider"></select></label>
+        <label class="ctl grow"><span>Model</span><input id="model" list="models" autocomplete="off" spellcheck="false" /><datalist id="models"></datalist></label>
+        <div class="seg" id="viewport" role="radiogroup" aria-label="Preview width">
+          <button type="button" data-w="fluid" aria-pressed="true" title="Full width">Desktop</button>
+          <button type="button" data-w="tablet" aria-pressed="false" title="768px">Tablet</button>
+          <button type="button" data-w="phone" aria-pressed="false" title="390px">Phone</button>
+        </div>
+        <button type="button" class="ghost" id="settings-toggle" aria-expanded="false" aria-controls="settings">Options</button>
+        <button type="button" class="ghost" id="reset">New chat</button>
+      </div>
+      <div id="settings" class="settings" hidden>
+        <label class="check"><input type="checkbox" id="think" /> Model thinking (Ollama)</label>
+        <label class="ctl"><span>Generation</span><select id="generation"><option value="auto">auto</option><option value="tools">tools</option><option value="constrained">constrained</option></select></label>
+        <label class="ctl"><span>Schema</span><select id="schema"><option value="compact">compact</option><option value="strict">strict</option></select></label>
+        <label class="ctl"><span>Effort</span><select id="effort"><option value="">default</option><option>low</option><option>medium</option><option>high</option></select></label>
+        <span class="muted" id="session-label"></span>
+      </div>
+    </header>
+
+    <main id="thread" class="thread" aria-live="polite">
+      <section class="empty" id="empty">
+        <h1>Ask for anything. Get an interface.</h1>
+        <p class="muted">The model calls <code>vak_render</code>; the engine repairs, validates and projects it onto this screen. Resize the preview to see the layout adapt.</p>
+        <div class="samples" id="samples"></div>
+      </section>
+    </main>
+
+    <form id="composer" class="composer">
+      <textarea id="input" rows="1" placeholder="Compare three hotels in Kyoto and let me book one…" aria-label="Message"></textarea>
+      <button type="submit" id="send" class="send" aria-label="Send">
+        <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 12h14M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </form>
+  </body>
+</html>
