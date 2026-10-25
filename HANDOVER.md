@@ -7,7 +7,7 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 ```
 Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection.
 
-First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 207 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
+First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 208 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
 
 Focus: the core system (engine, catalog, projectors: web, text, Markdown, terminal, email, Telegram, Slack, Discord) and the bench, plus the desktop app (apps/desktop, also served as the playground) and its integrations. Telegram live testing is parked: don't start the bot unless I ask. No Slack/Discord bots.
 
@@ -23,9 +23,11 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
+- **Canvas and Artifacts:** app-only canvas beside chat, with a dedicated **Artifacts** page (one sidebar entry), metadata cards across saved chats, search/type filters/sorting/pagination, and reopening into the originating chat. The canvas moves the live surface rather than duplicating it, preserving drafts/actions; includes Preview/Text, copy, native/browser Markdown download, a surface picker, resize, full/split view, and shortcuts. Large interfaces auto-open once; saved selection restores per chat. Host session listing adds lightweight `surfaceSummaries` without messages/data. Research and verification: [apps/desktop/CANVAS.md](apps/desktop/CANVAS.md); deterministic wide/narrow WebKit smoke: `node apps/desktop/scripts/canvas-check.ts` after the UI build. No paid model calls. Verified: 208 Node tests and typecheck pass; WebKit smoke passes at 1100px and 620px (including a 27-item library); native export test passes (path confinement, duplicate names, existing files and symlinks). `npm run desktop:build` produced the `.app` and `.dmg` successfully. This round did not install or restart the user's app.
+
 - **Desktop FinOps:** Settings → FinOps now has duration, context composition, repeated context, output shape, token/cache and estimated-cost charts, per-turn details, a chat filter, editable model rates and CSV export. This is app-only (`apps/desktop`); keep accounting and prices out of the projection framework. Provider requests are observed by an app wrapper; telemetry is numeric and local. Old sessions are reconstructed with unknown usage/spend. See [apps/desktop/FINOPS.md](apps/desktop/FINOPS.md). Verified against a copy of the installed app's 22 turns (555s); WebKit rendered six charts with no horizontal overflow and turn selection worked. Five accounting tests include an authenticated HTTP chat against a local fake provider (no paid model call). Full suite: 194 passing, typecheck and UI build clean. The installed release needs a new build to include this feature.
 
-- **Tests:** 207 passing, typecheck clean, including five desktop FinOps tests. Latest framework round: rich-component contracts, list/step recovery and quoted table bindings.
+- **Tests:** 208 passing, typecheck clean, including five desktop FinOps tests. Latest framework round: rich-component contracts, list/step recovery and quoted table bindings.
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios), re-recorded 2026-10-25 after the bench-category fixes:
 
   | | Now | Previous | Old flat baseline |

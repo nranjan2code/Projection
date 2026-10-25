@@ -45,6 +45,14 @@ export interface SessionSummary {
   id: string;
   title: string;
   updated: string;
+  /** Lightweight discovery: no messages, surface data or form values. */
+  surfaceSummaries?: SurfaceSummary[];
+}
+
+export interface SurfaceSummary { id: string; title?: string; types: string[] }
+
+function surfaceSummary(s: { id: string; title?: string }, nodes: Iterable<{ type: string }>): SurfaceSummary {
+  return { id: s.id, title: s.title, types: [...new Set([...nodes].map((n) => n.type))] };
 }
 
 export interface SessionView extends SessionSummary {
@@ -254,7 +262,7 @@ export function createHost(opts: HostOptions): VakHost {
       const file = sessionFile(s.id);
       await writeFile(`${file}.tmp`, JSON.stringify(saved));
       await rename(`${file}.tmp`, file);
-      (await summaries()).set(s.id, { id: s.id, title: s.title, updated: s.updated });
+      (await summaries()).set(s.id, { id: s.id, title: s.title, updated: s.updated, surfaceSummaries: saved.surfaces.map((snap) => surfaceSummary(snap, snap.nodes)) });
     } catch (err) {
       log(`session not saved: ${(err as Error).message}`);
     }
@@ -278,7 +286,7 @@ export function createHost(opts: HostOptions): VakHost {
       for (const f of files) {
         try {
           const saved = JSON.parse(await readFile(path.join(opts.sessionsDir, f), "utf8")) as SavedSession;
-          out.set(saved.id, { id: saved.id, title: saved.title, updated: saved.updated });
+          out.set(saved.id, { id: saved.id, title: saved.title, updated: saved.updated, surfaceSummaries: (saved.surfaces ?? []).map((snap) => surfaceSummary(snap, snap.nodes)) });
         } catch {
           /* unreadable file: skip it */
         }
@@ -290,7 +298,10 @@ export function createHost(opts: HostOptions): VakHost {
 
   async function listSessions(): Promise<SessionSummary[]> {
     const out = new Map(await summaries());
-    for (const s of sessions.values()) if (s.timeline.length) out.set(s.id, { id: s.id, title: s.title, updated: s.updated });
+    for (const s of sessions.values()) if (s.timeline.length) out.set(s.id, {
+      id: s.id, title: s.title, updated: s.updated,
+      surfaceSummaries: s.store.list().map((st) => surfaceSummary(st, st.nodes.values())),
+    });
     return [...out.values()].sort((a, b) => b.updated.localeCompare(a.updated));
   }
 

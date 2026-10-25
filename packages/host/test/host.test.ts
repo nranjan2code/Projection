@@ -6,7 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { readSse } from "@vak/core";
 import { ProfileCache, type Provider, type ProviderEntry, type ProviderEvent } from "@vak/providers";
-import { createHost, type HostOptions, type SessionView, type VakHost } from "@vak/host";
+import { createHost, type HostOptions, type SessionSummary, type SessionView, type VakHost } from "@vak/host";
 
 /** A provider that says one sentence and renders one surface (a clean projection ends the turn). */
 function scripted(): Provider {
@@ -91,6 +91,37 @@ test("with a token, requests without it are refused; allowed origins get CORS", 
   const pre = await fetch(`${base}/api/chat`, { method: "OPTIONS", headers: { origin: "tauri://localhost" } });
   assert.equal(pre.status, 204);
   server.close();
+});
+
+test("session discovery indexes surfaces across restart without exposing form values, and tracks removal", async () => {
+  const first = await serve({ token: "library-test" });
+  const headers = { authorization: "Bearer library-test", "content-type": "application/json" };
+  const project = async (base: string, session: string, tool: string, args: unknown) => {
+    const res = await fetch(`${base}/api/project`, { method: "POST", headers, body: JSON.stringify({ session, tool, args }) });
+    assert.equal(res.status, 200);
+  };
+  try {
+    for (const id of ["first", "second"]) await project(first.base, id, "vak_render", {
+      surface: "same-id", title: `${id} signup`, data: { email: "private@example.com" },
+      nodes: [{ id: "root", type: "form", props: { submit: "save" }, children: [{ id: "email", type: "input", props: { label: "Email", bind: "/email" } }] }],
+    });
+    const list = await (await fetch(`${first.base}/api/sessions`, { headers })).json() as SessionSummary[];
+    assert.equal(list.length, 2);
+    assert.equal(JSON.stringify(list).includes("private@example.com"), false);
+    assert.deepEqual(list.find(s => s.id === "first")?.surfaceSummaries, [{ id: "same-id", title: "first signup", types: ["form", "input"] }]);
+    assert.equal((await fetch(`${first.base}/api/sessions`)).status, 401);
+    const second = await serve({ token: "library-test", sessionsDir: path.join(first.dir, "sessions") });
+    try {
+      const restored = await (await fetch(`${second.base}/api/sessions`, { headers })).json() as SessionSummary[];
+      assert.deepEqual(restored.find(s => s.id === "second")?.surfaceSummaries, [{ id: "same-id", title: "second signup", types: ["form", "input"] }]);
+      await project(second.base, "first", "vak_remove", { surface: "same-id" });
+      let current = await (await fetch(`${second.base}/api/sessions`, { headers })).json() as SessionSummary[];
+      assert.deepEqual(current.find(s => s.id === "first")?.surfaceSummaries, []);
+      await fetch(`${second.base}/api/sessions/second`, { method: "DELETE", headers });
+      current = await (await fetch(`${second.base}/api/sessions`, { headers })).json() as SessionSummary[];
+      assert.deepEqual(current.map(s => s.id), ["first"]);
+    } finally { second.server.close(); }
+  } finally { first.server.close(); }
 });
 
 test("paths outside /api are left to the app", async () => {
