@@ -154,7 +154,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 1. **Ask the user to retry Appearance in the installed app**; if it still fails, read `~/Library/Application Support/com.vakprojection.desktop/logs/engine.log` (`[ui error]` lines).
 2. **Bench A/B for compact output** (4B): the interface JSON is ~1.3k tokens per answer; a shorter authoring (data-first rows, fewer repeated props) could halve decode time. Measure with `npm run bench -- gate ... --plan`, never change blindly.
 3. **Bench scenarios for the new components and totals**, so the replay gate protects them (none recorded yet).
-4. **Decisions for the user before publishing:** a license (the repo has none), and whether the `@vak` npm scope is available to them (it is not registered today).
+4. **Before publishing:** confirm whether the `@vak` npm scope is available. The user chose MIT licensing and no external contributions; see `LICENSE` and `CONTRIBUTING.md`.
 5. **Integrations, next:** OAuth for remote servers (Linear, Notion remote), an update check against newer pinned versions, macOS sandbox profiles for local servers.
 6. **Parked until the user asks: Telegram live** (start the bot; the saved Save Details press replays).
 7. **Optional, ask first:** code signing/notarization and auto-update; Windows/Linux builds; near-miss id pairing.
