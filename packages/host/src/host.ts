@@ -117,7 +117,34 @@ interface SavedSession {
   external: string[];
 }
 
+/** Trusted in-process execution; transport controls never come from a chat request body. */
+export interface HostTurn {
+  session: string;
+  provider: string;
+  model: string;
+  message?: string;
+  action?: { surface: string; source: string; data: Record<string, unknown> };
+  think?: boolean;
+  schemaMode?: string;
+  generation?: string;
+  effort?: string;
+  history?: number;
+}
+
+export interface HostRunOptions {
+  signal?: AbortSignal;
+  emit?: (event: AgentEvent) => void;
+  tools?: AgentTool[];
+  instructions?: string;
+  maxSteps?: number;
+  maxTokens?: number;
+}
+
 export interface VakHost {
+  /** Runs on the canonical session/store, independent of any UI connection. Busy sessions reject. */
+  run(input: HostTurn, options?: HostRunOptions): Promise<{ stop: string }>;
+  /** A detached copy of the canonical view; never exposes mutable session internals. */
+  view(id: string): Promise<SessionView>;
   /** Handle a request; false when the path is not the host's (serve it yourself). */
   handle(req: IncomingMessage, res: ServerResponse): Promise<boolean>;
   /**
@@ -180,6 +207,7 @@ export function createHost(opts: HostOptions): VakHost {
   const catalog = opts.catalog ?? basicCatalog;
   const log = opts.log ?? ((line: string) => console.log(line));
   const sessions = new Map<string, Session>();
+  const detached = new Map<string, AbortController>();
   const instructions = () => (typeof opts.instructions === "function" ? opts.instructions() : opts.instructions);
   const provider = (id: unknown) => opts.providers().find((p) => p.id === id);
   const approvals = new Map<string, (d: "allow" | "allow-chat" | "deny") => void>();
@@ -244,7 +272,7 @@ export function createHost(opts: HostOptions): VakHost {
     }
   }
 
-  async function save(s: Session): Promise<void> {
+  async function save(s: Session, strict = false): Promise<void> {
     if (!opts.sessionsDir || !s.timeline.length) return;
     const saved: SavedSession = {
       id: s.id,
@@ -265,6 +293,7 @@ export function createHost(opts: HostOptions): VakHost {
       (await summaries()).set(s.id, { id: s.id, title: s.title, updated: s.updated, surfaceSummaries: saved.surfaces.map((snap) => surfaceSummary(snap, snap.nodes)) });
     } catch (err) {
       log(`session not saved: ${(err as Error).message}`);
+      if (strict) throw err;
     }
   }
 
@@ -338,20 +367,10 @@ export function createHost(opts: HostOptions): VakHost {
   }
 
   // --- chat -------------------------------------------------------------------
-  async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const body = await readJson(req);
+  async function executeTurn(body: HostTurn, s: Session, ctrl: AbortController, controls: HostRunOptions, broadcast: boolean): Promise<{ stop: string }> {
     const entry = provider(body.provider);
-    if (!entry?.available) return json(res, 400, { error: `provider ${body.provider} unavailable` });
-    if (typeof body.model !== "string" || !body.model) return json(res, 400, { error: "model required" });
-    const s = await session(String(body.session ?? "default"));
-    s.busy?.abort();
-    const ctrl = new AbortController();
-    s.busy = ctrl;
-    res.on("close", () => {
-      if (!res.writableFinished) ctrl.abort();
-    });
-
-    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+    if (!entry?.available) throw new Error(`provider ${body.provider} unavailable`);
+    if (!body.model) throw new Error("model required");
     const reply: Extract<TimelineEntry, { kind: "assistant" }> = { kind: "assistant", text: "", surfaces: [], notes: [], status: "", at: now() };
     const emit = (e: AgentEvent) => {
       // The timeline mirrors what the client draws, so a reopened chat looks the same.
@@ -361,7 +380,8 @@ export function createHost(opts: HostOptions): VakHost {
       else if (e.type === "tool_end" && !e.name.startsWith("vak_")) (reply.used ??= []).push({ name: e.name, ok: !e.isError });
       else if (e.type === "tool_end" && (e.isError || e.result !== "ok")) reply.notes.push({ name: e.name, result: e.result });
       else if (e.type === "error") Object.assign(reply, { status: e.message, error: true });
-      res.write(encodeSse(e));
+      controls.emit?.(e);
+      if (broadcast) for (const viewer of s.viewers) viewer(e);
     };
 
     if (body.action && typeof body.action === "object") {
@@ -371,7 +391,7 @@ export function createHost(opts: HostOptions): VakHost {
       if (!result.action) {
         emit({ type: "error", message: `action rejected: ${JSON.stringify(result.errors)}` });
         emit({ type: "run_end", stop: "error" });
-        return void res.end();
+        return { stop: "error" };
       }
       s.timeline.push({ kind: "action", action: result.action.action, at: now() });
       if (s.external.has(result.action.surface)) {
@@ -381,15 +401,15 @@ export function createHost(opts: HostOptions): VakHost {
         emit({ type: "text_delta", delta: "Sent to the agent that projected this surface." });
         emit({ type: "run_end", stop: "delivered" });
         s.timeline.push({ ...reply, status: "delivered" });
-        await save(s);
-        return void res.end();
+        await save(s, broadcast);
+        return { stop: "delivered" };
       }
       s.messages.push(actionMessage(result.action));
     } else {
       const text = String(body.message ?? "").trim();
       if (!text) {
         emit({ type: "error", message: "empty message" });
-        return void res.end();
+        return { stop: "error" };
       }
       if (!s.timeline.length) s.title = titleOf(text);
       s.timeline.push({ kind: "user", text, at: now() });
@@ -403,7 +423,7 @@ export function createHost(opts: HostOptions): VakHost {
       emit({ type: "plan", generation, tier, examples, authoring, maxSteps, reasons });
     }
 
-    const tools = (await opts.tools?.({ session: s.id })) ?? [];
+    const tools = controls.tools ?? (await opts.tools?.({ session: s.id })) ?? [];
     const started = Date.now();
     const from = s.messages.length - 1;
     const result = await runAgent({
@@ -413,12 +433,14 @@ export function createHost(opts: HostOptions): VakHost {
       store: s.store,
       messages: s.messages,
       emit,
-      instructions: instructions(),
+      instructions: controls.instructions ?? instructions(),
+      maxSteps: controls.maxSteps,
+      maxTokens: controls.maxTokens,
       schemaMode: body.schemaMode === "strict" ? "strict" : "compact",
       // Grammar-constrained output cannot call other tools; integrations need tool calling.
-      generation: tools.length ? "tools" : ["tools", "constrained"].includes(body.generation) ? body.generation : "auto",
+      generation: tools.length ? "tools" : body.generation === "tools" || body.generation === "constrained" ? body.generation : "auto",
       tools,
-      effort: ["low", "medium", "high"].includes(body.effort) ? body.effort : undefined,
+      effort: body.effort === "low" || body.effort === "medium" || body.effort === "high" ? body.effort : undefined,
       history: typeof body.history === "number" && body.history > 0 ? body.history : undefined,
       signal: ctrl.signal,
     });
@@ -428,9 +450,50 @@ export function createHost(opts: HostOptions): VakHost {
     s.timeline.push(reply);
     s.updated = now();
     await record(s.id, s.messages.slice(from));
-    await save(s);
-    if (s.busy === ctrl) s.busy = undefined;
-    res.end();
+    await save(s, broadcast);
+    return result;
+  }
+
+  async function run(input: HostTurn, controls: HostRunOptions = {}): Promise<{ stop: string }> {
+    const s = await session(input.session);
+    if (s.busy) throw new Error("session already running");
+    const ctrl = new AbortController();
+    const abort = () => ctrl.abort(controls.signal?.reason);
+    if (controls.signal?.aborted) throw new Error("run cancelled");
+    controls.signal?.addEventListener("abort", abort, { once: true });
+    s.busy = ctrl;
+    detached.set(s.id, ctrl);
+    try { return await executeTurn(input, s, ctrl, controls, true); }
+    finally {
+      if (detached.get(s.id) === ctrl) detached.delete(s.id);
+      controls.signal?.removeEventListener("abort", abort);
+      if (s.busy === ctrl) s.busy = undefined;
+    }
+  }
+
+  async function view(id: string): Promise<SessionView> {
+    const s = await session(id);
+    return structuredClone({ id: s.id, title: s.title, updated: s.updated, timeline: s.timeline, surfaces: s.store.list().map((st) => s.store.snapshot(st.id)!) });
+  }
+
+  async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await readJson(req);
+    const entry = provider(body.provider);
+    if (!entry?.available) return json(res, 400, { error: `provider ${body.provider} unavailable` });
+    if (typeof body.model !== "string" || !body.model) return json(res, 400, { error: "model required" });
+    const s = await session(String(body.session ?? "default"));
+    // HTTP callers cannot take over an independently running session.
+    if (s.busy && detached.has(s.id)) return json(res, 409, { error: "session already running" });
+    s.busy?.abort();
+    const ctrl = new AbortController();
+    s.busy = ctrl;
+    res.on("close", () => { if (!res.writableFinished) ctrl.abort(); });
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+    try { await executeTurn({ ...body, session: s.id } as HostTurn, s, ctrl, { emit: (e) => { res.write(encodeSse(e)); } }, false); }
+    finally {
+      if (s.busy === ctrl) s.busy = undefined;
+      res.end();
+    }
   }
 
   // --- calibration ------------------------------------------------------------
@@ -464,6 +527,7 @@ export function createHost(opts: HostOptions): VakHost {
   async function handleProject(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const body = await readJson(req);
     const sessionId = String(body.session ?? "default");
+    if (detached.has(sessionId)) return json(res, 409, { error: "session already running" });
     const s = await session(sessionId);
     const tool = String(body.tool ?? "vak_render");
     const diagnostics = s.store.apply(tool, body.args ?? {});
@@ -522,6 +586,7 @@ export function createHost(opts: HostOptions): VakHost {
   async function handleEvents(res: ServerResponse, url: URL): Promise<void> {
     const s = await session(url.searchParams.get("session") ?? "default");
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+    res.flushHeaders();
     const send = (e: AgentEvent) => res.write(encodeSse(e));
     for (const st of s.store.list()) send({ type: "surface", snapshot: s.store.snapshot(st.id)! });
     s.viewers.add(send);
@@ -575,6 +640,8 @@ export function createHost(opts: HostOptions): VakHost {
   }
 
   return {
+    run,
+    view,
     approve,
     async handle(req, res) {
       const url = new URL(req.url ?? "/", "http://localhost");
@@ -624,6 +691,7 @@ export function createHost(opts: HostOptions): VakHost {
         else if (p.startsWith("/api/sessions/")) {
           const id = decodeURIComponent(p.slice("/api/sessions/".length));
           if (m === "DELETE") {
+            if (detached.has(id)) { json(res, 409, { error: "session already running" }); return true; }
             await dropSession(id);
             json(res, 200, { ok: true });
           } else if (m === "PUT") {
@@ -638,12 +706,11 @@ export function createHost(opts: HostOptions): VakHost {
               json(res, 200, { id: s.id, title: s.title, updated: s.updated });
             }
           } else if (m === "GET") {
-            const s = await session(id);
-            const view: SessionView = { id: s.id, title: s.title, updated: s.updated, timeline: s.timeline, surfaces: s.store.list().map((st) => s.store.snapshot(st.id)!) };
-            json(res, 200, view);
+            json(res, 200, await view(id));
           } else json(res, 405, { error: "method not allowed" });
         } else if (m === "POST" && p === "/api/reset") {
           const body = await readJson(req);
+          if (detached.has(String(body.session))) { json(res, 409, { error: "session already running" }); return true; }
           await dropSession(String(body.session));
           json(res, 200, { ok: true });
         } else json(res, 404, { error: "not found" });

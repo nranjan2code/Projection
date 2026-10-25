@@ -232,3 +232,68 @@ test("an integration tool on Ask waits for the user; the timeline keeps its name
   assert.doesNotMatch(JSON.stringify(view.timeline), /PRIVATE PAGE TEXT/);
   server.close();
 });
+
+test("in-process runs survive viewer disconnects, reject takeover, and share canonical session state", async () => {
+  let release!: () => void;
+  let started!: () => void;
+  const ready = new Promise<void>((r) => { started = r; });
+  const wait = new Promise<void>((r) => { release = r; });
+  const p: Provider = { ...scripted(), async *stream(req) {
+    started();
+    await wait;
+    assert.equal(req.signal?.aborted, false);
+    yield* scripted().stream(req);
+  } };
+  const { host, server, base } = await serve({}, p);
+  try {
+    const watching = new AbortController();
+    const events = await fetch(`${base}/api/events?session=background`, { signal: watching.signal });
+    const running = host.run({ session: "background", provider: "scripted", model: "m", message: "Show revenue" });
+    await ready;
+    watching.abort();
+    await events.body?.cancel().catch(() => {});
+    await assert.rejects(host.run({ session: "background", provider: "scripted", model: "m", message: "Take over" }), /already running/);
+    const takeover = await fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session: "background", provider: "scripted", model: "m", message: "Take over" }) });
+    assert.equal(takeover.status, 409);
+    for (const [route, method, body] of [
+      ["/api/project", "POST", { session: "background", args: { surface: "injected", nodes: [] } }],
+      ["/api/reset", "POST", { session: "background" }],
+      ["/api/sessions/background", "DELETE", undefined],
+    ] as const) {
+      const response = await fetch(base + route, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+      assert.equal(response.status, 409);
+    }
+    release();
+    assert.equal((await running).stop, "projected");
+    const view = await host.view("background");
+    assert.equal(view.surfaces[0]?.id, "kpi");
+    view.surfaces.length = 0;
+    assert.equal((await host.view("background")).surfaces.length, 1);
+    assert.equal((await (await fetch(`${base}/api/sessions/background`)).json() as SessionView).surfaces.length, 1);
+  } finally { release(); server.close(); }
+});
+
+test("in-process actions validate and preserve multiple canonical surfaces", async () => {
+  const p: Provider = { ...scripted(), async *stream() {
+    for (const id of ["first", "second"]) {
+      yield { type: "tool_start", id, name: "vak_render" };
+      yield { type: "tool_args", id, delta: JSON.stringify({ surface: id, nodes: [{ id: "root", type: "form", props: { submit: "save" }, children: [{ id: "name", type: "input", props: { bind: "/name", checks: ["required"] } }] }] }) };
+      yield { type: "tool_end", id };
+    }
+    yield { type: "done", stop: "tool_use" };
+  } };
+  const { host, server } = await serve({}, p);
+  const input = { session: "forms", provider: "scripted", model: "m" };
+  try {
+    await host.run({ ...input, message: "Two forms" });
+    assert.equal((await host.view("forms")).surfaces.length, 2);
+    const result = await host.run({ ...input, action: { surface: "first", source: "root", data: { name: "" } } });
+    assert.equal(result.stop, "error");
+    assert.equal((await host.view("forms")).surfaces.length, 2);
+    const ctrl = new AbortController(); ctrl.abort();
+    await assert.rejects(host.run({ ...input, message: "Do not run" }, { signal: ctrl.signal }), /cancelled/);
+    await assert.rejects(host.run({ ...input, message: "Unavailable", provider: "absent" }), /unavailable/);
+    // A failed admission must release the session for its next legitimate request.
+    assert.equal((await host.run({ ...input, message: "Again" })).stop, "projected");
+  } finally { server.close(); }
+});

@@ -23,6 +23,8 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
+- **In-process host execution (2026-10-25):** additive public `run` and `view` APIs reuse the host's canonical sessions, surfaces and validation. Runs are independent of UI connection lifetime and reject mutation takeover; transport chat keeps its prior behavior. Trusted callers supply tools, cancellation, bounded steps/output and event observers. No task/product policy added to the framework. Verified: 223 tests and typecheck; see CHANGELOG. App consumption requires a pushed pin update.
+
 - **Integrations moved into the framework (2026-10-26, user's request):** the install/configure/run mechanism for MCP servers left Vakyartha's `sidecar/integrations.ts` for `packages/mcp/src/integrations.ts` (`Integrations` in `@vak/mcp/client`), because AGENTS.md promised pinned installs but only the app enforced them. The app keeps its catalog (which servers, versions, descriptions), its Keychain store and its Settings pages. Logic is unchanged apart from: exact versions enforced (`pinnedInstallArgs`), `/home` refused as a folder, `.mjs`/`.cjs` npm scripts run with Node, and the added-server description no longer names "vak". Six new tests with a fake npm. The framework-or-app rule is in AGENTS.md and SPECS §10; the other candidates found in the same review (secret storage, the channel manager) stay in the app for now.
 
 - **Framework and app split (2026-10-25, user's request):** the desktop app left this repository for its own, [Vakyartha](https://github.com/nranjan2code/vakyartha) (`~/Projects/vakyartha`), with its 7 commits of history (`git subtree split --prefix=apps/desktop`).

@@ -3,6 +3,13 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-25: in-process host execution
+
+- Additive `VakHost.run` and `view` APIs use the canonical sessions, validation, surfaces and persistence without an HTTP request. Applications may supply bounded execution controls and observe events; active viewers receive progress through the existing event stream.
+- HTTP chat behavior is unchanged. An independently executing session rejects competing chat, projection, deletion and reset requests; cancellation belongs to the trusted caller's signal. Views are detached copies. Session save failures propagate to in-process callers.
+- Empty event streams flush headers promptly. Tests cover viewer disconnection, mutation takeover, canonical multi-surface views, invalid actions, pre-cancellation and failure cleanup. No runtime dependencies added.
+
+
 ## 2026-10-26: a retry no longer copies the nodes it patches
 
 From a local 4B run ("compare three hotels in Kyoto … let me book one"): the retry was a `vak_update` that patched three buttons at the top level, then re-sent the tree with the same buttons inside their cards. The repeated-id rule (a node written inside a parent whose id was already used in the call is a second node, from a 5-tab plan where every tab's button was called "actions") renamed them `action1_2`…; the patched originals were left in no parent, re-attached to the root, and every Book button showed twice.
