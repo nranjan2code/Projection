@@ -34,7 +34,9 @@ test("sales-q3: /data/ path prefix, {{binding}}, nodes in a stray argument, an e
   // "chart": "{...}, {...}]" after the nodes list, and the escaped string was
   // read as raw JSON down to its first object.
   const { last, errors, text } = replay("sales-q3");
-  assert.deepEqual(errors(last.diags), []);
+  // The table's rows were bound to data the model never sent: it showed only
+  // its header, and the model is told so.
+  assert.deepEqual(errors(last.diags).map((m) => m.split(" has no value")[0]), ["{/data/products}"]);
   assert.ok(last.diags.some((d) => /nodes written in "chart" were read as part of "nodes"/.test(d.message)));
   assert.match(text, /Revenue: \$1,248,000/);
   assert.match(text, /Avg Order Value: \$438\.50 /);
@@ -48,7 +50,8 @@ test("web-analytics: bare pointers bind at any depth, annotation series drop, a 
   // added a "Peak Day" series of text and wrote "children" twice in one object,
   // and the second list replaced the table.
   const { calls, errors, text } = replay("web-analytics");
-  assert.deepEqual(calls.map((c) => errors(c.diags)), [[], [], [], []]);
+  // The first render bound its chart and table to data it had not sent yet.
+  assert.deepEqual(calls.map((c) => errors(c.diags).map((m) => m.split(" has no value")[0])), [["{/data/traffic_values}", "{/data/top_pages}"], [], [], []]);
   assert.match(text, /Total Visitors: 18452/);
   assert.match(text, /Daily Traffic \(visitors\): 12453/);
   assert.doesNotMatch(text, /Peak Day/);
@@ -103,7 +106,8 @@ test("web-analytics (gate run): a dotted path binds", () => {
 test("dashboard-filter (gate run): props written as a leaf node's only child are its props", () => {
   // {"id":"chart","type":"chart","children":[{"props":{...}}]}, in three retries.
   const { last, errors, text } = replay("dashboard-filter-gate");
-  assert.deepEqual(errors(last.diags), []);
+  // Its table's rows were never sent (only the header showed).
+  assert.deepEqual(errors(last.diags).map((m) => m.split(" has no value")[0]), ["{/products}"]);
   assert.match(text, /\[line chart\] Mon-Thu, Fri/);
   assert.match(text, /\[Table\] Product \| Sales/);
 });

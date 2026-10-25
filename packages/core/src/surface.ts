@@ -2,7 +2,7 @@
 // model mistakes instead of rejecting them, resolves bindings into a tree that
 // projectors render, and turns user interactions into VpsAction results.
 
-import { isBinding, resolveValue, type Scope } from "./bindings.ts";
+import { boundValue, isBinding, resolveValue, type Scope } from "./bindings.ts";
 import { type Catalog, type ItemField, propsSchema } from "./catalog.ts";
 import { runChecks } from "./checks.ts";
 import { isMetaKey, Normalizer, repairStructure, type TypeMatch } from "./normalize.ts";
@@ -898,21 +898,43 @@ export class SurfaceStore {
    */
   private lintUnbound(state: SurfaceState): Diagnostic[] {
     const inTemplate = this.templateNodes(state);
+    // Paths the user fills in: an input's value is empty until typed.
+    const inputs = [...state.nodes.values()].map((n) => n.props?.bind).filter((b): b is string => typeof b === "string" && b.startsWith("/")).map((b) => b.replace(/\./g, "/"));
+    const filledByInput = (path: string) => {
+      const p = path.replace(/\./g, "/");
+      return inputs.some((b) => p === b || p.startsWith(`${b}/`) || b.startsWith(`${p}/`));
+    };
     const diags: Diagnostic[] = [];
     for (const node of state.nodes.values()) {
       if (inTemplate.has(node.id)) continue;
       const found = new Set<string>();
+      const missing = new Set<string>();
       const scan = (v: unknown, schema?: JSONSchema): void => {
         if (schema?.literal && !isBinding(v)) return;
         if (typeof v === "string") {
           for (const m of v.matchAll(/(?<!\\)\{([A-Za-z_][^{}\s]*)\}/g)) if (getAt(state.data, `/${m[1]}`) === undefined) found.add(m[1]!);
+          for (const m of v.matchAll(/(?<!\\)\{(\/[A-Za-z0-9_~.\-][A-Za-z0-9_~.\-/]*)\}/g)) {
+            if (boundValue(state.data, m[1]!) === undefined && !filledByInput(m[1]!)) missing.add(m[1]!);
+          }
         } else if (Array.isArray(v)) v.forEach((x) => scan(x, schema?.items));
         else if (v && typeof v === "object") Object.entries(v).forEach(([k, x]) => scan(x, schema?.properties?.[k]));
       };
-      scan(node.props, propsSchema(this.catalog, node.type));
-      if (!found.size) continue;
-      const names = [...found].map((f) => `{${f}}`).join(", ");
-      diags.push({ severity: "error", surface: state.id, node: node.id, message: `${names} has no value: there is no such surface data, and this node is not inside a list template. Put the value in "data", or render the node from children {each, template}` });
+      // visibleIf on a missing path hides the node, as meant; bind is where an input writes.
+      const { visibleIf: _v, bind: _b, ...shown } = node.props ?? {};
+      scan(shown, propsSchema(this.catalog, node.type));
+      if (found.size) {
+        const names = [...found].map((f) => `{${f}}`).join(", ");
+        diags.push({ severity: "error", surface: state.id, node: node.id, message: `${names} has no value: there is no such surface data, and this node is not inside a list template. Put the value in "data", or render the node from children {each, template}` });
+      }
+      // `"values": "{/budget.income.values.0}"` with no such data (4B, budget
+      // tracker): the chart drew empty series and the call passed as clean, so
+      // the model never sent the numbers. Absolute paths were not checked.
+      if (missing.size) {
+        const names = [...missing].map((f) => `{${f}}`).join(", ");
+        const top = isObject(state.data) ? Object.keys(state.data) : [];
+        const has = top.length ? `; data has ${top.map((k) => `/${k}`).join(", ")}` : "; data is empty";
+        diags.push({ severity: "error", surface: state.id, node: node.id, message: `${names} has no value: no such path in the surface data${has}. Put the values in "data" at that path, or bind to data that exists` });
+      }
     }
     return diags;
   }

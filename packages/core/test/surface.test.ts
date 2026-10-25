@@ -125,6 +125,7 @@ test("props schema errors are reported, bindings are not", () => {
       { id: "root", type: "stack", props: { direction: "diagonal" }, children: ["s"] },
       { id: "s", type: "stat", props: { label: "x", value: "{/n}" } },
     ],
+    data: { n: 1 },
   });
   assert.equal(diags.length, 1);
   assert.match(diags[0]!.message, /direction must be one of/);
@@ -720,4 +721,51 @@ test("a template that repeats itself is one item's layout, not a cycle", () => {
   assert.ok(!text.includes("cycle"));
   assert.ok(text.includes("[Card] Arashiyama Inn — $665"));
   assert.ok(text.includes("[Button: Book This Hotel → book_hotel]"));
+});
+
+// Real 4B output (local engine run, 2026-10-26): a budget tracker whose chart
+// series and stat delta pointed at paths its data never had. It passed as
+// clean and the user saw an empty chart.
+const budget = JSON.parse(readFileSync(new URL("./fixtures/budget-tracker-4b-2026-10-26.json", import.meta.url), "utf8")) as { calls: { tool: string; args: string }[] };
+
+test("a {/path} binding with no data is an error naming the paths the data has", () => {
+  const store = new SurfaceStore(basicCatalog);
+  const errors = store.apply(budget.calls[0]!.tool, budget.calls[0]!.args).filter((d) => d.severity === "error");
+  const chart = errors.find((d) => d.node === "chart");
+  assert.ok(chart, "chart reported");
+  assert.match(chart.message, /\{\/budget\.income\.values\.0\}, \{\/budget\.expenses\.values\.0\} has no value/);
+  assert.match(chart.message, /data has \/budget/);
+  assert.ok(errors.some((d) => d.node === "summary" && d.message.includes("{/budget.spent}")));
+  // Paths that resolve (dotted, as interpolation reads them) are not reported.
+  assert.ok(!errors.some((d) => d.message.includes("{/budget.total}")));
+});
+
+test("a {/path} an input fills, or a visibleIf, may be empty", () => {
+  const store = new SurfaceStore(basicCatalog);
+  const diags = store.apply("vak_render", {
+    surface: "s",
+    nodes: [
+      { id: "root", type: "form", props: { submit: "book" }, children: ["name", "echo", "tip"] },
+      { id: "name", type: "input", props: { label: "Name", bind: "/form/name" } },
+      { id: "echo", type: "text", props: { content: "Booking for {/form/name}", visibleIf: "{/form/name}" } },
+      { id: "tip", type: "text", props: { content: "Tip", visibleIf: "{/flags/showTip}" } },
+    ],
+  });
+  assert.deepEqual(diags.filter((d) => d.severity === "error"), []);
+});
+
+test("a binding with an extra first step the data does not have reads without it", () => {
+  // 4B, bench running-week: "{/stats/daily-activity}" with data {daily-activity}.
+  const store = new SurfaceStore(basicCatalog);
+  const diags = store.apply("vak_render", {
+    surface: "s",
+    nodes: [{ id: "root", type: "stat", props: { label: "Distance", value: "{/stats/distance}" } }],
+    data: { distance: "42.8km" },
+  });
+  assert.deepEqual(diags.filter((d) => d.severity === "error"), []);
+  assert.match(projectText(store.resolve("s")!), /Distance: 42\.8km/);
+  // When the data has that first step, the path means what it says.
+  const exact = new SurfaceStore(basicCatalog);
+  const errs = exact.apply("vak_render", { surface: "s", nodes: [{ id: "root", type: "stat", props: { label: "D", value: "{/stats/distance}" } }], data: { stats: {}, distance: "1" } });
+  assert.ok(errs.some((d) => d.severity === "error" && d.message.includes("{/stats/distance}")));
 });

@@ -49,6 +49,9 @@ function lookup(path: string, scope: Scope): unknown {
  *   the first step (4B, bench sales-q3 and web-analytics)
  * - "{/data.visitors}": dots as separators, as in JavaScript (4B, bench gate
  *   web-analytics)
+ * - "{/stats/daily-activity}" with data {daily-activity}: the same extra first
+ *   step under another name (4B, bench running-week: an empty chart and list).
+ *   Only when the data has nothing at that first step, so it means nothing else.
  */
 function getLenient(data: unknown, pointer: string): unknown {
   const v = getAt(data, pointer);
@@ -57,8 +60,14 @@ function getLenient(data: unknown, pointer: string): unknown {
     const dotted = getLenient(data, pointer.replace(/\./g, "/"));
     if (dotted !== undefined) return dotted;
   }
-  if (pointer.startsWith("/data/") && getAt(data, "/data") === undefined) return getAt(data, pointer.slice(5));
+  const first = /^\/[^/]+(?=\/.)/.exec(pointer);
+  if (first && getAt(data, first[0]) === undefined) return getAt(data, pointer.slice(first[0].length));
   return undefined;
+}
+
+/** What an absolute binding ("/budget.total") shows, read as interpolation reads it. */
+export function boundValue(data: unknown, path: string): unknown {
+  return getLenient(data, path);
 }
 
 /** A JSON pointer into the data model: "/items", "/a/b/0". */

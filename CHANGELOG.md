@@ -3,6 +3,14 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: absolute bindings are checked
+
+From a local 4B run ("make a monthly budget tracker … and a chart"): the chart's series were bound to `{/budget.income.values.0}`, a path the data never had. The chart drew empty, and the call passed as clean, because only relative `{name}` bindings were checked.
+
+- **`{/path}` with no data is an error** (`lintUnbound`), naming the paths the data does have. Read the way interpolation reads it (dots, the extra first step below). Not reported: a path an input binds or fills (`bind` on any node, its parents and children), a `visibleIf`, and nodes inside a list template.
+- **An extra first step the data lacks is dropped:** `{/stats/daily-activity}` with data `{daily-activity}` binds, as `{/data/…}` already did (bench running-week: an empty chart and list). Only when the data has nothing at that first step.
+- **Replay gate:** restaurants#0 0.33 → 0.67; sales-q3#0 1.00 → 0.75, accepted: its table bound `{/data/products}`, which was never sent, and showed only its header. Three bench-output tests that asserted "no errors" on such tables now expect the error.
+
 ## 2026-10-26: Kyoto hotels, second round
 
 From the installed Vakyartha 0.1.0 on the 4B model ("compare three hotels in Kyoto … let me book one"): the first render showed "unknown component "data"" and an empty grid; the retry showed two hotels with garbage fields, a third card made from the Book button, and every card full of cycle boxes, all reported as "rendered" with warnings only.
