@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "playground"],
       "port": 5177
+    },
+    {
+      "name": "desktop-ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--workspace", "@vak/desktop"],
+      "port": 1420
     }
   ]
 }

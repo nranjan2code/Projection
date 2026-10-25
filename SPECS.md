@@ -1,6 +1,6 @@
 # SPECS.md: vak Projection
 
-vak gives any LLM tools to answer with rich, interactive UI (cards, tables, charts, forms, buttons) and projects that UI onto any surface: web (responsive, multi-column), Telegram, Slack, Discord, plain text. Scope and research: [SCOPE.md](SCOPE.md), [STUDY.md](STUDY.md).
+vak gives any LLM tools to answer with rich, interactive UI (cards, tables, charts, forms, buttons) and projects that UI onto any surface: web (responsive, multi-column), Telegram, Slack, Discord, plain text. The framework is `packages/*`; the playground and the desktop app (`apps/*`) are products built on it. Scope and research: [SCOPE.md](SCOPE.md), [STUDY.md](STUDY.md).
 
 ## 1. Vak Projection Spec (VPS)
 
@@ -121,7 +121,23 @@ Shared chat logic lives in `core/chat.ts`: form fields, reading typed answers, t
 
 `@vak/mcp`: stdio, no SDK, dual protocol era (2026-07-28 `server/discover` and legacy `initialize`). Tools are backed by the playground viewer (`/api/project`, `/api/actions`). Registered for Claude Code in `.mcp.json`. Teaches inline children by default, like the playground and Telegram; `VAK_AUTHORING=flat` (or the `authoring` option) switches the prompt and tool schema to flat. The engine reads both styles either way.
 
-## 8. Benchmark
+## 8. Host (`@vak/host`)
+
+The HTTP + SSE API that runs the agent loop for a UI, on Node built-ins only, so any app can mount it (`createHost(options).handle(req, res)` returns false for paths that are not its own).
+- Routes: providers, models, profile, chat (SSE), calibrate (SSE), project / actions / events (outside agents), sessions (list, view, delete), reset.
+- Options: `providers` (a function, re-read per request so key changes apply live), `profiles`, `instructions`, `transcripts` dir, `sessionsDir` (conversations saved as JSON and reloaded after a restart), `token` (bearer required on every route), `origins` (CORS allowlist), `routes` (app-specific routes after auth).
+- A saved session holds the messages, the final surfaces and a **timeline** (user text, actions, assistant replies with their surface ids, engine notes, status) so a UI redraws a reopened chat the way it was shown.
+- The playground mounts it open on loopback; the desktop sidecar mounts it behind a token.
+
+## 9. Desktop app (`apps/desktop`)
+
+A separate product built on the framework (AGENTS.md rule 1 exception): Tauri 2 shell, Vite + plain TypeScript UI, the engine as a Node sidecar.
+- **Sidecar** (`sidecar/main.ts`): `@vak/host` on an ephemeral loopback port with a random bearer token and a settings route (API keys and endpoints, written 0600 to `settings.env` in the data folder; secrets are never sent back). Prints `VAK_READY {port, token}`; exits when its stdin closes.
+- **Shell** (`src-tauri`): starts the sidecar, gives the webview its address and token over IPC (`backend` command), kills it on quit. Links open in the system browser (opener plugin). CSP allows connections only to `127.0.0.1`.
+- **UI**: chats in a sidebar (grouped by date), the thread, a composer with a model picker. Provider/model, the capability plan, calibration, keys and generation options live in Settings. Shortcuts: ⌘N new chat, ⌘, settings, ⌘\ sidebar, Esc stops a reply.
+- **Release**: `scripts/bundle-sidecar.ts` bundles the sidecar into one module and copies the running Node binary as `externalBin`; `tauri.release.conf.json` adds both to the bundle.
+
+## 10. Benchmark
 
 - `@vak/bench`: 30 single- and multi-turn scenarios, a rubric DSL, a simulated user, Wilson intervals.
 - Baselines and cassettes live in `packages/bench/data/`.

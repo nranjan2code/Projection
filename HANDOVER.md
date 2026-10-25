@@ -7,7 +7,7 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 ```
 Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection.
 
-First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 143 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
+First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 146 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
 
 Focus: the core system. That means the engine (parser, normalizer, lint, resolve), the catalog, and the projectors (web, text, Telegram, Slack, Discord as renderers, tested offline), and the bench. Telegram live testing is parked: don't start the bot unless I ask.
 
@@ -23,7 +23,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
-- **Tests:** 143 passing, typecheck clean. All work below is committed and pushed (see `git log`).
+- **Tests:** 146 passing, typecheck clean. All work below is committed and pushed (see `git log`).
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios), re-recorded 2026-10-25 after the bench-category fixes:
 
   | | Now | Previous | Old flat baseline |
@@ -39,6 +39,13 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 - **The playground may be running** (started from the session; stop it if not needed). The Telegram bot is stopped. One button press (Save Details on the booking confirmation) is saved in the chat's inbox and replays the next time the bot starts. The old long chat is archived in `.vak/telegram/archive/`.
 
 ## Done in this stretch
+
+- **Desktop app (user's request, 2026-10-25): `apps/desktop`**, a separate product on the framework, for everyday use.
+  - Stack, chosen for late October 2026: Tauri 2.12 (stable; 3.0 is still alpha), Vite 8, plain TypeScript UI (the content is already the `<vak-surface>` Web Component, so no UI framework), the engine as a Node 24 sidecar (the providers need `node:fs`/`node:net`, so the engine stays on Node unchanged).
+  - New framework package `@vak/host`: the playground's API extracted (chat, calibrate, project/actions/events, profile, models) plus saved sessions with a redraw timeline, bearer-token auth, CORS allowlist and app routes. The playground is now a thin wrapper; its behaviour is unchanged. `VakClient` takes headers.
+  - UI (after the user asked for minimal): sidebar of chats grouped by date, thread, composer with a model picker; provider/model, plan, calibration, API keys/endpoints and advanced generation options in Settings. Engine notes are hidden unless turned on in Settings.
+  - Verified in the browser pane against a live sidecar with the 4B model: dashboard rendered, chat restored after reload, signup form submitted and confirmed. Release `.app` built with the bundled Node and sidecar.
+  - AGENTS.md rule 1 now names the exception: `apps/desktop` may use Tauri and Vite; `packages/*` stay dependency-free.
 
 - **Empty frames from the 0.8B model (playground, user's workout query):** five `tabs` with titles and no panels, then the day cards as a `"children"` list after the nodes. The cards were dropped and the screen showed bare divider lines, with no error. Now: a second node-list key joins the nodes; empty layout containers below the root are removed (warning); a surface with nothing but empty containers is an error, so the model adds content. A per-container error was tried first and rejected: it failed recorded 4B output that is fine (empty stacks are invisible).
   - Note: the playground saves the model on every send, so a browser that used the old 0.8B default keeps it until the user types another model.
@@ -132,6 +139,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
    - near-miss id pairing
    - a security review of the projectors
    - packaging for npm
+   - desktop: OS keychain for keys (now a 0600 file), code signing/notarization, auto-update, MCP into the desktop app (the sidecar requires a token), Windows/Linux builds
    - live Slack/Discord bots, only if the user gets tokens
 
 ## Useful paths

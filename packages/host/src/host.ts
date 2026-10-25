@@ -1,0 +1,514 @@
+// vak host: the HTTP + SSE API that runs the agent loop for a UI, on Node
+// built-ins only. Any app can mount it: the playground serves it on a fixed
+// loopback port, the desktop app runs it as a sidecar behind a token.
+//
+// Routes (all JSON unless noted):
+//   GET  /api/providers                  provider list, availability, default model
+//   GET  /api/models?provider=           installed / listed models
+//   GET  /api/profile?provider=&model=   capability profile and plan
+//   POST /api/chat                       one turn (message or ui action), SSE of AgentEvents
+//   POST /api/calibrate                  calibration run, SSE progress
+//   POST /api/project                    apply a vak_* call from an outside agent
+//   GET  /api/actions?session=&timeout=  long-poll actions on outside surfaces
+//   GET  /api/events?session=            SSE of outside projections
+//   GET  /api/sessions                   saved conversations
+//   GET  /api/sessions/<id>              one conversation: timeline + surfaces
+//   DELETE /api/sessions/<id>, POST /api/reset
+
+import { appendFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import path from "node:path";
+import { basicCatalog, type AgentEvent, type Catalog, encodeSse, formatDiagnostics, projectText, type SurfaceSnapshot, SurfaceStore, type VpsAction } from "@vak/core";
+import {
+  actionMessage,
+  calibrate,
+  CALIBRATION_CASES,
+  choosePlan,
+  type Message,
+  type ProfileCache,
+  type ProjectionConfig,
+  type ProjectionPlan,
+  type ProviderEntry,
+  resolveProfile,
+  runAgent,
+} from "@vak/providers";
+
+/** What a UI needs to redraw a conversation: one entry per bubble. */
+export type TimelineEntry =
+  | { kind: "user"; text: string; at: string }
+  | { kind: "action"; action: string; at: string }
+  | { kind: "assistant"; text: string; surfaces: string[]; notes: { name: string; result: string }[]; status: string; error?: boolean; at: string };
+
+export interface SessionSummary {
+  id: string;
+  title: string;
+  updated: string;
+}
+
+export interface SessionView extends SessionSummary {
+  timeline: TimelineEntry[];
+  surfaces: SurfaceSnapshot[];
+}
+
+export interface HostOptions {
+  /** Read on every request, so key changes apply without a restart. */
+  providers: () => ProviderEntry[];
+  profiles: ProfileCache;
+  /** System instructions for the agent; a function is re-read per turn (dates). */
+  instructions: string | (() => string);
+  catalog?: Catalog;
+  /** Directory for per-session .jsonl transcripts of raw model output; none: not recorded. */
+  transcripts?: string;
+  /** Directory where conversations are saved and reloaded; none: memory only. */
+  sessionsDir?: string;
+  /** Bearer token every /api request must carry; none: open (loopback-only servers). */
+  token?: string;
+  /** Origins allowed to call from another origin (a desktop webview). */
+  origins?: string[];
+  /** Viewer link returned to outside agents by /api/project. */
+  viewerUrl?: (session: string) => string;
+  /** App-specific routes, run after auth; return true when handled. */
+  routes?: (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<boolean>;
+  log?: (line: string) => void;
+}
+
+interface Session {
+  id: string;
+  title: string;
+  created: string;
+  updated: string;
+  messages: Message[];
+  timeline: TimelineEntry[];
+  store: SurfaceStore;
+  busy?: AbortController;
+  /** Live viewers (GET /api/events) for projections pushed via /api/project. */
+  viewers: Set<(e: AgentEvent) => void>;
+  /** Surfaces owned by an outside caller: their actions queue here instead of running the model. */
+  external: Set<string>;
+  inbox: VpsAction[];
+  waiters: Set<() => void>;
+}
+
+interface SavedSession {
+  id: string;
+  title: string;
+  created: string;
+  updated: string;
+  messages: Message[];
+  timeline: TimelineEntry[];
+  surfaces: SurfaceSnapshot[];
+  external: string[];
+}
+
+export interface VakHost {
+  /** Handle a request; false when the path is not the host's (serve it yourself). */
+  handle(req: IncomingMessage, res: ServerResponse): Promise<boolean>;
+}
+
+/** Configurations calibration measures for a provider. */
+function calibrationConfigs(constrained: boolean): ProjectionConfig[] {
+  const configs: ProjectionConfig[] = [
+    { generation: "tools", tier: "extended", examples: false, authoring: "inline" },
+    { generation: "tools", tier: "core", examples: true, authoring: "inline" },
+  ];
+  if (constrained) configs.push({ generation: "constrained", tier: "core", examples: true });
+  return configs;
+}
+
+export async function readJson(req: IncomingMessage): Promise<Record<string, any>> {
+  let raw = "";
+  for await (const chunk of req) {
+    raw += chunk;
+    if (raw.length > 2_000_000) throw new Error("body too large");
+  }
+  return raw ? JSON.parse(raw) : {};
+}
+
+export function json(res: ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { "content-type": "application/json" });
+  res.end(JSON.stringify(body));
+}
+
+const safeId = (id: string) => id.replace(/[^\w-]/g, "_").slice(0, 120) || "default";
+const now = () => new Date().toISOString();
+const titleOf = (text: string) => (text.length > 60 ? `${text.slice(0, 57).trimEnd()}…` : text);
+
+export function createHost(opts: HostOptions): VakHost {
+  const catalog = opts.catalog ?? basicCatalog;
+  const log = opts.log ?? ((line: string) => console.log(line));
+  const sessions = new Map<string, Session>();
+  const instructions = () => (typeof opts.instructions === "function" ? opts.instructions() : opts.instructions);
+  const provider = (id: unknown) => opts.providers().find((p) => p.id === id);
+
+  // --- sessions ---------------------------------------------------------------
+  const sessionFile = (id: string) => path.join(opts.sessionsDir!, `${safeId(id)}.json`);
+
+  async function session(id: string): Promise<Session> {
+    let s = sessions.get(id);
+    if (s) return s;
+    const at = now();
+    s = { id, title: "New chat", created: at, updated: at, messages: [], timeline: [], store: new SurfaceStore(catalog), viewers: new Set(), external: new Set(), inbox: [], waiters: new Set() };
+    if (opts.sessionsDir) {
+      try {
+        const saved = JSON.parse(await readFile(sessionFile(id), "utf8")) as SavedSession;
+        Object.assign(s, { title: saved.title, created: saved.created, updated: saved.updated, messages: saved.messages, timeline: saved.timeline, external: new Set(saved.external) });
+        for (const snap of saved.surfaces) s.store.load(snap);
+      } catch {
+        /* new session */
+      }
+    }
+    // Another request may have created it while the file was read.
+    const raced = sessions.get(id);
+    if (raced) return raced;
+    sessions.set(id, s);
+    return s;
+  }
+
+  async function save(s: Session): Promise<void> {
+    if (!opts.sessionsDir || !s.timeline.length) return;
+    const saved: SavedSession = {
+      id: s.id,
+      title: s.title,
+      created: s.created,
+      updated: s.updated,
+      messages: s.messages,
+      timeline: s.timeline,
+      surfaces: s.store.list().map((st) => s.store.snapshot(st.id)!),
+      external: [...s.external],
+    };
+    try {
+      await mkdir(opts.sessionsDir, { recursive: true });
+      // Write then rename, so a crash mid-write never leaves half a conversation.
+      const file = sessionFile(s.id);
+      await writeFile(`${file}.tmp`, JSON.stringify(saved));
+      await rename(`${file}.tmp`, file);
+    } catch (err) {
+      log(`session not saved: ${(err as Error).message}`);
+    }
+  }
+
+  async function listSessions(): Promise<SessionSummary[]> {
+    const out = new Map<string, SessionSummary>();
+    if (opts.sessionsDir) {
+      let files: string[] = [];
+      try {
+        files = (await readdir(opts.sessionsDir)).filter((f) => f.endsWith(".json"));
+      } catch {
+        /* none saved yet */
+      }
+      for (const f of files) {
+        try {
+          const saved = JSON.parse(await readFile(path.join(opts.sessionsDir, f), "utf8")) as SavedSession;
+          out.set(saved.id, { id: saved.id, title: saved.title, updated: saved.updated });
+        } catch {
+          /* unreadable file: skip it */
+        }
+      }
+    }
+    for (const s of sessions.values()) if (s.timeline.length) out.set(s.id, { id: s.id, title: s.title, updated: s.updated });
+    return [...out.values()].sort((a, b) => b.updated.localeCompare(a.updated));
+  }
+
+  async function dropSession(id: string): Promise<void> {
+    sessions.get(id)?.busy?.abort();
+    sessions.delete(id);
+    if (opts.sessionsDir) await rm(sessionFile(id), { force: true });
+  }
+
+  /** Each turn's messages and raw tool calls, per session, for diagnosing model output. */
+  async function record(sessionId: string, messages: Message[]): Promise<void> {
+    if (!opts.transcripts) return;
+    try {
+      await mkdir(opts.transcripts, { recursive: true });
+      const at = now();
+      const lines = messages.map((m) => JSON.stringify({ at, role: m.role, content: m.content, toolCalls: m.toolCalls, isError: m.isError }));
+      await appendFile(path.join(opts.transcripts, `${safeId(sessionId)}.jsonl`), lines.map((l) => `${l}\n`).join(""));
+    } catch (err) {
+      log(`transcript not written: ${(err as Error).message}`);
+    }
+  }
+
+  /** Profile + plan for a provider/model; errors surface as a reason, never a guess. */
+  async function planFor(providerId: string, model: string): Promise<{ plan?: ProjectionPlan; profile?: unknown; error?: string }> {
+    const entry = provider(providerId);
+    if (!entry?.available) return { error: `provider ${providerId} unavailable` };
+    try {
+      const profile = await resolveProfile(entry.id, entry.make(), model, opts.profiles, AbortSignal.timeout(8000));
+      return { profile, plan: choosePlan(profile) };
+    } catch (err) {
+      return { error: (err as Error).message };
+    }
+  }
+
+  // --- chat -------------------------------------------------------------------
+  async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await readJson(req);
+    const entry = provider(body.provider);
+    if (!entry?.available) return json(res, 400, { error: `provider ${body.provider} unavailable` });
+    if (typeof body.model !== "string" || !body.model) return json(res, 400, { error: "model required" });
+    const s = await session(String(body.session ?? "default"));
+    s.busy?.abort();
+    const ctrl = new AbortController();
+    s.busy = ctrl;
+    res.on("close", () => {
+      if (!res.writableFinished) ctrl.abort();
+    });
+
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+    const reply: Extract<TimelineEntry, { kind: "assistant" }> = { kind: "assistant", text: "", surfaces: [], notes: [], status: "", at: now() };
+    const emit = (e: AgentEvent) => {
+      // The timeline mirrors what the client draws, so a reopened chat looks the same.
+      if (e.type === "text_delta") reply.text += e.delta;
+      else if (e.type === "surface" && !reply.surfaces.includes(e.snapshot.id)) reply.surfaces.push(e.snapshot.id);
+      else if (e.type === "tool_end" && (e.isError || e.result !== "ok")) reply.notes.push({ name: e.name, result: e.result });
+      else if (e.type === "error") Object.assign(reply, { status: e.message, error: true });
+      res.write(encodeSse(e));
+    };
+
+    if (body.action && typeof body.action === "object") {
+      const { surface, source, data } = body.action;
+      if (data && typeof data === "object") s.store.setData(String(surface), data);
+      const result = s.store.submit(String(surface), String(source), "web");
+      if (!result.action) {
+        emit({ type: "error", message: `action rejected: ${JSON.stringify(result.errors)}` });
+        emit({ type: "run_end", stop: "error" });
+        return void res.end();
+      }
+      s.timeline.push({ kind: "action", action: result.action.action, at: now() });
+      if (s.external.has(result.action.surface)) {
+        // Projected by an outside agent: hand the action to it (GET /api/actions).
+        s.inbox.push(result.action);
+        for (const wake of s.waiters) wake();
+        emit({ type: "text_delta", delta: "Sent to the agent that projected this surface." });
+        emit({ type: "run_end", stop: "delivered" });
+        s.timeline.push({ ...reply, status: "delivered" });
+        await save(s);
+        return void res.end();
+      }
+      s.messages.push(actionMessage(result.action));
+    } else {
+      const text = String(body.message ?? "").trim();
+      if (!text) {
+        emit({ type: "error", message: "empty message" });
+        return void res.end();
+      }
+      if (!s.timeline.length) s.title = titleOf(text);
+      s.timeline.push({ kind: "user", text, at: now() });
+      s.messages.push({ role: "user", content: text });
+    }
+
+    // The capability policy picks how to ask this model; explicit options still win.
+    const planned = await planFor(entry.id, body.model);
+    if (planned.plan) {
+      const { generation, tier, examples, authoring, maxSteps, reasons } = planned.plan;
+      emit({ type: "plan", generation, tier, examples, authoring, maxSteps, reasons });
+    }
+
+    const started = Date.now();
+    const from = s.messages.length - 1;
+    const result = await runAgent({
+      plan: planned.plan,
+      provider: entry.make({ think: Boolean(body.think) }),
+      model: body.model,
+      store: s.store,
+      messages: s.messages,
+      emit,
+      instructions: instructions(),
+      schemaMode: body.schemaMode === "strict" ? "strict" : "compact",
+      generation: ["tools", "constrained"].includes(body.generation) ? body.generation : "auto",
+      effort: ["low", "medium", "high"].includes(body.effort) ? body.effort : undefined,
+      history: typeof body.history === "number" && body.history > 0 ? body.history : undefined,
+      signal: ctrl.signal,
+    });
+    const secs = ((Date.now() - started) / 1000).toFixed(1);
+    log(`[chat] ${entry.id}/${body.model} → ${result.stop} in ${secs}s`);
+    if (!reply.error) reply.status = `${entry.id} · ${body.model} · ${secs}s${result.stop === "max_steps" ? " · step limit" : ""}`;
+    s.timeline.push(reply);
+    s.updated = now();
+    await record(s.id, s.messages.slice(from));
+    await save(s);
+    if (s.busy === ctrl) s.busy = undefined;
+    res.end();
+  }
+
+  // --- calibration ------------------------------------------------------------
+  async function handleCalibrate(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await readJson(req);
+    const entry = provider(body.provider);
+    if (!entry?.available || typeof body.model !== "string") return json(res, 400, { error: "provider/model required" });
+    const p = entry.make();
+    const profile = await resolveProfile(entry.id, p, body.model, opts.profiles);
+    const ctrl = new AbortController();
+    res.on("close", () => {
+      if (!res.writableFinished) ctrl.abort();
+    });
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
+    const send = (event: string, data: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    const configs = calibrationConfigs(Boolean(p.capabilities?.constrainedOutput));
+    send("start", { calls: configs.length * CALIBRATION_CASES.length, configs });
+    try {
+      const calibration = await calibrate({ provider: p, model: body.model, fingerprint: profile.facts.fingerprint, configs, signal: ctrl.signal, onCase: (o) => send("case", o) });
+      opts.profiles.update(entry.id, body.model, { calibration });
+      const plan = choosePlan({ ...profile, calibration });
+      log(`[calibrate] ${entry.id}/${body.model}: ${calibration.results.map((r) => `${r.complete}/${r.runs}`).join(" ")}`);
+      send("done", { calibration, plan });
+    } catch (err) {
+      send("error", { message: (err as Error).message });
+    }
+    res.end();
+  }
+
+  // --- outside agents ---------------------------------------------------------
+  async function handleProject(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await readJson(req);
+    const sessionId = String(body.session ?? "default");
+    const s = await session(sessionId);
+    const tool = String(body.tool ?? "vak_render");
+    const diagnostics = s.store.apply(tool, body.args ?? {});
+    const id = String((body.args as { surface?: unknown } | undefined)?.surface ?? "main");
+    s.external.add(id);
+    const snap = s.store.snapshot(id);
+    if (snap && !s.timeline.some((t) => t.kind === "assistant" && t.surfaces.includes(id))) {
+      if (!s.timeline.length) s.title = snap.title ?? id;
+      s.timeline.push({ kind: "assistant", text: "", surfaces: [id], notes: [], status: "projected via /api/project", at: now() });
+    }
+    s.updated = now();
+    await save(s);
+    const event: AgentEvent = snap ? { type: "surface", snapshot: snap } : { type: "surface_removed", id };
+    for (const v of s.viewers) v(event);
+    const resolved = s.store.resolve(id);
+    json(res, 200, {
+      result: formatDiagnostics(diagnostics),
+      diagnostics,
+      viewers: s.viewers.size,
+      surface: id,
+      // What the user sees, so the caller can verify its own output.
+      text: resolved ? projectText(resolved) : "",
+      url: opts.viewerUrl?.(sessionId),
+    });
+  }
+
+  async function handleActions(res: ServerResponse, url: URL): Promise<void> {
+    const s = await session(url.searchParams.get("session") ?? "default");
+    const timeout = Math.min(Number(url.searchParams.get("timeout") ?? 0), 600) * 1000;
+    const only = url.searchParams.get("surface");
+    const matches = (a: VpsAction) => !only || a.surface === only;
+    if (!s.inbox.some(matches) && timeout > 0) {
+      await new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          s.waiters.delete(wake);
+          resolve();
+        };
+        // Wake only for actions this caller is waiting for.
+        const wake = () => {
+          if (s.inbox.some(matches)) finish();
+        };
+        const timer = setTimeout(finish, timeout);
+        s.waiters.add(wake);
+        res.on("close", finish);
+      });
+    }
+    const taken = s.inbox.filter(matches);
+    s.inbox = s.inbox.filter((a) => !matches(a));
+    json(res, 200, { actions: taken });
+  }
+
+  async function handleEvents(res: ServerResponse, url: URL): Promise<void> {
+    const s = await session(url.searchParams.get("session") ?? "default");
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
+    const send = (e: AgentEvent) => res.write(encodeSse(e));
+    for (const st of s.store.list()) send({ type: "surface", snapshot: s.store.snapshot(st.id)! });
+    s.viewers.add(send);
+    const ping = setInterval(() => res.write(": ping\n\n"), 25000);
+    res.on("close", () => {
+      clearInterval(ping);
+      s.viewers.delete(send);
+    });
+  }
+
+  // --- access -----------------------------------------------------------------
+  /** CORS for allowed origins; false when the request must be refused. */
+  function admit(req: IncomingMessage, res: ServerResponse): boolean {
+    const origin = req.headers.origin;
+    if (origin && opts.origins?.includes(origin)) {
+      res.setHeader("access-control-allow-origin", origin);
+      res.setHeader("access-control-allow-headers", "authorization, content-type");
+      res.setHeader("access-control-allow-methods", "GET, POST, PUT, DELETE");
+      res.setHeader("vary", "origin");
+    }
+    if (req.method === "OPTIONS") {
+      res.writeHead(204).end();
+      return false;
+    }
+    if (opts.token && req.headers.authorization !== `Bearer ${opts.token}`) {
+      json(res, 401, { error: "unauthorized" });
+      return false;
+    }
+    return true;
+  }
+
+  return {
+    async handle(req, res) {
+      const url = new URL(req.url ?? "/", "http://localhost");
+      const p = url.pathname;
+      if (!p.startsWith("/api/")) return false;
+      if (!admit(req, res)) return true;
+      const m = req.method;
+      try {
+        if (opts.routes && (await opts.routes(req, res, url))) return true;
+        if (m === "GET" && p === "/api/providers") {
+          json(res, 200, opts.providers().map(({ id, label, available, reason, defaultModel }) => ({ id, label, available, reason: available ? undefined : reason, defaultModel })));
+        } else if (m === "GET" && p === "/api/models") {
+          const entry = provider(url.searchParams.get("provider"));
+          if (!entry?.available) json(res, 400, { error: "provider unavailable" });
+          else {
+            try {
+              const models = (await entry.make({}).listModels?.(AbortSignal.timeout(8000))) ?? [];
+              // A declared default is suggested; a local one only when it is installed,
+              // else the first listed model.
+              const local = entry.id === "ollama";
+              const declared = local && entry.defaultModel && models.length && !models.includes(entry.defaultModel) ? undefined : entry.defaultModel;
+              json(res, 200, { models, default: declared ?? (local ? models[0] : undefined) });
+            } catch (err) {
+              json(res, 502, { error: (err as Error).message, models: [], default: entry.defaultModel });
+            }
+          }
+        } else if (m === "GET" && p === "/api/profile") {
+          const out = await planFor(url.searchParams.get("provider") ?? "", url.searchParams.get("model") ?? "");
+          const entry = provider(url.searchParams.get("provider"));
+          const configs = entry?.available ? calibrationConfigs(Boolean(entry.make().capabilities?.constrainedOutput)) : [];
+          json(res, out.error ? 502 : 200, { ...out, calibrationCalls: configs.length * CALIBRATION_CASES.length });
+        } else if (m === "POST" && p === "/api/chat") await handleChat(req, res);
+        else if (m === "POST" && p === "/api/calibrate") await handleCalibrate(req, res);
+        else if (m === "POST" && p === "/api/project") await handleProject(req, res);
+        else if (m === "GET" && p === "/api/actions") await handleActions(res, url);
+        else if (m === "GET" && p === "/api/events") await handleEvents(res, url);
+        else if (m === "GET" && p === "/api/sessions") json(res, 200, await listSessions());
+        else if (p.startsWith("/api/sessions/")) {
+          const id = decodeURIComponent(p.slice("/api/sessions/".length));
+          if (m === "DELETE") {
+            await dropSession(id);
+            json(res, 200, { ok: true });
+          } else if (m === "GET") {
+            const s = await session(id);
+            const view: SessionView = { id: s.id, title: s.title, updated: s.updated, timeline: s.timeline, surfaces: s.store.list().map((st) => s.store.snapshot(st.id)!) };
+            json(res, 200, view);
+          } else json(res, 405, { error: "method not allowed" });
+        } else if (m === "POST" && p === "/api/reset") {
+          const body = await readJson(req);
+          await dropSession(String(body.session));
+          json(res, 200, { ok: true });
+        } else json(res, 404, { error: "not found" });
+      } catch (err) {
+        log(String((err as Error).stack ?? err));
+        if (!res.headersSent) json(res, 500, { error: (err as Error).message });
+        else res.end();
+      }
+      return true;
+    },
+  };
+}

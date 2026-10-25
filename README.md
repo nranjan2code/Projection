@@ -48,6 +48,15 @@ node scripts/eval.ts ollama:qwen3.5:4b-mlx 2 tools
 VAK_CASES=1 node scripts/eval.ts openai:<model> 1 tools   # small paid check
 ```
 
+## Desktop app
+
+`apps/desktop` is an everyday chat app built on the framework: saved chats, a model picker in the composer, keys and model details in Settings. It is a separate product (Tauri 2 + Vite); the framework packages stay dependency-free.
+
+```bash
+npm run desktop         # dev window (needs Rust and Node 24+)
+npm run desktop:build   # release .app / installer, Node bundled
+```
+
 ## Use vak from any MCP host
 
 `packages/mcp` is an MCP server (stdio, no SDK). It speaks both the current protocol revision (per-request versions, `server/discover`) and the older `initialize` handshake. It gives the host model four tools:
@@ -103,5 +112,7 @@ Both keep within each platform's limits (blocks, components, characters) and cut
 | `packages/slack` | Block Kit projector, modal forms |
 | `packages/discord` | Components V2 projector, modal forms |
 | `packages/bench` | scenarios, rubric, runner, replay, stats, judge |
+| `packages/host` | HTTP + SSE host for the agent loop: sessions, persistence, token auth |
 | `apps/playground` | dev server + chat UI + `/api/project` for direct projection |
+| `apps/desktop` | desktop app: Tauri 2 shell, Vite UI, engine as a Node sidecar |
 | `scripts` | eval and smoke tests |
