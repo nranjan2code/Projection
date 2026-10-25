@@ -6,7 +6,8 @@ What changed, newest first. Nothing is released yet: every package is `0.1.0` an
 ## 2026-10-25: in-process host execution
 
 - Additive `VakHost.run` and `view` APIs use the canonical sessions, validation, surfaces and persistence without an HTTP request. Applications may supply bounded execution controls and observe events; active viewers receive progress through the existing event stream.
-- HTTP chat behavior is unchanged. An independently executing session rejects competing chat, projection, deletion and reset requests; cancellation belongs to the trusted caller's signal. Views are detached copies. Session save failures propagate to in-process callers.
+- Optional `allowSessionMutation` lets applications reserve sessions from HTTP writes between runs while keeping trusted in-process access. HTTP chat behavior is otherwise unchanged. An independently executing session rejects competing chat, projection, deletion and reset requests; cancellation belongs to the trusted caller's signal. Views are detached copies. Session save failures propagate to in-process callers.
+- Add `VakSurfaceElement.releaseAction()` so action owners can release a submitted control after rejection, cancellation or queuing without fabricating a surface update.
 - Empty event streams flush headers promptly. Tests cover viewer disconnection, mutation takeover, canonical multi-surface views, invalid actions, pre-cancellation and failure cleanup. No runtime dependencies added.
 
 

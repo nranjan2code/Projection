@@ -84,6 +84,8 @@ export interface HostOptions {
    * so enabling or disabling one applies to the next message.
    */
   tools?: (ctx: { session: string }) => Promise<AgentTool[]> | AgentTool[];
+  /** Optional application ownership policy for HTTP session mutations; trusted run() is unaffected. */
+  allowSessionMutation?: (session: string) => boolean;
   /** App-specific routes, run after auth; return true when handled. */
   routes?: (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<boolean>;
   log?: (line: string) => void;
@@ -483,7 +485,7 @@ export function createHost(opts: HostOptions): VakHost {
     if (typeof body.model !== "string" || !body.model) return json(res, 400, { error: "model required" });
     const s = await session(String(body.session ?? "default"));
     // HTTP callers cannot take over an independently running session.
-    if (s.busy && detached.has(s.id)) return json(res, 409, { error: "session already running" });
+    if (detached.has(s.id) || opts.allowSessionMutation?.(s.id) === false) return json(res, 409, { error: "session is managed by another execution owner" });
     s.busy?.abort();
     const ctrl = new AbortController();
     s.busy = ctrl;
@@ -527,7 +529,7 @@ export function createHost(opts: HostOptions): VakHost {
   async function handleProject(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const body = await readJson(req);
     const sessionId = String(body.session ?? "default");
-    if (detached.has(sessionId)) return json(res, 409, { error: "session already running" });
+    if (detached.has(sessionId) || opts.allowSessionMutation?.(sessionId) === false) return json(res, 409, { error: "session is managed by another execution owner" });
     const s = await session(sessionId);
     const tool = String(body.tool ?? "vak_render");
     const diagnostics = s.store.apply(tool, body.args ?? {});
@@ -690,6 +692,7 @@ export function createHost(opts: HostOptions): VakHost {
         }
         else if (p.startsWith("/api/sessions/")) {
           const id = decodeURIComponent(p.slice("/api/sessions/".length));
+          if (m !== "GET" && opts.allowSessionMutation?.(id) === false) { json(res, 409, { error: "session is managed by another execution owner" }); return true; }
           if (m === "DELETE") {
             if (detached.has(id)) { json(res, 409, { error: "session already running" }); return true; }
             await dropSession(id);
@@ -710,7 +713,7 @@ export function createHost(opts: HostOptions): VakHost {
           } else json(res, 405, { error: "method not allowed" });
         } else if (m === "POST" && p === "/api/reset") {
           const body = await readJson(req);
-          if (detached.has(String(body.session))) { json(res, 409, { error: "session already running" }); return true; }
+          if (detached.has(String(body.session)) || opts.allowSessionMutation?.(String(body.session)) === false) { json(res, 409, { error: "session already running" }); return true; }
           await dropSession(String(body.session));
           json(res, 200, { ok: true });
         } else json(res, 404, { error: "not found" });

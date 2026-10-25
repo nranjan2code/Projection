@@ -297,3 +297,22 @@ test("in-process actions validate and preserve multiple canonical surfaces", asy
     assert.equal((await host.run({ ...input, message: "Again" })).stop, "projected");
   } finally { server.close(); }
 });
+
+
+test("application session ownership blocks HTTP mutations between in-process runs", async () => {
+  const { host, base, server } = await serve({ allowSessionMutation: (id) => id !== "owned" });
+  try {
+    await host.run({ session: "owned", provider: "scripted", model: "m", message: "Show revenue" });
+    for (const [route, method, body] of [
+      ["/api/chat", "POST", { session: "owned", provider: "scripted", model: "m", message: "Bypass" }],
+      ["/api/project", "POST", { session: "owned", args: { surface: "other", nodes: [] } }],
+      ["/api/reset", "POST", { session: "owned" }],
+      ["/api/sessions/owned", "DELETE", undefined],
+      ["/api/sessions/owned", "PUT", { title: "Bypass" }],
+    ] as const) {
+      assert.equal((await fetch(base + route, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined })).status, 409);
+    }
+    assert.equal((await fetch(base + "/api/sessions/owned")).status, 200);
+    assert.equal((await host.view("owned")).surfaces.length, 1);
+  } finally { server.close(); }
+});

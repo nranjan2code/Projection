@@ -112,6 +112,13 @@ export class VakSurfaceElement extends HTMLElement {
     this.refresh();
   }
 
+  /** The action owner finished, rejected or queued the submission without a surface update. */
+  releaseAction(): void {
+    this.#busyKey = undefined;
+    this.#busyVersion = -1;
+    this.refresh();
+  }
+
   get surfaceId(): string | undefined {
     return this.#surfaceId;
   }
