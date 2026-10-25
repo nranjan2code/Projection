@@ -271,6 +271,9 @@ export const basicCatalog = defineCatalog(
     },
     list: {
       description: "Simple list of text items.",
+      // The 4B model listed a recipe's ingredients as one card each (bench
+      // recipe, gates of 2026-10-25): an enumeration of short items is a list.
+      hint: "for ingredients, items and steps; ordered: true for steps",
       props: props({
         items: listOr({ type: "array", items: { type: "string" } }, { aliases: ["list", "entries", "bullets", "values", "points"] }),
         ordered: bool({ aliases: ["numbered"] }),
@@ -410,6 +413,9 @@ export const basicCatalog = defineCatalog(
     },
     checkbox: {
       description: "Yes/no toggle.",
+      // A checklist came out as cards with "Mark Complete" buttons (bench
+      // onboarding-checklist): one checkbox per item, in a form, is the native shape.
+      hint: "one per checklist item, inside a form",
       props: props({ label: fieldLabel, bind: fieldBind }, ["label", "bind"]),
       defaults: fieldDefaults,
       aliases: ["toggle", "switch", "consent", "agree"],

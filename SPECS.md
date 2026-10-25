@@ -42,6 +42,7 @@ In MCP there is also `vak_wait_action`.
    - Handles prefixes, comments, single quotes (and a key opened with one quote and closed with the other), unquoted keys and Python literals.
    - Missing quotes: a word missing its opening quote (`"type":select"`), prose missing it (`"content": **Bold** ...",` runs to the first quote a delimiter follows), key and value in one string (`"type:section"`, `"type:=","select"`, and `"type: stat"` right after a single-token value such as an id), and a colon inside the key's quotes (`"id: "x"`).
    - A `key:` inside an array, quoted or not, ends the array.
+   - An object holding only one quoted pointer (`{"/data/values"}`) is that binding.
    - Mismatched closers are read as a typo, an omitted closer or a stray extra, whichever the following closers fit. When no closers follow it directly, the reading under which the rest of the text's closers line up best wins.
    - Values after a closed top-level list (`[a], b` or `[a]}, b`) continue it.
    - A keyless value, or a value after a stray colon, continues the previous member.
@@ -70,6 +71,7 @@ In MCP there is also `vak_wait_action`.
    - inputs nothing submits
    - an empty layout root
    - placeholders that can never fill
+   - an input bound under data that can't hold it (`/todos/new` while `/todos` is a list)
 6. **Resolve** → `ResolvedSurface` (bindings, templates, visibility).
    - A list path inside an item falls back to the item's own field.
    - A pointer that finds nothing is retried with dots as separators (`/data.visitors`) and without a leading `/data` step.

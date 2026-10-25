@@ -155,3 +155,10 @@ test("a colon inside the key's quotes, and an unquoted key inside an array", () 
   assert.deepEqual(parseLenient('{"id: "topping_details", type: list}'), { id: "topping_details", type: "list" });
   assert.deepEqual(parseLenient('{"children":[{"id":"a"}, span:2}'), { children: [{ id: "a" }], span: 2 });
 });
+
+test("an object holding only a quoted pointer is that binding", () => {
+  // 4B, bench gate dashboard-filter: "values": {"/data/revenue_values"} failed the chart three times.
+  assert.deepEqual(parseLenient('{"series":[{"name":"Revenue","values": {"/data/revenue_values"}}]}'), { series: [{ name: "Revenue", values: "{/data/revenue_values}" }] });
+  // A one-word object is still a keyless value.
+  assert.deepEqual(parseLenient('{"a": {"word"}}'), { a: {} });
+});

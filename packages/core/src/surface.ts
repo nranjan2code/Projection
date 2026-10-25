@@ -732,6 +732,33 @@ export class SurfaceStore {
   }
 
   /**
+   * An input bound under data that can't hold it ("/todos/new-task" while
+   * /todos is the task list, 4B, bench todo-add) never keeps what the user
+   * types, so a required field blocks the form forever: an error naming the
+   * conflict. Inputs inside list templates bind per item and are skipped.
+   */
+  private lintBindable(state: SurfaceState): Diagnostic[] {
+    const inTemplate = this.templateNodes(state);
+    const diags: Diagnostic[] = [];
+    for (const node of state.nodes.values()) {
+      const bind = node.props?.bind;
+      if (inTemplate.has(node.id) || typeof bind !== "string" || !bind.startsWith("/")) continue;
+      const segs = parsePointer(bind);
+      for (let i = 1; i < segs.length; i++) {
+        const prefix = "/" + segs.slice(0, i).join("/");
+        const v = getAt(state.data, prefix);
+        if (v === undefined || v === null) break;
+        const blocked = typeof v !== "object" || (Array.isArray(v) && !/^(\d+|-)$/.test(segs[i]!));
+        if (!blocked) continue;
+        const what = Array.isArray(v) ? "a list" : `a ${typeof v}`;
+        diags.push({ severity: "error", surface: state.id, node: node.id, message: `bind "${bind}" cannot hold a value: "${prefix}" is ${what} in data. Bind the input to a path of its own, e.g. "/form/${segs.at(-1)}"` });
+        break;
+      }
+    }
+    return diags;
+  }
+
+  /**
    * A template holding one fixed button per item ("Book Zen", "Book Villa",
    * ... with nothing from the item in them) was written as N buttons for N
    * items: each copy keeps only its own. One fixed button ("Choose") is the
@@ -754,7 +781,7 @@ export class SurfaceStore {
   }
 
   lint(state: SurfaceState): Diagnostic[] {
-    const diags: Diagnostic[] = [...this.lintSubmittable(state), ...this.lintEmpty(state), ...this.lintUnbound(state)];
+    const diags: Diagnostic[] = [...this.lintSubmittable(state), ...this.lintEmpty(state), ...this.lintUnbound(state), ...this.lintBindable(state)];
     const skip = (v: unknown) => isBinding(v);
     for (const node of state.nodes.values()) {
       if (node.type === "$invalid") {

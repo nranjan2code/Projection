@@ -668,3 +668,21 @@ test("a top-level name that only an input's bind path ends in is that input's va
   store.setValue("pizza", "/form/size", "Large");
   assert.match(projectText(store.resolve("pizza")!), /Large pizza, {2}crust/);
 });
+
+test("an input bound under a list in the data is an error naming the conflict", () => {
+  // 4B, bench gate todo-add: the add form bound "/todos/new-task" while /todos
+  // was the task list, so typed text was never kept and "required" blocked it.
+  const store = new SurfaceStore(basicCatalog);
+  const diags = store.apply("vak_render", {
+    surface: "todo",
+    nodes: [
+      { id: "root", type: "form", props: { submit: "add" }, children: ["task", "due"] },
+      { id: "task", type: "input", props: { label: "Task", bind: "/todos/new-task" } },
+      { id: "due", type: "input", props: { label: "Due", bind: "/form/due" } },
+    ],
+    data: { todos: [{ text: "Yoga" }] },
+  });
+  const errors = diags.filter((d) => d.severity === "error");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0]!.message, /bind "\/todos\/new-task" cannot hold a value: "\/todos" is a list/);
+});

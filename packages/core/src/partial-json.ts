@@ -314,6 +314,13 @@ class Parser {
           continue;
         }
       }
+      // `"values": {"/data/revenue_values"}` (4B, bench gate dashboard-filter):
+      // a binding with quotes inside its braces. An object holding only one
+      // quoted pointer is that binding.
+      if (next === "}" && lastKey === undefined && Object.keys(obj).length === 0 && typeof key === "string" && /^\/[\w~.\-/]*$/.test(key)) {
+        this.i++;
+        return `{${key}}`;
+      }
       if (next === "," || next === "}") {
         // A value with no key: it continues the previous member.
         if (lastKey !== undefined) {
