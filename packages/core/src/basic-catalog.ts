@@ -11,6 +11,7 @@
 // - `normalize`: shape fixes for component-specific data (chart series)
 
 import { defineCatalog } from "./catalog.ts";
+import { cell, type Row, totalsRow } from "./interact.ts";
 import type { JSONSchema } from "./schema.ts";
 
 type Extra = Pick<JSONSchema, "aliases" | "enumAliases" | "namesComponent" | "description" | "default" | "format">;
@@ -79,6 +80,20 @@ const flat = (s: string) => words(s).join("");
  * then position when column and key counts line up. Output is always
  * [{key, label}] so projectors never guess.
  */
+/**
+ * Items written as bare strings ("2026: Founded", "Pune, India") become
+ * objects with that text in `field` (a small model lists text before it
+ * remembers the item shape).
+ */
+function itemObjects(v: unknown, field = "title"): unknown {
+  if (!Array.isArray(v)) return v;
+  return v.map((it) => {
+    if (typeof it !== "string") return it;
+    const m = field === "title" ? /^\s*([^:—–-]{1,24}?)\s*[:—–-]\s+(.+)$/.exec(it) : null;
+    return m && /\d/.test(m[1]!) ? { date: m[1]!.trim(), title: m[2]!.trim() } : { [field]: it };
+  });
+}
+
 function finalizeTable(p: Record<string, unknown>): Record<string, unknown> {
   if (!Array.isArray(p.columns)) return p;
   const rows = Array.isArray(p.rows) ? p.rows : [];
@@ -109,7 +124,14 @@ function finalizeTable(p: Record<string, unknown>): Record<string, unknown> {
   // Arrays-of-arrays rows, or nothing matched: the column's own text is the key.
   for (const col of columns) if (col.key === undefined) col.key = col.label;
   for (const col of columns) if (col.label === undefined) col.label = col.key;
-  return { ...p, columns };
+  if (p.totals !== true) return { ...p, columns };
+  // Computed, never trusted from the model: a total row it wrote itself is
+  // replaced (small models add up wrong), and every projector shows the result.
+  const cols = columns as { key: string }[];
+  const labelled = (r: unknown) => cols.some((c, i) => /^(grand\s+)?totals?\b/i.test(String(cell(r, c, i) ?? "")));
+  const body = rows.length && labelled(rows.at(-1)) ? rows.slice(0, -1) : rows;
+  const total = totalsRow(body as Row[], cols);
+  return total ? { ...p, columns, rows: [...body, total], totalsRow: true } : { ...p, columns, rows: body };
 }
 
 const numeric = (v: unknown) => typeof v === "number" || (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)));
@@ -159,10 +181,11 @@ export const basicCatalog = defineCatalog(
         columns: { type: ["integer", "string"], description: "max columns 1-6, or \"auto\"", aliases: ["cols", "columnCount"] },
         minItemWidth: oneOf(["sm", "md", "lg"], { aliases: ["minWidth", "itemWidth", "size"], enumAliases: { small: "sm", medium: "md", large: "lg" } }),
         gap,
+        searchable: bool({ aliases: ["filterable", "filter", "search"] }),
       }),
       children: true,
       hint: "children may set span for bento layouts",
-      aliases: ["columns", "gallery", "cards", "cardgrid", "dashboard", "bento", "masonry"],
+      aliases: ["columns", "cards", "cardgrid", "dashboard", "bento", "masonry"],
     },
     split: {
       tier: "extended",
@@ -223,7 +246,6 @@ export const basicCatalog = defineCatalog(
         { name: "subtitle", props: { variant: "subheading" } },
         { name: "caption", props: { variant: "caption" } },
         { name: "label", props: { variant: "caption" } },
-        { name: "code", props: { variant: "code" } },
       ],
     },
     stat: {
@@ -263,9 +285,16 @@ export const basicCatalog = defineCatalog(
             },
           },
           rows: listOr({ type: "array" }, { description: "array of row objects, or \"{/path}\"", aliases: ["data", "items", "records"] }),
+          // Projectors sort, filter and page on their own (see interact.ts);
+          // these only switch a default off or on.
+          sortable: bool({ aliases: ["sort", "sorting"] }),
+          searchable: bool({ aliases: ["filterable", "filter", "search"] }),
+          pageSize: { type: "integer", minimum: 0, aliases: ["perPage", "pagination", "rowsPerPage", "page_size"] },
+          totals: bool({ description: "adds a computed totals row; don't add one yourself", aliases: ["total", "showTotals", "summary", "sum"] }),
         },
         ["columns", "rows"],
       ),
+      hint: "totals: true adds a computed totals row (never write a total yourself); users can sort and filter on their own",
       finalize: finalizeTable,
       aliases: ["datatable", "grid_table", "spreadsheet", "datagrid"],
     },
@@ -277,6 +306,7 @@ export const basicCatalog = defineCatalog(
       props: props({
         items: listOr({ type: "array", items: { type: "string" } }, { aliases: ["list", "entries", "bullets", "values", "points"] }),
         ordered: bool({ aliases: ["numbered"] }),
+        searchable: bool({ aliases: ["filterable", "filter", "search"] }),
       }),
       aliases: ["ul", "bullets", "checklist", "bulletlist", { name: "ol", props: { ordered: true } }, { name: "numberedlist", props: { ordered: true } }],
     },
@@ -331,6 +361,73 @@ export const basicCatalog = defineCatalog(
       aliases: ["img", "picture", "photo", "figure"],
     },
     divider: { description: "Separator line.", props: props({}), tier: "extended", aliases: ["hr", "separator", "rule"] },
+    // Richer components (web draws them; other targets get them lowered to
+    // lists, text and images by lower.ts). Extended tier: small models keep
+    // the shorter vocabulary they are measured on.
+    timeline: {
+      tier: "extended",
+      description: "Events in time order.",
+      hint: "for histories, itineraries by time and changelogs",
+      props: props(
+        {
+          items: listOr(
+            { type: "array", items: props({ date: str({ aliases: ["time", "when", "year", "at", "day"] }), title: str({ aliases: ["event", "label", "name", "heading"] }), description: md({ aliases: ["body", "details", "text", "content"] }) }, ["title"]) },
+            { aliases: ["events", "entries", "milestones", "history"] },
+          ),
+        },
+        ["items"],
+      ),
+      normalize: (p) => ({ ...p, items: itemObjects(p.items) }),
+      aliases: ["history", "chronology", "events"],
+    },
+    steps: {
+      tier: "extended",
+      description: "Steps of a process with their state.",
+      hint: "status: done, current or todo for each step",
+      props: props(
+        {
+          items: listOr(
+            { type: "array", items: props({ title: str({ aliases: ["label", "name", "step", "heading"] }), description: md({ aliases: ["body", "details", "text"] }), status: oneOf(["done", "current", "todo", "skipped", "failed"], { enumAliases: { complete: "done", completed: "done", finished: "done", active: "current", "in-progress": "current", in_progress: "current", pending: "todo", upcoming: "todo", next: "todo", error: "failed" } }) }, ["title"]) },
+            { aliases: ["stages", "steps", "phases", "entries"] },
+          ),
+        },
+        ["items"],
+      ),
+      normalize: (p) => ({ ...p, items: itemObjects(p.items) }),
+      aliases: ["stepper", "progress", "wizard", "process", "checklist_steps"],
+    },
+    code: {
+      tier: "extended",
+      description: "A block of code or terminal commands, with copy.",
+      props: props({ code: str({ aliases: ["content", "text", "source", "value", "snippet"] }), language: str({ aliases: ["lang", "syntax"] }), title: str({ aliases: ["filename", "file", "label", "caption"] }) }, ["code"]),
+      aliases: ["codeblock", "snippet", "pre", "terminal", "shell"],
+    },
+    map: {
+      tier: "extended",
+      description: "Places with addresses; each opens in a map.",
+      hint: "places with name and address (lat/lon when known)",
+      props: props(
+        {
+          places: listOr(
+            { type: "array", items: props({ name: str({ aliases: ["title", "label"] }), address: str({ aliases: ["location", "addr"] }), lat: { type: "number", aliases: ["latitude"] }, lon: { type: "number", aliases: ["lng", "long", "longitude"] }, note: str({ aliases: ["description", "details"] }) }) },
+            { aliases: ["locations", "markers", "pins", "items", "points"] },
+          ),
+        },
+        ["places"],
+      ),
+      normalize: (p) => ({ ...p, places: itemObjects(p.places, "name") }),
+      aliases: ["places", "locations", "mapview"],
+    },
+    gallery: {
+      tier: "extended",
+      description: "A grid of images with captions.",
+      props: props(
+        { images: listOr({ type: "array", items: props({ src: str({ aliases: ["url", "image", "href"] }), alt: str({ aliases: ["caption", "title", "description"] }) }, ["src"]) }, { aliases: ["photos", "pictures", "items"] }) },
+        ["images"],
+      ),
+      normalize: (p) => ({ ...p, images: itemObjects(p.images, "src") }),
+      aliases: ["carousel", "photos", "album", "images"],
+    },
     // --- interaction ------------------------------------------------------
     button: {
       description: "Button that sends an action to you.",

@@ -28,6 +28,7 @@ import {
   type Message,
   type ProfileCache,
   type ProjectionConfig,
+  type AgentTool,
   type ProjectionPlan,
   type ProviderEntry,
   resolveProfile,
@@ -38,7 +39,7 @@ import {
 export type TimelineEntry =
   | { kind: "user"; text: string; at: string }
   | { kind: "action"; action: string; at: string }
-  | { kind: "assistant"; text: string; surfaces: string[]; notes: { name: string; result: string }[]; status: string; error?: boolean; at: string };
+  | { kind: "assistant"; text: string; surfaces: string[]; notes: { name: string; result: string }[]; status: string; error?: boolean; at: string; used?: { name: string; ok: boolean }[] };
 
 export interface SessionSummary {
   id: string;
@@ -70,6 +71,11 @@ export interface HostOptions {
   origins?: string[];
   /** Viewer link returned to outside agents by /api/project. */
   viewerUrl?: (session: string) => string;
+  /**
+   * Tools beyond vak_* for a turn (MCP integrations, built-ins). Read per turn,
+   * so enabling or disabling one applies to the next message.
+   */
+  tools?: (ctx: { session: string }) => Promise<AgentTool[]> | AgentTool[];
   /** App-specific routes, run after auth; return true when handled. */
   routes?: (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<boolean>;
   log?: (line: string) => void;
@@ -106,6 +112,12 @@ interface SavedSession {
 export interface VakHost {
   /** Handle a request; false when the path is not the host's (serve it yourself). */
   handle(req: IncomingMessage, res: ServerResponse): Promise<boolean>;
+  /**
+   * Ask the user before a tool runs: sends an approval event to the client
+   * running the turn and waits for POST /api/approvals/<id>. No answer within
+   * five minutes, or the turn stopping, counts as no.
+   */
+  approve(req: { id: string; server: string; tool: string; title: string; args: unknown }, emit?: (e: AgentEvent) => void, signal?: AbortSignal): Promise<"allow" | "allow-chat" | "deny">;
 }
 
 /** Configurations calibration measures for a provider. */
@@ -162,6 +174,25 @@ export function createHost(opts: HostOptions): VakHost {
   const sessions = new Map<string, Session>();
   const instructions = () => (typeof opts.instructions === "function" ? opts.instructions() : opts.instructions);
   const provider = (id: unknown) => opts.providers().find((p) => p.id === id);
+  const approvals = new Map<string, (d: "allow" | "allow-chat" | "deny") => void>();
+
+  function approve(req: { id: string; server: string; tool: string; title: string; args: unknown }, emit?: (e: AgentEvent) => void, signal?: AbortSignal): Promise<"allow" | "allow-chat" | "deny"> {
+    // Without a client to ask there is nobody to say yes; a stopped turn says no.
+    if (!emit || signal?.aborted) return Promise.resolve("deny");
+    return new Promise((resolve) => {
+      const done = (d: "allow" | "allow-chat" | "deny") => {
+        if (!approvals.has(req.id)) return;
+        approvals.delete(req.id);
+        clearTimeout(timer);
+        emit({ type: "approval_done", id: req.id, decision: d === "deny" ? "deny" : "allow" });
+        resolve(d);
+      };
+      const timer = setTimeout(() => done("deny"), 5 * 60_000);
+      approvals.set(req.id, done);
+      signal?.addEventListener("abort", () => done("deny"), { once: true });
+      emit({ type: "approval", id: req.id, tool: req.tool, server: req.server, title: req.title, args: req.args });
+    });
+  }
 
   // --- sessions ---------------------------------------------------------------
   const sessionFile = (id: string) => path.join(opts.sessionsDir!, `${safeId(id)}.json`);
@@ -315,6 +346,8 @@ export function createHost(opts: HostOptions): VakHost {
       // The timeline mirrors what the client draws, so a reopened chat looks the same.
       if (e.type === "text_delta") reply.text += e.delta;
       else if (e.type === "surface" && !reply.surfaces.includes(e.snapshot.id)) reply.surfaces.push(e.snapshot.id);
+      // Integration tools are recorded by name only: their output can be long or private.
+      else if (e.type === "tool_end" && !e.name.startsWith("vak_")) (reply.used ??= []).push({ name: e.name, ok: !e.isError });
       else if (e.type === "tool_end" && (e.isError || e.result !== "ok")) reply.notes.push({ name: e.name, result: e.result });
       else if (e.type === "error") Object.assign(reply, { status: e.message, error: true });
       res.write(encodeSse(e));
@@ -359,6 +392,7 @@ export function createHost(opts: HostOptions): VakHost {
       emit({ type: "plan", generation, tier, examples, authoring, maxSteps, reasons });
     }
 
+    const tools = (await opts.tools?.({ session: s.id })) ?? [];
     const started = Date.now();
     const from = s.messages.length - 1;
     const result = await runAgent({
@@ -370,7 +404,9 @@ export function createHost(opts: HostOptions): VakHost {
       emit,
       instructions: instructions(),
       schemaMode: body.schemaMode === "strict" ? "strict" : "compact",
-      generation: ["tools", "constrained"].includes(body.generation) ? body.generation : "auto",
+      // Grammar-constrained output cannot call other tools; integrations need tool calling.
+      generation: tools.length ? "tools" : ["tools", "constrained"].includes(body.generation) ? body.generation : "auto",
+      tools,
       effort: ["low", "medium", "high"].includes(body.effort) ? body.effort : undefined,
       history: typeof body.history === "number" && body.history > 0 ? body.history : undefined,
       signal: ctrl.signal,
@@ -528,6 +564,7 @@ export function createHost(opts: HostOptions): VakHost {
   }
 
   return {
+    approve,
     async handle(req, res) {
       const url = new URL(req.url ?? "/", "http://localhost");
       const p = url.pathname;
@@ -564,6 +601,15 @@ export function createHost(opts: HostOptions): VakHost {
         else if (m === "GET" && p === "/api/actions") await handleActions(res, url);
         else if (m === "GET" && p === "/api/events") await handleEvents(res, url);
         else if (m === "GET" && p === "/api/sessions") json(res, 200, await listSessions());
+        else if (m === "POST" && p.startsWith("/api/approvals/")) {
+          const done = approvals.get(decodeURIComponent(p.slice("/api/approvals/".length)));
+          const body = await readJson(req);
+          if (!done) json(res, 404, { error: "no such request (answered or expired)" });
+          else {
+            done(body.decision === "allow" || body.decision === "allow-chat" ? body.decision : "deny");
+            json(res, 200, { ok: true });
+          }
+        }
         else if (p.startsWith("/api/sessions/")) {
           const id = decodeURIComponent(p.slice("/api/sessions/".length));
           if (m === "DELETE") {

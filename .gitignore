@@ -4,3 +4,6 @@ node_modules/
 .vak/
 *.tmp
 packages/bench/data/results/
+build/
+packages/*/dist/
+examples/digest.*

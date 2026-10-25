@@ -5,7 +5,7 @@
 // (see modal.ts). Limits are Slack's; anything over them is cut with a note,
 // never sent for Slack to reject.
 
-import { byPriority, type CapabilityProfile, chartText, isRequired, type ResolvedNode, type ResolvedSurface, tableText, type TextTable, walk } from "@vak/core";
+import { byPriority, type CapabilityProfile, chartText, isRequired, type ResolvedNode, type ResolvedSurface, tableText, type TextTable, walk, lowerSurface } from "@vak/core";
 import { esc, markdownToMrkdwn } from "./mrkdwn.ts";
 
 export const slackProfile: CapabilityProfile = {
@@ -83,6 +83,8 @@ interface Ctx {
 }
 
 export function projectSlack(surface: ResolvedSurface, tokenFor: (key: string, kind: Control["kind"]) => string, opts: ProjectOptions = {}): SlackProjection {
+  // Timeline, steps, code, map and gallery as lists, text and images.
+  surface = lowerSurface(surface);
   const controls: Control[] = [];
   const ctx: Ctx = {
     control: (key, kind, label) => {

@@ -80,6 +80,9 @@ export function ollama(opts: OllamaOptions = {}): Provider {
           : {}),
         ...(req.responseSchema ? { format: toWireSchema(req.responseSchema) } : {}),
         options: { ...(req.maxTokens ? { num_predict: req.maxTokens } : {}), ...(options as object | undefined) },
+        // Keep the model loaded between turns (the default unloads it after 5 minutes,
+        // and reloading a 4B model costs seconds before the first token).
+        keep_alive: "30m",
         ...extra,
       };
       const res = await postJson("ollama", `${host}/api/chat`, {}, body, req.signal, 0);

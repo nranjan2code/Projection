@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>vak on a web page</title>
+    <script type="importmap">{ "imports": { "@vak/core": "/pkg/core/index.ts", "@vak/web": "/pkg/web/index.ts" } }</script>
+    <style>
+      body { font: 16px/1.5 system-ui, sans-serif; max-width: 860px; margin: 40px auto; padding: 0 16px; }
+      form { display: flex; gap: 8px; margin-bottom: 24px; }
+      input { flex: 1; padding: 10px; font: inherit; }
+      vak-surface { display: block; margin: 16px 0; }
+    </style>
+  </head>
+  <body>
+    <form id="ask"><input id="q" placeholder="Compare three hotels in Kyoto" autofocus /><button>Ask</button></form>
+    <p id="text"></p>
+    <div id="out"></div>
+    <script type="module">
+      import { defineVakElements, VakClient } from "@vak/web";
+      defineVakElements();
+      const client = new VakClient("/api/chat");
+      const session = crypto.randomUUID();
+      const shown = new Map();
+      const turn = (req) =>
+        client.turn({ session, provider: "ollama", model: "qwen3.5:4b-mlx", ...req }, (e) => {
+          if (e.type === "text_delta") document.getElementById("text").textContent += e.delta;
+          if (e.type === "surface") {
+            let el = shown.get(e.snapshot.id);
+            if (!el) {
+              el = document.createElement("vak-surface");
+              shown.set(e.snapshot.id, el);
+              document.getElementById("out").append(el);
+              el.attach(client.store, e.snapshot.id);
+            } else el.refresh();
+          }
+        });
+      document.getElementById("ask").addEventListener("submit", (ev) => {
+        ev.preventDefault();
+        document.getElementById("text").textContent = "";
+        turn({ message: document.getElementById("q").value });
+      });
+      // Buttons and forms in any surface go back to the model.
+      document.addEventListener("vak-action", (ev) => turn({ action: { ...ev.detail.action, data: ev.detail.data } }));
+    </script>
+  </body>
+</html>

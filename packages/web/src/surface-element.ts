@@ -7,7 +7,7 @@
 // - Actions validate locally (same named checks as the server) and dispatch a
 //   `vak-action` event with the action and the surface data model.
 
-import { getAt, isRequired, type ResolvedNode, type SurfaceStore, type VpsAction } from "@vak/core";
+import { mapLink, type Column, filterItems, filterRows, getAt, INTERACT, isRequired, pageRows, type ResolvedNode, sortRows, type SurfaceStore, tableInteraction, type VpsAction } from "@vak/core";
 import { normalizeChart, renderChart } from "./chart.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { surfaceCss } from "./styles.ts";
@@ -25,6 +25,15 @@ interface Built {
   sig: string;
   /** Push live values (input value, etc.) without rebuilding. */
   sync?: (node: ResolvedNode) => void;
+  /** Runs after its children are placed (a grid's filter hides the ones that don't match). */
+  after?: () => void;
+}
+
+/** What the user did to a table, list or grid locally; kept across rebuilds so new data keeps the view. */
+interface View {
+  sort?: { key: string; dir: "asc" | "desc" };
+  query: string;
+  page: number;
 }
 
 const GAP: Record<string, string> = { sm: "var(--gap-sm)", md: "var(--gap-md)", lg: "var(--gap-lg)" };
@@ -81,6 +90,7 @@ export class VakSurfaceElement extends HTMLElement {
   #cache = new Map<string, Built>();
   #errors: Record<string, string[]> = {};
   #tabs = new Map<string, number>();
+  #views = new Map<string, View>();
   #frame = 0;
   #busyKey?: string;
   #busyVersion = -1;
@@ -173,6 +183,7 @@ export class VakSurfaceElement extends HTMLElement {
       const kids = node.type === "tabs" ? this.#activeTab(node) : node.children;
       reconcile(built.host, kids.map((c) => this.#node(c, live)));
     }
+    built.after?.();
     return built.el;
   }
 
@@ -230,8 +241,24 @@ export class VakSurfaceElement extends HTMLElement {
         grid.style.setProperty("--cols", String(Number.isFinite(cols) && cols > 0 ? Math.min(cols, 6) : 4));
         grid.style.setProperty("--min", MIN_W[str(p.minItemWidth)] ?? MIN_W.md!);
         grid.style.setProperty("--gap", gap);
-        box.append(grid);
-        return { el: box, host: grid };
+        const view = this.#view(node.key);
+        const searchable = typeof p.searchable === "boolean" ? p.searchable : node.children.length >= INTERACT.searchItemsFrom;
+        // Cards filter by their own text; the grid's children stay the model's nodes.
+        const apply = () => {
+          const words = view.query.toLowerCase().split(/\s+/).filter(Boolean);
+          let shown = 0;
+          for (const child of grid.children) {
+            const hit = words.every((w) => (child.textContent ?? "").toLowerCase().includes(w));
+            (child as HTMLElement).hidden = !hit;
+            if (hit) shown++;
+          }
+          empty.hidden = shown > 0;
+        };
+        const empty = h("p", "none", "No matches");
+        empty.hidden = true;
+        if (searchable) box.append(this.#search(view, apply, `Filter ${node.children.length} items`));
+        box.append(grid, empty);
+        return { el: box, host: grid, after: searchable ? apply : undefined };
       }
       case "split": {
         const box = h("div", "split-box");
@@ -316,20 +343,114 @@ export class VakSurfaceElement extends HTMLElement {
         return { el };
       }
       case "table":
-        return { el: this.#table(p) };
+        return { el: this.#table(node.key, p) };
       case "list": {
+        const items = Array.isArray(p.items) ? p.items : [];
+        const view = this.#view(node.key);
         const el = h(p.ordered ? "ol" : "ul", "list");
-        for (const item of Array.isArray(p.items) ? p.items : []) {
+        const fill = () => {
+          const shown = new Set(filterItems(items, view.query));
+          el.replaceChildren();
+          for (const item of items) {
+            if (!shown.has(item)) continue;
+            const li = h("li");
+            li.append(renderMarkdown(str(item)));
+            // renderMarkdown wraps text in <p>; unwrap single paragraphs.
+            if (li.childNodes.length === 1 && li.firstElementChild?.tagName === "P") li.replaceChildren(...li.firstElementChild.childNodes);
+            el.append(li);
+          }
+          if (!el.children.length) el.append(h("li", "none", "No matches"));
+        };
+        fill();
+        if (!(typeof p.searchable === "boolean" ? p.searchable : items.length >= INTERACT.searchListFrom)) return { el };
+        const box = h("div", "list-box");
+        box.append(this.#search(view, fill, `Filter ${items.length} items`), el);
+        return { el: box };
+      }
+      case "chart":
+        return this.#chart(normalizeChart(p));
+      case "timeline": {
+        const el = h("ol", "timeline");
+        for (const it of (Array.isArray(p.items) ? p.items : []) as Record<string, unknown>[]) {
           const li = h("li");
-          li.append(renderMarkdown(str(item)));
-          // renderMarkdown wraps text in <p>; unwrap single paragraphs.
-          if (li.childNodes.length === 1 && li.firstElementChild?.tagName === "P") li.replaceChildren(...li.firstElementChild.childNodes);
+          if (it.date) li.append(h("div", "tl-date", str(it.date)));
+          li.append(h("div", "tl-title", str(it.title)));
+          if (it.description) li.append(md(it.description, "md tl-body"));
           el.append(li);
         }
         return { el };
       }
-      case "chart":
-        return this.#chart(normalizeChart(p));
+      case "steps": {
+        const el = h("ol", "steps");
+        ((Array.isArray(p.items) ? p.items : []) as Record<string, unknown>[]).forEach((it, i) => {
+          const status = ["done", "current", "todo", "skipped", "failed"].includes(str(it.status)) ? str(it.status) : "todo";
+          const li = h("li", `step ${status}`);
+          li.append(h("span", "step-mark", status === "done" ? "✓" : status === "failed" ? "✗" : String(i + 1)));
+          const body = h("div", "step-body");
+          body.append(h("div", "step-title", str(it.title)));
+          if (it.description) body.append(md(it.description, "md step-desc"));
+          li.append(body);
+          if (status === "current") li.setAttribute("aria-current", "step");
+          el.append(li);
+        });
+        return { el };
+      }
+      case "code": {
+        const box = h("div", "code-box");
+        const bar = h("div", "code-bar");
+        bar.append(h("span", "code-title", str(p.title || p.language || "code")));
+        const copy = h("button", "code-copy", "Copy");
+        copy.type = "button";
+        copy.addEventListener("click", () => {
+          void navigator.clipboard?.writeText(str(p.code)).then(() => {
+            copy.textContent = "Copied";
+            setTimeout(() => (copy.textContent = "Copy"), 1500);
+          });
+        });
+        bar.append(copy);
+        const pre = h("pre", "code");
+        pre.append(h("code", undefined, str(p.code)));
+        box.append(bar, pre);
+        return { el: box };
+      }
+      case "map": {
+        // Places with links out: no map tiles are loaded, so nothing about the
+        // places reaches a third party until the user opens one.
+        const el = h("ul", "places");
+        for (const pl of (Array.isArray(p.places) ? p.places : []) as Record<string, unknown>[]) {
+          const li = h("li", "place");
+          li.append(h("span", "place-pin", "⌖"));
+          const body = h("div");
+          body.append(h("div", "place-name", str(pl.name || pl.address)));
+          if (pl.name && pl.address) body.append(h("div", "place-addr", str(pl.address)));
+          if (pl.note) body.append(h("div", "place-note", str(pl.note)));
+          li.append(body);
+          const a = h("a", "place-open", "Open map");
+          a.href = mapLink(pl);
+          a.target = "_blank";
+          a.rel = "noopener noreferrer";
+          li.append(a);
+          el.append(li);
+        }
+        return { el };
+      }
+      case "gallery": {
+        const el = h("div", "gallery");
+        for (const im of (Array.isArray(p.images) ? p.images : []) as Record<string, unknown>[]) {
+          const src = str(im.src);
+          if (!/^https:\/\//.test(src)) continue;
+          const fig = h("figure");
+          const img = h("img");
+          img.src = src;
+          img.alt = str(im.alt);
+          img.loading = "lazy";
+          img.referrerPolicy = "no-referrer";
+          fig.append(img);
+          if (im.alt) fig.append(h("figcaption", undefined, str(im.alt)));
+          el.append(fig);
+        }
+        return { el };
+      }
       case "alert": {
         const el = h("div", `alert ${p.tone ? `tone-${str(p.tone)}` : ""}`);
         el.setAttribute("role", p.tone === "danger" || p.tone === "warning" ? "alert" : "status");
@@ -406,37 +527,121 @@ export class VakSurfaceElement extends HTMLElement {
     return { el: box };
   }
 
-  #table(p: Record<string, unknown>): HTMLElement {
+  #view(key: string): View {
+    let v = this.#views.get(key);
+    if (!v) this.#views.set(key, (v = { query: "", page: 0 }));
+    return v;
+  }
+
+  /** A filter box; typing re-runs `apply` locally, no model turn. */
+  #search(view: View, apply: () => void, label: string): HTMLElement {
+    const input = h("input", "filter");
+    input.type = "search";
+    input.placeholder = label;
+    input.setAttribute("aria-label", label);
+    input.value = view.query;
+    input.addEventListener("input", () => {
+      view.query = input.value;
+      view.page = 0;
+      apply();
+    });
+    return input;
+  }
+
+  #table(key: string, p: Record<string, unknown>): HTMLElement {
     const box = h("div", "table-box");
-    const rows = (Array.isArray(p.rows) ? p.rows : []) as unknown[];
+    let rows = (Array.isArray(p.rows) ? p.rows : []) as unknown[];
     let cols = (Array.isArray(p.columns) ? p.columns : []).map((c) =>
       c && typeof c === "object" ? (c as Record<string, unknown>) : { key: str(c), label: str(c) },
     );
     if (!cols.length && rows[0] && typeof rows[0] === "object" && !Array.isArray(rows[0])) {
       cols = Object.keys(rows[0] as object).map((k) => ({ key: k, label: k }));
     }
-    const table = h("table");
-    const thead = h("thead");
-    const hr = h("tr");
-    for (const c of cols) {
-      const th = h("th", c.align === "end" ? "a-end" : c.align === "center" ? "a-center" : undefined, str(c.label ?? c.key));
-      th.scope = "col";
-      hr.append(th);
-    }
-    thead.append(hr);
-    const tbody = h("tbody");
-    for (const row of rows) {
-      const tr = h("tr");
+    const columns = cols.map((c) => ({ key: str(c.key), label: str(c.label ?? c.key) })) as Column[];
+    // A computed totals row (catalog finalize) stays at the bottom whatever the sort.
+    const totals = p.totalsRow === true && rows.length ? rows.at(-1) : undefined;
+    if (totals !== undefined) rows = rows.slice(0, -1);
+    const mode = tableInteraction(p, rows.length);
+    const view = this.#view(key);
+    const align = (c: Record<string, unknown>) => (c.align === "end" ? "a-end" : c.align === "center" ? "a-center" : undefined);
+    const rowEl = (row: unknown, cls?: string) => {
+      const tr = h("tr", cls);
       cols.forEach((c, i) => {
         const v = Array.isArray(row) ? row[i] : row && typeof row === "object" ? (row as Record<string, unknown>)[str(c.key)] : row;
-        const td = h("td", c.align === "end" ? "a-end" : c.align === "center" ? "a-center" : undefined, str(v));
+        const td = h("td", align(c), str(v));
         td.dataset.label = str(c.label ?? c.key);
         tr.append(td);
       });
-      tbody.append(tr);
+      return tr;
+    };
+
+    const table = h("table");
+    const thead = h("thead");
+    const hr = h("tr");
+    const tbody = h("tbody");
+    const pager = h("div", "pager");
+    const fill = () => {
+      let shown = mode.searchable ? filterRows(rows, columns, view.query) : rows;
+      if (mode.sortable && view.sort) shown = sortRows(shown, columns, view.sort.key, view.sort.dir);
+      const paged = mode.pageSize ? pageRows(shown, view.page, mode.pageSize) : { rows: shown, page: 0, pages: 1 };
+      view.page = paged.page;
+      tbody.replaceChildren(...paged.rows.map((r) => rowEl(r)));
+      if (!paged.rows.length) {
+        const td = h("td", "none", "No matches");
+        td.colSpan = cols.length || 1;
+        const tr = h("tr");
+        tr.append(td);
+        tbody.append(tr);
+      }
+      const sort = view.sort;
+      for (const th of hr.children) {
+        const k = (th as HTMLElement).dataset.key;
+        th.setAttribute("aria-sort", sort && sort.key === k ? (sort.dir === "asc" ? "ascending" : "descending") : "none");
+      }
+      pager.hidden = paged.pages <= 1;
+      if (paged.pages > 1) {
+        const prev = h("button", "page", "‹");
+        const next = h("button", "page", "›");
+        prev.type = next.type = "button";
+        prev.setAttribute("aria-label", "Previous page");
+        next.setAttribute("aria-label", "Next page");
+        prev.disabled = paged.page === 0;
+        next.disabled = paged.page >= paged.pages - 1;
+        prev.addEventListener("click", () => ((view.page -= 1), fill()));
+        next.addEventListener("click", () => ((view.page += 1), fill()));
+        pager.replaceChildren(prev, h("span", "page-of", `${paged.page + 1} of ${paged.pages} · ${shown.length} rows`), next);
+      }
+    };
+    for (const c of cols) {
+      const th = h("th", align(c));
+      th.scope = "col";
+      th.dataset.key = str(c.key);
+      if (mode.sortable) {
+        // Click: ascending, then descending, then the model's own order.
+        const b = h("button", "sort", str(c.label ?? c.key));
+        b.type = "button";
+        b.addEventListener("click", () => {
+          const k = str(c.key);
+          const was = view.sort;
+          view.sort = was?.key !== k ? { key: k, dir: "asc" } : was.dir === "asc" ? { key: k, dir: "desc" } : undefined;
+          fill();
+        });
+        th.append(b);
+      } else th.textContent = str(c.label ?? c.key);
+      hr.append(th);
     }
+    thead.append(hr);
     table.append(thead, tbody);
-    box.append(table);
+    if (totals !== undefined) {
+      const tfoot = h("tfoot");
+      tfoot.append(rowEl(totals, "totals"));
+      table.append(tfoot);
+    }
+    if (mode.searchable) box.append(this.#search(view, fill, `Filter ${rows.length} rows`));
+    const scroll = h("div", "table-scroll");
+    scroll.append(table);
+    box.append(scroll, pager);
+    fill();
     return box;
   }
 

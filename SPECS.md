@@ -27,12 +27,14 @@ In MCP there is also `vak_wait_action`.
 
 ## 2. Catalog: the single source of truth
 
-`packages/core/src/basic-catalog.ts` defines 21 components with JSON Schema props and vak extensions:
+`packages/core/src/basic-catalog.ts` defines 26 components with JSON Schema props and vak extensions (timeline, steps, code, map and gallery are extended tier, lowered to basic components for targets that don't draw them: `core/lower.ts`):
 - `aliases`, `enumAliases`, `default`, `format: "markdown"`, `pattern`
 - `namesComponent` on a prop: a value outside its enum that names another component retypes the node (input `kind: "date"` → `date`)
 - component-level `normalize`, `defaults`, `finalize` (e.g. the chart's `normalize` reads bare number lists as a series and drops a series with no numbers beside real ones)
 - `role` (`form`/`action`) and `tier` (`core`/`extended`)
 - worked `examples`, which must render with zero diagnostics
+
+**Local interactions** (`core/interact.ts`) are a projector's own, with no model turn: tables sort (by value: "$1,299", "12%", "1.2k", dates), filter and page; lists and card grids filter. Defaults come from size (sort from 2 rows, filter from 8, page over 25); `sortable`, `searchable`, `pageSize` only override. `totals: true` makes the catalog's `finalize` append a computed totals row (replacing one the model wrote; never summing percentages or the first column), so every projector shows the same numbers.
 
 `toWireSchema` strips the extensions before schemas go to providers. Targets narrow the catalog with a `CapabilityProfile`: native, degraded or none per component.
 
@@ -105,6 +107,9 @@ In MCP there is also `vak_wait_action`.
 | Slack | `@vak/slack` | Block Kit message; forms as modals with native inputs; per-field errors |
 | Discord | `@vak/discord` | Components V2 message; tables as monospace; forms as paged modals (≤5 fields) |
 | Text | `@vak/core` | `projectText` (logs, tests, fallback) |
+| Markdown | `@vak/core` | `projectMarkdown`: GitHub-flavoured; pipe tables, alerts as `> [!NOTE]`; labels escaped |
+| Terminal | `@vak/core` | `projectAnsi`: colour, boxes, width-fitted tables; every escape sequence from model text stripped |
+| Email | `@vak/email` | `projectEmail` → `{subject, html, text}`: one 600 px table column, inline styles; controls become one "Open to respond" link |
 
 Shared chat logic lives in `core/chat.ts`: form fields, reading typed answers, tables and charts as text. Every projector keeps within its platform limits and cuts with a note rather than send something the platform rejects. Model text is always escaped; only `https`/`mailto` links survive.
 
@@ -119,13 +124,20 @@ Shared chat logic lives in `core/chat.ts`: form fields, reading typed answers, t
 
 ## 7. MCP server
 
-`@vak/mcp`: stdio, no SDK, dual protocol era (2026-07-28 `server/discover` and legacy `initialize`). Tools are backed by the playground viewer (`/api/project`, `/api/actions`). Registered for Claude Code in `.mcp.json`. Teaches inline children by default, like the playground and Telegram; `VAK_AUTHORING=flat` (or the `authoring` option) switches the prompt and tool schema to flat. The engine reads both styles either way.
+**Server.** `@vak/mcp`: stdio, no SDK, dual protocol era (2026-07-28 `server/discover` and legacy `initialize`). Tools are backed by the playground viewer (`/api/project`, `/api/actions`). Registered for Claude Code in `.mcp.json`. Teaches inline children by default, like the playground and Telegram; `VAK_AUTHORING=flat` (or the `authoring` option) switches the prompt and tool schema to flat. The engine reads both styles either way.
+
+**Client** (`@vak/mcp/client`): the agent loop's way to real data. Stdio (newline-delimited JSON-RPC) and Streamable HTTP (JSON or SSE replies, `Mcp-Session-Id` kept). Security is part of the contract:
+- a child process gets PATH, a private HOME/TMPDIR/cwd and only the variables it declares, never the host's keys (`minimalEnv`)
+- every tool has a policy, `allow` / `ask` / `off`, defaulting from its own annotations: read-only local tools allow; destructive, unknown or open-world (internet) tools ask; `off` tools are never offered to the model
+- `ask` calls go through an approval hook (the host sends an `approval` event and waits for `POST /api/approvals/<id>`: allow, allow for this chat, deny; five minutes or a stopped turn mean deny)
+- results are capped at 12k characters and wrapped as `<tool_output>`, labelled as data not instructions
+Built-in tools with the same shape: `webFetchServer` (https only, public addresses only, every redirect re-checked, 2 MB, text extracted) and `timeServer`.
 
 ## 8. Host (`@vak/host`)
 
 The HTTP + SSE API that runs the agent loop for a UI, on Node built-ins only, so any app can mount it (`createHost(options).handle(req, res)` returns false for paths that are not its own).
-- Routes: providers, models, profile, chat (SSE), calibrate (SSE), project / actions / events (outside agents), sessions (list, view, rename, delete), reset.
-- Options: `providers` (a function, re-read per request so key changes apply live), `profiles`, `instructions`, `transcripts` dir, `sessionsDir` (conversations saved as JSON and reloaded after a restart), `token` (bearer required on every route), `origins` (CORS allowlist), `hosts` (Host names accepted), `routes` (app routes after auth).
+- Routes: providers, models, profile, chat (SSE), calibrate (SSE), project / actions / events (outside agents), sessions (list, view, rename, delete), approvals, reset.
+- Options: `providers` (a function, re-read per request so key changes apply live), `profiles`, `instructions`, `transcripts` dir, `sessionsDir` (conversations saved as JSON and reloaded after a restart), `token` (bearer required on every route), `origins` (CORS allowlist), `hosts` (Host names accepted), `routes` (app routes after auth), `tools` (per-turn tools from the app: integrations; a turn with tools always uses tool calling).
 - **Admission**, for every caller: the Host header must name loopback (or `hosts`), against DNS rebinding; a browser Origin must be the server itself or listed; POST/PUT bodies must be JSON, which forces a preflight unlisted origins fail. Without these, any web page could POST a text/plain body to a loopback port and spend the user's keys.
 - A saved session holds the messages, the final surfaces and a **timeline** (user text, actions, replies with their surface ids, engine notes, status) so a UI redraws a reopened chat as it was shown. The list comes from an index read once and kept current; at most 24 sessions stay in memory (idle ones reload from disk).
 
@@ -135,15 +147,29 @@ The HTTP + SSE API that runs the agent loop for a UI, on Node built-ins only, so
 
 ## 10. Desktop app (`apps/desktop`)
 
-A separate product built on the framework (AGENTS.md rule 1 exception): Tauri 2 shell, Vite + plain TypeScript UI, the engine as a Node sidecar.
-- **Sidecar** (`sidecar/`): `@vak/host` on an ephemeral loopback port with a random token. Keys in the macOS Keychain via `/usr/bin/security` (writes through stdin, never argv; older file-stored keys move over on start); elsewhere a 0600 file. Logs to `logs/engine.log` in the data folder. Routes: settings, channels, info.
+A separate product built on the framework (AGENTS.md rule 1 exception): Tauri 2 shell, Vite + plain TypeScript UI, the engine as a Node sidecar. **The playground is the same app in a browser**: `apps/playground/server.ts` runs the same app server (`sidecar/server.ts`) open on loopback :5177 and serves the same built UI, so there is one interface.
+- **Sidecar** (`sidecar/`): `@vak/host` on an ephemeral loopback port with a random token. Keys in the macOS Keychain via `/usr/bin/security` (writes through stdin, never argv; older file-stored keys move over on start); elsewhere a 0600 file. Logs to `logs/engine.log` in the data folder, including UI errors (`/api/client-log`). Routes: settings, channels, integrations, approvals (host), client-log, info.
+- **Integrations** (`sidecar/integrations.ts`): a curated catalog (built-in Web pages and Time; MCP reference Files and Memory; Brave Search, GitHub remote, Notion, Context7 by their vendors) plus servers the user adds (marked unverified, every tool asks). npm servers are pinned to an exact version published ≥ 14 days earlier and installed with `--ignore-scripts --before=<today − 14 days>` into their own folder; Files sees only folders the user adds (absolute, existing, never a system root or the home folder); keys go to the Keychain; calls are logged to `logs/tools.jsonl`. Settings → Integrations shows a marketplace (original icons, trust badges), and a page per integration: what it can reach, setup, each tool with its policy, risk badges and a "Try it" run, recent calls, uninstall.
 - **Channels** (`sidecar/channels.ts`): chat platforms answered while the app runs in the background, each declaring its secrets and a run-until-aborted function. Telegram runs `runTelegram` from `@vak/telegram` (shared with `npm run telegram`; a second poller on the same bot is reported, not crashed on). Off by default; each has its own model. Slack and Discord are listed as coming.
 - **Shell** (`src-tauri`): starts the sidecar and hands the webview its address and token; menu-bar tray (Open, New chat, Quit); closing the window hides it while "keep running" is on; Dock click reopens; one instance only; launch at login; on quit the sidecar gets 4 s to stop channels. Links open in the system browser.
-- **UI**: chats sidebar (date groups, rename, delete), the thread, a composer with a model picker (recent models plus installed local ones). Settings is a full page: Models (the provider's own model list from its key, plan, calibration), Providers (one card per provider: key, endpoint, status, model count), Channels (a page per channel), Appearance (System/Light/Dark, six themes, text size; surfaces follow), Chats (context window, engine notes, delete all), General (tray, login, model behaviour), About (version, data folder, log, shortcuts).
+- **UI**: chats sidebar (date groups, rename, delete), the thread, a composer with a model picker (recent models plus installed local ones). The sidebar collapses (button or ⌘\\) and shows the app mark. Approvals appear in the chat as a card; tools used show as chips. Settings is a full page: Models (the provider's own model list from its key, plan, calibration), Providers (one card per provider: key, endpoint, status, model count), Channels (a page per channel), Appearance (System/Light/Dark, six themes, text size; surfaces follow), Chats (context window, engine notes, delete all), General (tray, login, model behaviour), About (version, data folder, log, shortcuts).
 - **Right-click**: the webview's menu never shows. Text fields keep the native editing menu; selected text gets Copy. Chats: Open, Rename, Delete. Your message: Copy, Edit as new message. A reply: Copy. An interface: Copy as text. Links and images: Open in browser, Copy address. Elsewhere nothing. Option-right-click keeps the inspector in dev builds.
-- **Release**: `npm run desktop:build` bundles the sidecar and the Node binary (`tauri.release.conf.json`); a build without them tells you so at start.
+- **Icon**: a sibling of the Vakyartha mark (ink tile, ivory speech bubble holding the V, saffron line); the tray icon is its template version.
+- **Checking UI**: the window is WebKit; `scripts/webkit-check.swift` renders and scripts pages off-screen as the window does. Debug builds run `VAK_DEBUG_JS` in the window for probes.
+- **Release**: `npm run desktop:build` bundles the sidecar, the Node binary and npm (for integrations) (`tauri.release.conf.json`); a build without them tells you so at start.
 
-## 11. Benchmark
+## 11. Kit and packaging
+
+- `@vak/kit`: `createVak({ model: "provider:model" })` → `ask(message)`, `act(action)`, `render("text" | "markdown" | "terminal")`, `email()`; tools pass through; history defaults to 10 turns.
+- `node scripts/build-packages.ts` builds every package into `packages/*/dist` (JS, `.d.ts` with `.js` specifiers, a package.json with sibling `@vak/*` dependencies found from imports, `engines` for Node-only packages). The repo keeps running the TypeScript sources. Nothing is published by the script.
+- `examples/`: terminal chat, email digest, the smallest web page.
+
+## 12. Speed
+
+- Anthropic: cache breakpoints on the system prompt, the tool list and the newest message. OpenAI: a stable `prompt_cache_key` per prompt and tools. Ollama: `keep_alive: 30m`.
+- Measured on the 4B (`scripts/profile-turn.ts`): ~3k tokens in, ~1.3k out, ~25 tok/s overall; Ollama returns a tool call whole at the end, so the UI shows elapsed time while it writes. Output length is the lever left.
+
+## 13. Benchmark
 
 - `@vak/bench`: 30 single- and multi-turn scenarios, a rubric DSL, a simulated user, Wilson intervals.
 - Baselines and cassettes live in `packages/bench/data/`.

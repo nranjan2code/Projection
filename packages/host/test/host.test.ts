@@ -6,7 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { readSse } from "@vak/core";
 import { ProfileCache, type Provider, type ProviderEntry, type ProviderEvent } from "@vak/providers";
-import { createHost, type HostOptions, type SessionView } from "@vak/host";
+import { createHost, type HostOptions, type SessionView, type VakHost } from "@vak/host";
 
 /** A provider that says one sentence and renders one surface (a clean projection ends the turn). */
 function scripted(): Provider {
@@ -26,9 +26,8 @@ function scripted(): Provider {
   };
 }
 
-async function serve(extra: Partial<HostOptions> = {}): Promise<{ base: string; server: Server; dir: string }> {
+async function serve(extra: Partial<HostOptions> = {}, provider: Provider = scripted()): Promise<{ base: string; server: Server; dir: string; host: VakHost }> {
   const dir = mkdtempSync(path.join(tmpdir(), "vak-host-"));
-  const provider = scripted();
   const entry: ProviderEntry = { id: "scripted", label: "Scripted", available: true, make: () => provider };
   const host = createHost({
     providers: () => [entry],
@@ -46,7 +45,7 @@ async function serve(extra: Partial<HostOptions> = {}): Promise<{ base: string; 
   const close = server.close.bind(server);
   server.close = (cb) => (server.closeAllConnections(), close(cb));
   const port = (server.address() as { port: number }).port;
-  return { base: `http://127.0.0.1:${port}`, server, dir };
+  return { base: `http://127.0.0.1:${port}`, server, dir, host };
 }
 
 async function chat(base: string, body: Record<string, unknown>, headers: Record<string, string> = {}): Promise<string[]> {
@@ -146,5 +145,59 @@ test("a chat can be renamed; an empty title is refused", async () => {
   assert.equal((await put("Trip plans")).status, 200);
   const list = (await (await fetch(`${base}/api/sessions`)).json()) as { title: string }[];
   assert.equal(list[0]?.title, "Trip plans");
+  server.close();
+});
+
+test("an integration tool on Ask waits for the user; the timeline keeps its name, not its output", async () => {
+  let step = 0;
+  const caller: Provider = {
+    id: "caller",
+    async describeModel() {
+      return { tools: true, fingerprint: "t", source: "t" };
+    },
+    async *stream(): AsyncGenerator<ProviderEvent> {
+      if (step++ === 0) {
+        yield { type: "tool_start", id: "c1", name: "web__fetch_page" };
+        yield { type: "tool_args", id: "c1", delta: '{"url":"https://example.com"}' };
+        yield { type: "tool_end", id: "c1" };
+        yield { type: "done", stop: "tool_use" };
+      } else {
+        yield { type: "text", delta: "Read it." };
+        yield { type: "done", stop: "end" };
+      }
+    },
+  };
+  let hostRef: VakHost | undefined;
+  const { base, server, host } = await serve(
+    {
+      tools: () => [
+        {
+          spec: { name: "web__fetch_page", description: "fetch", inputSchema: { type: "object" } },
+          async execute(_args, ctx) {
+            const d = await hostRef!.approve({ id: ctx.callId!, server: "web", tool: "fetch_page", title: "Read", args: {} }, ctx.emit, ctx.signal);
+            return d === "deny" ? "declined" : "PRIVATE PAGE TEXT";
+          },
+        },
+      ],
+    },
+    caller,
+  );
+  hostRef = host;
+  const res = await fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session: "t1", provider: "scripted", model: "m", message: "read example.com" }) });
+  const seen: string[] = [];
+  for await (const msg of readSse(res.body!)) {
+    seen.push(msg.event ?? "");
+    if (msg.event === "approval") {
+      const id = (JSON.parse(msg.data) as { id: string }).id;
+      const ok = await fetch(`${base}/api/approvals/${id}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ decision: "allow" }) });
+      assert.equal(ok.status, 200);
+    }
+  }
+  assert.ok(seen.indexOf("approval") < seen.indexOf("approval_done"));
+  const view = (await (await fetch(`${base}/api/sessions/t1`)).json()) as SessionView;
+  const reply = view.timeline.find((t) => t.kind === "assistant")!;
+  assert.ok(reply.kind === "assistant");
+  assert.deepEqual(reply.used, [{ name: "web__fetch_page", ok: true }]);
+  assert.doesNotMatch(JSON.stringify(view.timeline), /PRIVATE PAGE TEXT/);
   server.close();
 });

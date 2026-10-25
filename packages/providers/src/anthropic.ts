@@ -56,6 +56,16 @@ export function anthropicMessages(messages: Message[]): { role: "user" | "assist
   return out;
 }
 
+/** Mark the newest message as a cache breakpoint, so the next turn reads everything before it from cache. */
+function cacheLast(messages: Record<string, unknown>[]): Record<string, unknown>[] {
+  const last = messages.at(-1);
+  if (!last) return messages;
+  const content = typeof last.content === "string" ? [{ type: "text", text: last.content }] : Array.isArray(last.content) ? [...(last.content as Record<string, unknown>[])] : [];
+  if (!content.length) return messages;
+  content[content.length - 1] = { ...content[content.length - 1]!, cache_control: { type: "ephemeral" } };
+  return [...messages.slice(0, -1), { ...last, content }];
+}
+
 export function anthropic(opts: AnthropicOptions): Provider {
   const base = (opts.baseUrl ?? "https://api.anthropic.com").replace(/\/$/, "");
   const headers = { "x-api-key": opts.apiKey, "anthropic-version": opts.version ?? "2026-10-21" };
@@ -90,8 +100,10 @@ export function anthropic(opts: AnthropicOptions): Provider {
         model: req.model,
         max_tokens: req.maxTokens ?? 32000,
         stream: true,
-        messages: anthropicMessages(req.messages),
-        ...(req.system ? { system: req.system } : {}),
+        messages: cacheLast(anthropicMessages(req.messages)),
+        // The system prompt (catalog, rules, examples) is the same every turn:
+        // cache it, the tools, and the conversation so far (3 of 4 breakpoints).
+        ...(req.system ? { system: [{ type: "text", text: req.system, cache_control: { type: "ephemeral" } }] } : {}),
         ...(req.tools?.length
           ? {
               tools: req.tools.map((t) => ({
@@ -101,7 +113,7 @@ export function anthropic(opts: AnthropicOptions): Provider {
                 // Stream tool input as generated so UI renders progressively;
                 // our engine validates and repairs the arguments itself.
                 eager_input_streaming: true,
-              })),
+              })).map((t, i, all) => (i === all.length - 1 ? { ...t, cache_control: { type: "ephemeral" } } : t)),
             }
           : {}),
         ...(req.effort ? { output_config: { effort: req.effort } } : {}),

@@ -6,6 +6,7 @@
 // No constrained-output capability is claimed: strict json_schema needs every
 // property required and closed objects, which the catalog schema is not.
 
+import { createHash } from "node:crypto";
 import type { Usage } from "@vak/core";
 import { getJson, postJson, readSse } from "./http.ts";
 import { type ChatRequest, type Message, type ModelFacts, type Provider, ProviderError, type ProviderEvent, type StopReason } from "./types.ts";
@@ -60,6 +61,8 @@ export function openaiResponses(opts: OpenAIResponsesOptions): Provider {
         include: ["reasoning.encrypted_content"],
         input: responsesInput(req.messages, id),
         ...(req.system ? { instructions: req.system } : {}),
+        // Same instructions and tools → same key, so OpenAI routes turns to a warm prompt cache.
+        prompt_cache_key: `vak-${createHash("sha256").update(req.system ?? "").update((req.tools ?? []).map((t) => t.name).join(",")).digest("hex").slice(0, 24)}`,
         ...(req.tools?.length
           ? { tools: req.tools.map((t) => ({ type: "function", name: t.name, description: t.description, parameters: t.inputSchema })) }
           : {}),

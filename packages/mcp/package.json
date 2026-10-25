@@ -2,6 +2,11 @@
   "name": "@vak/mcp",
   "version": "0.1.0",
   "type": "module",
-  "exports": { ".": "./src/server.ts" },
-  "bin": { "vak-mcp": "./src/main.ts" }
+  "exports": {
+    ".": "./src/server.ts",
+    "./client": "./src/index-client.ts"
+  },
+  "bin": {
+    "vak-mcp": "./src/main.ts"
+  }
 }

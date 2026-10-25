@@ -30,7 +30,8 @@ import type { ChatRequest, Message, Provider, ToolCall, ToolSpec } from "./types
 
 export interface AgentTool {
   spec: ToolSpec;
-  execute(args: Record<string, unknown>, ctx: { signal?: AbortSignal }): Promise<string> | string;
+  /** `emit` lets a tool tell the client something mid-call (an approval request). */
+  execute(args: Record<string, unknown>, ctx: { signal?: AbortSignal; emit?: (e: AgentEvent) => void; callId?: string }): Promise<string> | string;
 }
 
 export interface RunOptions {
@@ -371,7 +372,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
             } catch {
               args = parseLenient(call.arguments) as Record<string, unknown>;
             }
-            result = await tool.execute(args, { signal: opts.signal });
+            result = await tool.execute(args, { signal: opts.signal, emit, callId: call.id });
           } catch (err) {
             result = `error: ${(err as Error).message}`;
             isError = true;

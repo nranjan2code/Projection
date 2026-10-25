@@ -1,6 +1,7 @@
 // Plain-text projection of a resolved surface: for text-only targets
 // (terminal, SMS, logs) and for model judges that read what a user would see.
 
+import { lowerSurface } from "./lower.ts";
 import type { CapabilityProfile } from "./catalog.ts";
 import { isRequired } from "./checks.ts";
 import { byPriority, type Projector } from "./projector.ts";
@@ -98,6 +99,7 @@ function lines(node: ResolvedNode, depth: number, out: string[]): void {
 }
 
 export function projectText(surface: ResolvedSurface): string {
+  surface = lowerSurface(surface);
   const out: string[] = [];
   if (surface.title) out.push(`# ${surface.title}`);
   if (surface.root) lines(surface.root, 0, out);

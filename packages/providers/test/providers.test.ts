@@ -68,7 +68,10 @@ test("anthropic: text, streamed tool input, thinking kept for replay", async () 
   assert.equal(req.headers["anthropic-version"], "2026-10-21");
   assert.equal(req.body.temperature, undefined);
   assert.equal(req.body.tools[0].eager_input_streaming, true);
-  assert.deepEqual(req.body.messages[2], { role: "user", content: [{ type: "tool_result", tool_use_id: "x", content: "ok" }] });
+  // The newest message, the system prompt and the last tool are cache breakpoints.
+  assert.deepEqual(req.body.messages[2], { role: "user", content: [{ type: "tool_result", tool_use_id: "x", content: "ok", cache_control: { type: "ephemeral" } }] });
+  assert.deepEqual(req.body.system, [{ type: "text", text: "sys", cache_control: { type: "ephemeral" } }]);
+  assert.deepEqual(req.body.tools.at(-1).cache_control, { type: "ephemeral" });
   assert.deepEqual(evs.filter((e) => e.type !== "done"), [
     { type: "text", delta: "Hello" },
     { type: "tool_start", id: "tu1", name: "t" },

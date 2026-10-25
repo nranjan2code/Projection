@@ -2,7 +2,7 @@
 // Telegram is a linear target: containers flatten in priority order. What
 // Telegram cannot show natively degrades declaratively (see telegramProfile).
 
-import { byPriority, type CapabilityProfile, chartText, isRequired, type ResolvedNode, type ResolvedSurface, tableText, type TextTable, walk } from "@vak/core";
+import { byPriority, lowerSurface, type CapabilityProfile, chartText, isRequired, type ResolvedNode, type ResolvedSurface, tableText, type TextTable, walk } from "@vak/core";
 import { esc, markdownToHtml } from "./html.ts";
 
 /** What the model should know about this target (narrows the catalog and prompt). */
@@ -66,6 +66,7 @@ export interface ProjectOptions {
 
 /** Every image URL a surface would embed, for the sender to verify. */
 export function imageSources(surface: ResolvedSurface): string[] {
+  surface = lowerSurface(surface);
   const out = new Set<string>();
   if (surface.root) {
     walk(surface.root, (n) => {
@@ -81,6 +82,8 @@ export function projectTelegram(
   tokenFor: (key: string, kind: Control["kind"]) => string,
   opts: ProjectOptions = {},
 ): TelegramProjection {
+  // Timeline, steps, code, map and gallery as lists, text and images.
+  surface = lowerSurface(surface);
   const controls: Control[] = [];
   const control = (key: string, kind: Control["kind"], label: string) => {
     const token = tokenFor(key, kind);

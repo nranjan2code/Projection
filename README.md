@@ -1,11 +1,18 @@
 # vak Projection
 
-A projection engine that lets any LLM answer with **rich, interactive UI** (cards, dashboards, forms, tables, charts) instead of prose. The model describes the UI once, in a target-neutral spec. The engine repairs, validates and streams it onto any surface: web today, chat platforms next.
+A projection engine that lets any LLM answer with **rich, interactive UI** (cards, dashboards, forms, tables, charts) instead of prose. The model describes the UI once, in a target-neutral spec. The engine repairs, validates and streams it onto any surface: the web, a desktop app, Telegram, Slack, Discord, Markdown, a terminal, email.
 
 **Zero runtime dependencies.** Provider clients, the streaming parser, schema validation, the renderer and the server are all written here. The only dev dependencies are TypeScript (type checking only) and Node type definitions.
 
 
-Docs: [SPECS.md](SPECS.md) (architecture), [AGENTS.md](AGENTS.md) (rules for contributors and coding agents), [HANDOVER.md](HANDOVER.md) (current state and next steps).
+Docs: [SPECS.md](SPECS.md) (architecture), [SECURITY.md](SECURITY.md) (threat model), [AGENTS.md](AGENTS.md) (rules for contributors and coding agents), [HANDOVER.md](HANDOVER.md) (current state and next steps), [examples/](examples/README.md).
+
+```ts
+import { createVak } from "@vak/kit";
+const vak = createVak({ model: "ollama:qwen3.5:4b-mlx" });
+await vak.ask("Compare three laptops for a student");
+console.log(vak.render("terminal"));
+```
 
 ## How it works
 
@@ -50,13 +57,15 @@ VAK_CASES=1 node scripts/eval.ts openai:<model> 1 tools   # small paid check
 
 ## Desktop app
 
-`apps/desktop` is an everyday chat app built on the framework: saved chats, a model picker in the composer, a Settings page (models, providers with their own model lists, channels, themes), keys in the macOS Keychain, and a menu-bar mode that keeps Telegram answering while the window is closed. It is a separate product (Tauri 2 + Vite); the framework packages stay dependency-free.
+`apps/desktop` is an everyday chat app built on the framework: saved chats, a model picker in the composer, a Settings page (models, providers with their own model lists, integrations, channels, themes), keys in the macOS Keychain, and a menu-bar mode that keeps Telegram answering while the window is closed. `npm run playground` is the same app in a browser.
+
+**Integrations** give the model real data through MCP: built-in web pages and time, the MCP reference Files and Memory servers, and Brave Search, GitHub, Notion and Context7 by their vendors, or any server you add. Each is pinned, runs with only the access its page shows, never sees your keys, and anything that writes or reaches the internet asks you in the chat first. It is a separate product (Tauri 2 + Vite); the framework packages stay dependency-free.
 
 Providers: Ollama, LM Studio, Anthropic, OpenAI, Gemini, Mistral, xAI, DeepSeek, Groq, Cerebras, OpenRouter, Together, Fireworks, Moonshot, Qwen, and any OpenAI-compatible server.
 
 ```bash
 npm run desktop         # dev window (needs Rust and Node 24+)
-npm run desktop:build   # release .app / installer, Node bundled
+npm run desktop:build   # release .app / installer, Node and npm bundled
 ```
 
 ## Use vak from any MCP host
@@ -109,12 +118,15 @@ Both keep within each platform's limits (blocks, components, characters) and cut
 | `packages/core` | spec, catalog, parser, normalizer, surface store, events |
 | `packages/providers` | provider adapters, agent loop, calibration, policy, profiles |
 | `packages/web` | `<vak-surface>` renderer, charts, markdown, client |
-| `packages/mcp` | MCP server exposing vak tools over stdio |
+| `packages/mcp` | MCP server exposing vak tools; MCP client with policy, approvals, built-in web/time tools |
 | `packages/telegram` | Telegram projector, form flow, Bot API client, bot |
 | `packages/slack` | Block Kit projector, modal forms |
 | `packages/discord` | Components V2 projector, modal forms |
 | `packages/bench` | scenarios, rubric, runner, replay, stats, judge |
-| `packages/host` | HTTP + SSE host for the agent loop: sessions, persistence, token auth |
-| `apps/playground` | dev server + chat UI + `/api/project` for direct projection |
+| `packages/host` | HTTP + SSE host for the agent loop: sessions, persistence, approvals, token auth |
+| `packages/email` | HTML email projector |
+| `packages/kit` | `createVak()`: engine, model and projectors in one call |
+| `apps/playground` | the desktop app's server and UI in a browser, on :5177 (also the MCP viewer) |
 | `apps/desktop` | desktop app: Tauri 2 shell, Vite UI, engine as a Node sidecar |
-| `scripts` | eval and smoke tests |
+| `examples` | terminal chat, email digest, smallest web page |
+| `scripts` | eval, bench, package build, turn profiling |

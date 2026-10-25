@@ -7,9 +7,9 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 ```
 Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection.
 
-First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 161 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
+First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 181 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
 
-Focus: the core system. That means the engine (parser, normalizer, lint, resolve), the catalog, and the projectors (web, text, Telegram, Slack, Discord as renderers, tested offline), and the bench. Telegram live testing is parked: don't start the bot unless I ask.
+Focus: the core system (engine, catalog, projectors: web, text, Markdown, terminal, email, Telegram, Slack, Discord) and the bench, plus the desktop app (apps/desktop, also served as the playground) and its integrations. Telegram live testing is parked: don't start the bot unless I ask. No Slack/Discord bots.
 
 Rules that matter most:
 - No third-party SDKs: everything is built on Node 24 built-ins and fetch.
@@ -23,7 +23,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
-- **Tests:** 161 passing, typecheck clean. All work below is committed and pushed (see `git log`).
+- **Tests:** 181 passing, typecheck clean. The round below ("Framework and app, 2026-10-25 evening") is not committed yet.
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios), re-recorded 2026-10-25 after the bench-category fixes:
 
   | | Now | Previous | Old flat baseline |
@@ -36,9 +36,22 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
   | Median per scenario | 24s | 26s | — |
 
   One run per scenario, so category numbers swing (intervals are wide). The comparison dip in this run: phone-plans (no action), restaurants (a template it never defined), flights (no cards or table): content, not engine faults. The gate run just before it had comparison at 80%. The parser rules from pizza-order came after the recording; replay shows no change to recorded scores.
-- **The playground may be running** (started from the session; stop it if not needed). The Telegram bot is stopped. One button press (Save Details on the booking confirmation) is saved in the chat's inbox and replays the next time the bot starts. The old long chat is archived in `.vak/telegram/archive/`.
+- **The app is installed** at `/Applications/vak.app` (data in `~/Library/Application Support/com.vakprojection.desktop`). **The playground may be running** (started from the session; stop it if not needed). The Telegram bot is stopped. One button press (Save Details on the booking confirmation) is saved in the chat's inbox and replays the next time the bot starts. The old long chat is archived in `.vak/telegram/archive/`.
 
 ## Done in this stretch
+
+- **Framework and app, 2026-10-25 evening (user: "do them", then many additions):**
+  - **Local interactions** (`core/interact.ts`): web tables sort by header, filter, page; lists and card grids filter. Projector defaults by size (no model involvement); `sortable`/`searchable`/`pageSize` only switch them. `totals: true` adds a computed totals row (a total the model wrote is replaced; percentage columns and the first column are never summed). Shared value parsing ($1,299, 12%, 1.2k, dates).
+  - **One interface:** the playground now runs the desktop app's server (`apps/desktop/sidecar/server.ts`) open on :5177 and serves the same built UI; the old playground UI is gone. `?session=` opens a chat; surfaces projected from outside (MCP, `/api/project`) appear live and their actions reach the outside agent.
+  - **MCP client and integrations, security first:** `@vak/mcp/client` (stdio + Streamable HTTP, no SDK); per-tool policy Allow/Ask/Off from the tool's own hints (reads allowed; writes and open-internet ask); approvals over the chat stream (Allow once / for this chat / Deny); output wrapped and capped as untrusted data; servers get a minimal env (our keys never), own HOME/cwd. Built-ins: Web pages (SSRF-checked on every redirect, https only, 2 MB) and Time. Catalog: Files, Memory (MCP reference), Brave Search, GitHub (remote), Notion, Context7, pinned to versions ≥ 14 days old and installed with `npm --ignore-scripts --before=<14 days ago>`. Settings → Integrations: marketplace with original icons, trust badges, per-integration page (reach, setup, every tool with policy and "Try it", recent calls), add-your-own (unverified). Verified live: the 4B model called the web tool, the approval card stopped it, the answer used the real page.
+  - **New components** (extended tier): timeline, steps, code (copy), map (places + OpenStreetMap links, no tiles), gallery. Web draws them; every other target gets them lowered (`core/lower.ts`). `grid` lost its `gallery` alias and `text` its `code` alias (no recorded output used them).
+  - **New targets:** Markdown (`projectMarkdown`), terminal (`projectAnsi`, strips escape sequences), HTML email (`@vak/email`, table layout, inline styles, controls become one "Open to respond" link). Slack/Discord listeners not built (user preference: Telegram only).
+  - **Packaging:** `node scripts/build-packages.ts` builds every package to `packages/*/dist` (JS + .d.ts + package.json with sibling deps); verified by installing the tarballs into an empty project (JS and TS). `@vak/kit`: `createVak({ model }).ask/act/render/email`. Examples in `examples/` (terminal chat, email digest, web page). Nothing published.
+  - **Speed:** Anthropic cache breakpoints (system, tools, latest message), OpenAI `prompt_cache_key`, Ollama `keep_alive: 30m`. Profile (`scripts/profile-turn.ts`, 4B): ~3k tokens in, ~1.3k out, 25 tok/s overall; the whole tool call arrives at the end (Ollama does not stream tool arguments), so the UI shows an elapsed-time status. The next speed lever is fewer output tokens (needs a bench A/B, see Next).
+  - **App:** new icon (a sibling of the Vakyartha mark: ink tile, ivory speech bubble with the V, saffron line), tray icon from it, mark in the sidebar and empty screen; sidebar collapse/expand buttons; settings rows and selects laid out the same in WebKit and Chromium; UI errors go to the engine log; debug builds can run a probe script in the window (`VAK_DEBUG_JS`). Built and installed to /Applications.
+  - **Open from the user's testing:** "clicking doesn't change appearance" could not be reproduced (works in Chromium, off-screen WebKit, a `tauri://` WebKit harness, the dev window and a release-layout debug bundle); the reinstalled app now logs UI errors, so a repeat shows its cause in the engine log.
+
+## Done before that
 
 - **Desktop app, everyday-driver round (user's review, 2026-10-25):**
   - Host hardening: JSON-only bodies, Origin and Host checks (CSRF and DNS rebinding against the open playground), constant-time token check; session index (no full re-read per list), idle eviction (24 loaded), rename route.
@@ -138,21 +151,21 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Next (in order)
 
-1. **Parked until the user asks: Telegram live.**
-   - Start the bot; the saved Save Details press replays.
-   - Check the booking confirmation flow end to end and "/night" with prices.
-   - The transcript doesn't record the user message that started a turn, only what follows it; consider recording it for diagnosis.
-2. **Optional, ask first:**
-   - prompt caching
-   - near-miss id pairing
-   - a security review of the projectors
-   - packaging for npm
-   - desktop: code signing/notarization, auto-update, MCP into the desktop app (the sidecar requires a token), Windows/Linux builds, Slack (Socket Mode) and Discord (Gateway) listeners as channels
-   - live Slack/Discord bots, only if the user gets tokens
+1. **Ask the user to retry Appearance in the installed app**; if it still fails, read `~/Library/Application Support/com.vakprojection.desktop/logs/engine.log` (`[ui error]` lines).
+2. **Commit this round** (when the user asks): run the secret scan first.
+3. **Bench A/B for compact output** (4B): the interface JSON is ~1.3k tokens per answer; a shorter authoring (data-first rows, fewer repeated props) could halve decode time. Measure with `npm run bench -- gate ... --plan`, never change blindly.
+4. **Bench scenarios for the new components and totals**, so the replay gate protects them (none recorded yet).
+5. **Decisions for the user before publishing:** a license (the repo has none), and whether the `@vak` npm scope is available to them (it is not registered today).
+6. **Integrations, next:** OAuth for remote servers (Linear, Notion remote), an update check against newer pinned versions, macOS sandbox profiles for local servers.
+7. **Parked until the user asks: Telegram live** (start the bot; the saved Save Details press replays).
+8. **Optional, ask first:** code signing/notarization and auto-update; Windows/Linux builds; near-miss id pairing.
 
 ## Useful paths
 
 - Telegram transcripts: `.vak/telegram/<chat>.jsonl`; state: `.vak/telegram/<chat>.state.json`
 - Playground transcripts: `.vak/playground/<session>.jsonl`
 - Calibration and profile cache: `.vak/models.json`
+- Desktop dev data: `.vak/desktop/` (sessions, settings, integrations, `logs/engine.log`, `logs/tools.jsonl`); installed app: `~/Library/Application Support/com.vakprojection.desktop/`
+- Playground data: `.vak/playground/` (same layout)
+- WebKit check: `apps/desktop/scripts/webkit-check.swift` (off-screen WKWebView; renders and scripts pages as the app window does; usage in its header)
 - Bench results: `packages/bench/data/results/` (gitignored); baselines and cassettes: `packages/bench/data/{baselines,cassettes}/`

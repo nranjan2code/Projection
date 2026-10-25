@@ -12,7 +12,7 @@
   "scripts": {
     "test": "node --test \"packages/*/test/**/*.test.ts\" \"apps/*/test/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json",
-    "playground": "node --disable-warning=ExperimentalWarning apps/playground/server.ts",
+    "playground": "npm run build --workspace @vak/desktop --silent && node --disable-warning=ExperimentalWarning apps/playground/server.ts",
     "bench": "node --disable-warning=ExperimentalWarning scripts/bench.ts",
     "bench:gate": "node --disable-warning=ExperimentalWarning scripts/bench.ts gate ollama:qwen3.5:4b-mlx --runs 2",
     "telegram": "node --disable-warning=ExperimentalWarning packages/telegram/src/main.ts",

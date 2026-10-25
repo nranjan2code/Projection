@@ -5,7 +5,7 @@
 // opens a modal (see modal.ts). Limits are Discord's; anything over them is
 // cut with a note, never sent for Discord to reject.
 
-import { byPriority, type CapabilityProfile, chartText, isRequired, type ResolvedNode, type ResolvedSurface, tableText, type TextTable, walk } from "@vak/core";
+import { byPriority, type CapabilityProfile, chartText, isRequired, type ResolvedNode, type ResolvedSurface, tableText, type TextTable, walk, lowerSurface } from "@vak/core";
 import { esc, markdownToDiscord } from "./markdown.ts";
 
 export const discordProfile: CapabilityProfile = {
@@ -81,6 +81,8 @@ const write = (ctx: Ctx, md: string) => md && ctx.pending.push(md);
 const push = (ctx: Ctx, c: Component) => (flush(ctx), ctx.out.push(c));
 
 export function projectDiscord(surface: ResolvedSurface, tokenFor: (key: string, kind: Control["kind"]) => string, opts: ProjectOptions = {}): DiscordProjection {
+  // Timeline, steps, code, map and gallery as lists, text and images.
+  surface = lowerSurface(surface);
   const controls: Control[] = [];
   const ctx: Ctx = {
     control: (key, kind, label) => {

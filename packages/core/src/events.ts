@@ -27,6 +27,12 @@ export type AgentEvent =
   /** Full surface state; sent progressively while a render streams. */
   | { type: "surface"; snapshot: SurfaceSnapshot }
   | { type: "surface_removed"; id: string }
+  /**
+   * A tool that needs the user's yes before it runs (an integration's "ask"
+   * policy). The client answers through its host; the run waits meanwhile.
+   */
+  | { type: "approval"; id: string; tool: string; server: string; title: string; args: unknown; reason?: string }
+  | { type: "approval_done"; id: string; decision: "allow" | "deny" }
   | { type: "run_end"; stop: string; usage?: Usage }
   | { type: "error"; message: string };
 

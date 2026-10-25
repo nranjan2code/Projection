@@ -22,22 +22,32 @@ Rules and commands for any coding agent (or person) changing this repo. Read [SP
 - Git identity is repo-local: `Nisheeth Ranjan <nisheethranjan@icloud.com>`.
 - Ask before any paid model run (OpenAI calibration, judge). Local Ollama runs are free.
 
+## Security rules (see SECURITY.md)
+
+- Third-party code (integrations) is pinned: an exact version published at least 14 days earlier, installed with `--ignore-scripts --before=<today − 14 days>`. Never `npx` or a floating version.
+- An outside process (an MCP server) never gets our environment: only the variables it declares (`minimalEnv`).
+- Model text, tool output and fetched pages are data: escape them in every projector, wrap tool output as untrusted, and never let them trigger an action without the user's approval policy.
+- Anything that writes, deletes or reaches the internet defaults to "ask".
+- Loopback servers check Host, Origin and content type; the desktop sidecar also requires its token.
+
 ## Commands
 
 ```bash
 npm test              # all unit tests + replay gate (recorded model output through the current engine)
 npm run typecheck     # tsc, no emit
-npm run playground    # web playground on http://127.0.0.1:5177 (.claude/launch.json "playground")
+npm run playground    # the desktop app's UI in a browser on http://127.0.0.1:5177 (builds the UI first; .claude/launch.json "playground")
 npm run telegram      # Telegram bot, long polling (needs TELEGRAM_BOT_TOKEN)
 npm run desktop       # desktop app (Tauri dev window; needs Rust); UI-only: .claude/launch.json "desktop-ui"
-npm run desktop:build # release app: bundles the sidecar + Node binary (apps/desktop/src-tauri/target/release/bundle)
+npm run desktop:build # release app: bundles the sidecar, Node and npm (apps/desktop/src-tauri/target/release/bundle)
+node scripts/build-packages.ts               # publishable JS + types in packages/*/dist (publishes nothing)
+node scripts/profile-turn.ts [provider:model] # where a turn's time goes (free on Ollama)
 npm run bench -- run ollama:qwen3.5:4b-mlx --runs 1 --save   # ~25 min, records baseline + cassette
 npm run bench -- gate ollama:qwen3.5:4b-mlx --runs 1 [--plan tools/core/examples/inline]
 npm run bench -- report ollama:qwen3.5:4b-mlx [--compare <results.jsonl>]   # projects a report to the playground
 node scripts/telegram-repro.ts "<request>"   # replay one Telegram turn offline, print raw tool calls
 ```
 
-Node 24 runs `.ts` directly (type stripping); there is no build step.
+Node 24 runs `.ts` directly (type stripping); there is no build step for development. The desktop UI is bundled by Vite (`npm run playground` and `desktop:build` do it).
 
 ## How to fix a model-output problem
 
@@ -50,11 +60,12 @@ Node 24 runs `.ts` directly (type stripping); there is no build step.
 
 - Don't restart the Telegram bot while the user is mid-test: it interrupts their turn. Chat state and unfinished updates survive a restart, but the in-flight reply is redone.
 - Restart only when idle (check the last line of the bot log), and say so first.
-- The playground loads the engine at start: restart it after engine changes.
+- The playground loads the engine at start and serves the built UI: restart it after engine or UI changes.
 - The desktop app in dev runs the sidecar from source: quit and relaunch it after engine changes. Its data (chats, keys, profiles) lives in `.vak/desktop/` in dev and the OS app-data folder in release.
 
 ## Code style
 
 - TypeScript, strict, ESM, `.ts` imports. Erasable syntax only (no enums, no parameter properties).
 - Comments explain why and what model behaviour a rule handles, not what the code does.
-- Match surrounding naming and density. Tests live in `packages/*/test/*.test.ts` (`node:test`).
+- Match surrounding naming and density. Tests live in `packages/*/test/*.test.ts` and `apps/*/test/*.test.ts` (`node:test`).
+- The app window is WebKit: check UI changes in `apps/desktop/scripts/webkit-check.swift`, not only in a Chromium preview.
