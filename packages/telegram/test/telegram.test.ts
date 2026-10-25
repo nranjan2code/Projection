@@ -292,3 +292,12 @@ test("bot: a surface changed in reply to a typed message moves to the bottom as 
   assert.doesNotMatch(retired.params.rich_message.html, /<tg-button/, "the old message keeps no buttons");
   assert.match(mine.find((c) => c.method === "sendRichMessage")!.params.rich_message.html, /Trips again/, "the new view is a new message");
 });
+
+test("projection: a button whose label resolves empty still has text", () => {
+  // From a live run: Telegram refused the whole message (RICH_MESSAGE_BUTTON_TEXT_EMPTY).
+  const store = new SurfaceStore(basicCatalog);
+  store.render({ surface: "b", nodes: [{ id: "root", type: "stack", children: ["x", "y"] }, { id: "x", type: "button", props: { label: "{/missing}", action: "book_hotel" } }, { id: "y", type: "button", props: { label: "{/missing}" } }] });
+  const { html } = projectTelegram(store.resolve("b")!, tokens());
+  assert.doesNotMatch(html, /<tg-button[^>]*><\/tg-button>/);
+  assert.match(html, />Book hotel<\/tg-button>/);
+});

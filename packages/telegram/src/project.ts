@@ -124,10 +124,24 @@ function statTable(stats: ResolvedNode[]): string {
   return `<table compact>${rows.join("")}</table>`;
 }
 
+/**
+ * Telegram rejects a whole message for one button with no text, and a bound
+ * label can resolve empty: fall back to the action's name, then "Open".
+ */
+export function buttonLabel(props: Record<string, unknown>): string {
+  const label = str(props.label).trim();
+  if (label) return label;
+  const action = str(props.action).replace(/[_-]+/g, " ").trim();
+  return action ? action[0]!.toUpperCase() + action.slice(1) : "Open";
+}
+
 function buttonRow(buttons: ResolvedNode[], ctx: Ctx): string {
   const style = (b: ResolvedNode) => (["primary", "danger", "link"].includes(str(b.props.style)) ? ` style="${str(b.props.style)}"` : "");
   return `<tg-button-row>${buttons
-    .map((b) => `<tg-button type="callback_data" data="${esc(ctx.control(b.key, "button", str(b.props.label)))}"${style(b)}>${esc(b.props.label)}</tg-button>`)
+    .map((b) => {
+      const label = buttonLabel(b.props);
+      return `<tg-button type="callback_data" data="${esc(ctx.control(b.key, "button", label))}"${style(b)}>${esc(label)}</tg-button>`;
+    })
     .join("")}</tg-button-row>`;
 }
 

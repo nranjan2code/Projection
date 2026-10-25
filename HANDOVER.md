@@ -4,11 +4,11 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 
 ## Handover prompt (paste into a new session)
 
-> Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection. Read AGENTS.md (rules: no third-party SDKs, no hard-coded fixes, never blame the small model, secrets only in .env), SPECS.md (architecture) and HANDOVER.md (status and next steps). Run `npm test` first (108 tests should pass). Only Telegram is available for live chat testing; local Ollama `qwen3.5:4b-mlx` is the primary model. Don't restart the Telegram bot while I'm testing. Pick up from "Next" in HANDOVER.md and ask if in doubt.
+> Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection. Read AGENTS.md (rules: no third-party SDKs, no hard-coded fixes, never blame the small model, secrets only in .env), SPECS.md (architecture) and HANDOVER.md (status and next steps). Run `npm test` first (109 tests should pass). Only Telegram is available for live chat testing; local Ollama `qwen3.5:4b-mlx` is the primary model. Don't restart the Telegram bot while I'm testing. Pick up from "Next" in HANDOVER.md and ask if in doubt.
 
 ## Where things stand
 
-- **Main:** `40246a2` (pushed). **Tests:** 108 passing, typecheck clean.
+- **Main:** see `git log` (pushed). **Tests:** 109 passing, typecheck clean.
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios):
 
   | | Now | Old flat baseline |
@@ -62,6 +62,7 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
   - Top-level `{name}` binds to the surface's own data (the model retried 3 times on `{booking_info}`).
   - One fixed button per item stays with its own item ("Book X" ×3 used to repeat in every card).
   - A repeated ending after a placeholder is dropped ("$800/night/night").
+  - A button whose label resolves empty gets text (the action's name, then "Open"). Telegram refused a whole message for one empty label (`RICH_MESSAGE_BUTTON_TEXT_EMPTY`) and the user got the plain-text fallback.
 - **Docs:** AGENTS.md, SPECS.md and this file.
 - **Web tests passed** in the browser pane:
   - examples render; buttons send the item's data
