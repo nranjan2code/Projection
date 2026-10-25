@@ -7,7 +7,7 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 ```
 Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection.
 
-First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 140 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
+First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 142 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
 
 Focus: the core system. That means the engine (parser, normalizer, lint, resolve), the catalog, and the projectors (web, text, Telegram, Slack, Discord as renderers, tested offline), and the bench. Telegram live testing is parked: don't start the bot unless I ask.
 
@@ -23,7 +23,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
-- **Tests:** 140 passing, typecheck clean. The 2026-10-25 afternoon work (below) is in the working tree; check `git log` to see whether it was committed.
+- **Tests:** 142 passing, typecheck clean. All work below is committed and pushed (see `git log`).
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios), re-recorded 2026-10-25 after the bench-category fixes:
 
   | | Now | Previous | Old flat baseline |
@@ -40,6 +40,9 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Done in this stretch
 
+- **Form slice baseline re-recorded on inline (was Next #1):** 3 runs × 5 form scenarios: fully passing 73% [48–89] (flat: 73%), check score 95% (flat: 94%), median 22.5s (flat: 17.4s). No difference within noise. Failures: two content misses (no form; no meal question), csat with too few inputs, and job-application run 0, which retried three times on a typeless object of form values and timed out. That object is now read as surface data (replay 0.80 → 1.00).
+- **MCP authoring (was Next #1), the user's choice: inline, configurable.** `@vak/mcp` now teaches inline children in its instructions and tool schema, matching the playground and Telegram; `VAK_AUTHORING=flat` (env) or `authoring: "flat"` (option) switches back. A running MCP server picks it up on restart.
+- **Form design (was Next #1), closed by the user's choice: leave it.** A form that says "choose a hotel" with nothing on screen to pick one appeared in 1 of 42 recorded comparison first screens (gate 2026-10-25T07-35-53, hotel-booking-flow); the model then confirmed the first hotel. Detecting it needs a heuristic (≥2 cards, a form, no per-item button or select) that could misfire on info cards beside a signup form, so no lint.
 - **Catalog usage hints (was Next #1, user's choice):** `list` ("for ingredients, items and steps; ordered: true for steps") and `checkbox` ("one per checklist item, inside a form"). Live gate against the re-recorded baseline: fully passing 73% → **83%** [66–93], check score 91% → **96%** [92–100], planning 60% → 80%, comparison 40% → 80%, information 50% → 100%; recipe and onboarding-checklist now pass. Interaction 75% → 63% (wide intervals): pizza-order answered in text without a tool, dashboard-filter's follow-up only set unused data, todo-add bound its form under the task list.
   - New lint error from todo-add: an input bound under data that can't hold it (`/todos/new-task` while `/todos` is a list). The form could never submit; the error names the conflict and suggests `/form/<field>`.
   - Parser: `"values": {"/data/revenue_values"}` (quotes inside binding braces) is the binding (dashboard-filter retried on it).
@@ -117,14 +120,11 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Next (in order)
 
-1. **Form design:** a form says "choose your hotel" but has no hotel field. Consider a lint warning, or rely on the action data already carrying the chosen item.
-2. **The MCP server still teaches flat authoring.** Its instructions say "nodes is a FLAT list" (`packages/mcp`, via `systemPrompt` without a plan). Decide whether MCP clients (often strong models) should get the inline rule too, and pass `authoring` through if so.
-3. **Re-record the form slice baseline** on inline (`--category form --slice form --save`); it is still flat v2.
-4. **Parked until the user asks: Telegram live.**
+1. **Parked until the user asks: Telegram live.**
    - Start the bot; the saved Save Details press replays.
    - Check the booking confirmation flow end to end and "/night" with prices.
    - The transcript doesn't record the user message that started a turn, only what follows it; consider recording it for diagnosis.
-5. **Optional, ask first:**
+2. **Optional, ask first:**
    - prompt caching
    - near-miss id pairing
    - a security review of the projectors

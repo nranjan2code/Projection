@@ -554,6 +554,13 @@ export class SurfaceStore {
       else if (Object.keys(props).length === 0 && rawChildren === undefined) {
         diags.push({ severity: "warning", surface, node: givenId, message: "node with no type, props or children was dropped" });
         return undefined;
+      } else if (givenId === undefined && rawChildren === undefined) {
+        // `{"name": "", "email": "", "projects": [...]}` in a children list (4B,
+        // form slice job-application): no id, no type, and keys that describe
+        // no component. It is the form's starting values: surface data, not a
+        // node (reported as a node missing its type, it cost three retries).
+        this.nodeData = mergeDeep(this.nodeData ?? {}, props);
+        return undefined;
       }
     }
     // `{"id":"chart","type":"chart","children":[{"props":{...}}]}` (4B, bench

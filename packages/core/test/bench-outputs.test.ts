@@ -123,3 +123,12 @@ test("job-application (second gate run): key and value in one string, a word mis
   for (const c of calls) assert.deepEqual(errors(c.diags), []);
   assert.match(text, /\[Select\] Level in CSS\/Sass\*: Beginner \/ Intermediate \/ Expert/);
 });
+
+test("job-application (form slice): a typeless, id-less object of form values in children is data", () => {
+  // {"name": "", "email": "", "projects": [...]} inside a stack's children was a
+  // node "missing type": three retries, then the run timed out.
+  const { last, errors, store } = replay("job-application-form-slice");
+  assert.deepEqual(errors(last.diags), []);
+  assert.ok(last.diags.some((d) => /data written inside nodes was merged/.test(d.message)));
+  assert.equal(store.get(last.surface)!.data.resume_uploaded, false);
+});

@@ -1,7 +1,7 @@
 // vak as MCP tools: any MCP host's model can project UI into the vak
 // playground viewer and receive what the user does with it.
 
-import { basicCatalog, type Catalog, systemPrompt, TOOL_REMOVE, TOOL_RENDER, TOOL_UPDATE, toolDefinitions, toWireSchema } from "@vak/core";
+import { type Authoring, basicCatalog, type Catalog, systemPrompt, TOOL_REMOVE, TOOL_RENDER, TOOL_UPDATE, toolDefinitions, toWireSchema } from "@vak/core";
 import type { ToolDef, ToolResult } from "./server.ts";
 
 export interface VakMcpOptions {
@@ -10,6 +10,12 @@ export interface VakMcpOptions {
   /** Session the surfaces belong to; the viewer is `${url}/?session=${session}`. */
   session: string;
   catalog?: Catalog;
+  /**
+   * How the prompt and tool schema teach children: written inside their
+   * parent ("inline", the default, as in the playground and Telegram after the
+   * A/B test) or referenced by id ("flat"). The engine reads both either way.
+   */
+  authoring?: Authoring;
 }
 
 const text = (t: string, extra: Partial<ToolResult> = {}): ToolResult => ({ content: [{ type: "text", text: t }], ...extra });
@@ -31,12 +37,12 @@ export function vakInstructions(opts: VakMcpOptions): string {
     "After showing a form or buttons, call vak_wait_action to receive what the user submits, then respond (often with vak_update).",
     "Each result includes the surface as text: check it shows what you intended.",
     "",
-    systemPrompt(opts.catalog ?? basicCatalog),
+    systemPrompt(opts.catalog ?? basicCatalog, undefined, { authoring: opts.authoring ?? "inline" }),
   ].join("\n");
 }
 
 export function vakTools(opts: VakMcpOptions): ToolDef[] {
-  const defs = toolDefinitions(opts.catalog ?? basicCatalog, { mode: "compact" });
+  const defs = toolDefinitions(opts.catalog ?? basicCatalog, { mode: "compact", authoring: opts.authoring ?? "inline" });
   const project = (tool: string) => async (args: Record<string, unknown>): Promise<ToolResult> => {
     const out = await call(`${opts.url}/api/project`, {
       method: "POST",

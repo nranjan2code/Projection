@@ -55,7 +55,7 @@ In MCP there is also `vak_wait_action`.
    - An unknown argument holding node-shaped objects (`"chart": "{...}, {...}]"`) joins the nodes list; its name types a node that has none.
 3. **Normalizer** (`normalize.ts`).
    - Type resolution: name → alias → schema-scored inference. A `namesComponent` prop whose value names another component (by name or alias, with its presets) makes the node that component when the result validates; the prop is dropped.
-   - Node keys: `prop`, `properties`, `attributes`, `attrs` mean `props`. `null` props are omitted. A typeless `{"data": {...}}` in a nodes list is surface data. A leaf component whose only child is a bare `{props}` object owns those props.
+   - Node keys: `prop`, `properties`, `attributes`, `attrs` mean `props`. `null` props are omitted. A typeless `{"data": {...}}` in a nodes list is surface data, and so is an id-less, typeless object whose keys describe no component (a form's starting values written as a child). A leaf component whose only child is a bare `{props}` object owns those props.
    - Prop preparation: `{{path}}` → `{path}`, presets, bare pointers (`"/items"`) where a string isn't valid, at any depth, become `{/items}`, coercion, defaults, HTML → markdown, double-escaped `\n` repair.
    - An inline node reusing an id already written in the same call gets its own id (`actions_2`) instead of replacing the first.
    - Structure repair:
@@ -118,7 +118,7 @@ Shared chat logic lives in `core/chat.ts`: form fields, reading typed answers, t
 
 ## 7. MCP server
 
-`@vak/mcp`: stdio, no SDK, dual protocol era (2026-07-28 `server/discover` and legacy `initialize`). Tools are backed by the playground viewer (`/api/project`, `/api/actions`). Registered for Claude Code in `.mcp.json`.
+`@vak/mcp`: stdio, no SDK, dual protocol era (2026-07-28 `server/discover` and legacy `initialize`). Tools are backed by the playground viewer (`/api/project`, `/api/actions`). Registered for Claude Code in `.mcp.json`. Teaches inline children by default, like the playground and Telegram; `VAK_AUTHORING=flat` (or the `authoring` option) switches the prompt and tool schema to flat. The engine reads both styles either way.
 
 ## 8. Benchmark
 

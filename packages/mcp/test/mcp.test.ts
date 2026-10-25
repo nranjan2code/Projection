@@ -3,6 +3,7 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { createInterface } from "node:readline";
 import { after, before, test } from "node:test";
+import { vakInstructions, vakTools } from "../src/vak-tools.ts";
 
 const MAIN = new URL("../src/main.ts", import.meta.url).pathname;
 const META = (version = "2026-07-28") => ({
@@ -121,4 +122,16 @@ test("an unreachable viewer is a readable tool error, not a protocol failure", a
   assert.equal(r.result.isError, true);
   assert.match(r.result.content[0].text, /npm run playground/);
   c.close();
+});
+
+test("MCP clients are taught inline children by default; flat on request", () => {
+  // The instructions used to say "nodes is a FLAT list" while the playground and
+  // Telegram teach inline (the A/B default). The engine reads both styles.
+  const children = (authoring?: "flat" | "inline") =>
+    JSON.stringify((vakTools({ url: "http://x", session: "s", authoring })[0]!.inputSchema as { properties: { nodes: { items: { properties: { children: unknown } } } } }).properties.nodes.items.properties.children);
+  assert.match(vakInstructions({ url: "http://x", session: "s" }), /Write each child node directly inside its parent's "children" array/);
+  assert.doesNotMatch(vakInstructions({ url: "http://x", session: "s" }), /FLAT list/);
+  assert.match(children(), /a child node/);
+  assert.match(vakInstructions({ url: "http://x", session: "s", authoring: "flat" }), /nodes is a FLAT list/);
+  assert.match(children("flat"), /ids of child nodes/);
 });

@@ -9,10 +9,11 @@
   "config": {
     "generation": "tools",
     "tier": "core",
-    "examples": true
+    "examples": true,
+    "authoring": "inline"
   },
-  "commit": "fb84aa9-dirty",
-  "at": "2026-10-24T16:38:45.506Z",
+  "commit": "30df1b7-dirty",
+  "at": "2026-10-25T10:03:15.832Z",
   "summary": {
     "runs": 15,
     "complete": {
@@ -22,9 +23,9 @@
       "n": 15
     },
     "score": {
-      "value": 0.9366666666666666,
-      "lo": 0.8790903109439954,
-      "hi": 0.9942430223893379,
+      "value": 0.9455555555555556,
+      "lo": 0.8975817314542822,
+      "hi": 0.993529379656829,
       "n": 15
     },
     "byCategory": {
@@ -37,9 +38,9 @@
           "n": 15
         },
         "score": {
-          "value": 0.9366666666666666,
-          "lo": 0.8790903109439954,
-          "hi": 0.9942430223893379,
+          "value": 0.9455555555555556,
+          "lo": 0.8975817314542822,
+          "hi": 0.993529379656829,
           "n": 15
         }
       }
@@ -52,18 +53,18 @@
       },
       "job-application": {
         "runs": 3,
-        "complete": 2,
-        "score": 0.9333333333333332
+        "complete": 1,
+        "score": 0.8666666666666667
       },
       "bug-report": {
         "runs": 3,
-        "complete": 2,
-        "score": 0.9444444444444445
+        "complete": 3,
+        "score": 1
       },
       "wedding-rsvp": {
         "runs": 3,
         "complete": 2,
-        "score": 0.8888888888888888
+        "score": 0.9444444444444445
       },
       "csat-survey": {
         "runs": 3,
@@ -71,10 +72,10 @@
         "score": 0.9166666666666666
       }
     },
-    "medianMs": 17394,
+    "medianMs": 22508,
     "usage": {
-      "input": 88771,
-      "output": 14722
+      "input": 50475,
+      "output": 10877
     }
   }
 }
