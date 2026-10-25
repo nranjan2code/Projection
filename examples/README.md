@@ -8,4 +8,4 @@ Each runs from the repo with Node 24 (no build step). Keys come from `.env`; the
 | [email-digest.ts](email-digest.ts) | one request → an HTML email (and its text part) with the email projector | `node examples/email-digest.ts "Weekly sales summary"` |
 | [web-page/](web-page/) | the smallest web app: `@vak/host` + one HTML page with `<vak-surface>`, buttons and forms going back to the model | `node examples/web-page/server.ts` |
 
-For the full app (chats, settings, integrations), see `apps/desktop` (`npm run desktop`) or its browser version, `npm run playground`.
+For a full app on the framework (chats, settings, integrations), see [Vakyartha](https://github.com/nranjan2code/vakyartha). `npm run playground` is the framework's own viewer.

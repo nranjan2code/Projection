@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>vak playground</title>
+    <script type="importmap">{ "imports": { "@vak/core": "/pkg/core/index.ts", "@vak/web": "/pkg/web/index.ts" } }</script>
+    <style>
+      :root { color-scheme: light dark; --muted: #6b7280; --line: #e5e7eb; }
+      @media (prefers-color-scheme: dark) { :root { --muted: #9ca3af; --line: #374151; } }
+      body { font: 16px/1.5 system-ui, sans-serif; max-width: 960px; margin: 24px auto; padding: 0 16px; }
+      header { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: baseline; color: var(--muted); font-size: 14px; margin-bottom: 16px; }
+      header strong { color: CanvasText; font-size: 16px; }
+      form { display: flex; gap: 8px; margin-bottom: 16px; }
+      input { flex: 1; min-width: 0; padding: 10px; font: inherit; }
+      #text { color: var(--muted); min-height: 1.5em; }
+      #empty { color: var(--muted); border: 1px dashed var(--line); border-radius: 8px; padding: 24px; text-align: center; }
+      vak-surface { display: block; margin: 16px 0; }
+    </style>
+  </head>
+  <body>
+    <header><strong>vak playground</strong><span id="where"></span></header>
+    <form id="ask"><input id="q" placeholder="Ask the model, or project into this session over MCP" autofocus /><button>Ask</button></form>
+    <p id="text"></p>
+    <p id="empty">No surfaces in this session yet.</p>
+    <div id="out"></div>
+    <script type="module">
+      import { defineVakElements, VakClient } from "@vak/web";
+      defineVakElements();
+      // ?session= picks the session an outside agent projects into (MCP uses "mcp", the bench "bench").
+      const params = new URLSearchParams(location.search);
+      const session = params.get("session") ?? "mcp";
+      const [provider, ...rest] = (params.get("model") ?? "ollama:qwen3.5:4b-mlx").split(":");
+      const model = rest.join(":");
+      document.getElementById("where").textContent = `session ${session} · ${provider}:${model}`;
+      const client = new VakClient("/api/chat");
+      const shown = new Map();
+      function show(snapshot) {
+        client.store.load(snapshot);
+        let el = shown.get(snapshot.id);
+        if (!el) {
+          el = document.createElement("vak-surface");
+          shown.set(snapshot.id, el);
+          document.getElementById("out").append(el);
+          el.attach(client.store, snapshot.id);
+        } else el.refresh();
+        document.getElementById("empty").hidden = true;
+      }
+      function drop(id) {
+        shown.get(id)?.remove();
+        shown.delete(id);
+        client.store.remove({ surface: id });
+      }
+      // Surfaces already in the session, then live ones from outside agents.
+      const events = new EventSource(`/api/events?session=${encodeURIComponent(session)}`);
+      // The host names each SSE event after its type, so onmessage would see none.
+      events.addEventListener("surface", (m) => show(JSON.parse(m.data).snapshot));
+      events.addEventListener("surface_removed", (m) => drop(JSON.parse(m.data).id));
+      const turn = (req) => {
+        document.getElementById("text").textContent = "";
+        return client.turn({ session, provider, model, ...req }, (e) => {
+          if (e.type === "text_delta") document.getElementById("text").textContent += e.delta;
+          else if (e.type === "error") document.getElementById("text").textContent = e.message;
+          else if (e.type === "surface") show(e.snapshot);
+          else if (e.type === "surface_removed") drop(e.id);
+        });
+      };
+      document.getElementById("ask").addEventListener("submit", (ev) => {
+        ev.preventDefault();
+        const q = document.getElementById("q");
+        if (q.value.trim()) turn({ message: q.value });
+        q.value = "";
+      });
+      // Buttons and forms go back to the model, or to the outside agent that projected the surface.
+      document.addEventListener("vak-action", (ev) => turn({ action: { ...ev.detail.action, data: ev.detail.data } }));
+    </script>
+  </body>
+</html>

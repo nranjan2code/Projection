@@ -7,9 +7,9 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 ```
 Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection.
 
-First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 208 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
+First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 197 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
 
-Focus: the core system (engine, catalog, projectors: web, text, Markdown, terminal, email, Telegram, Slack, Discord) and the bench, plus the desktop app (apps/desktop, also served as the playground) and its integrations. Telegram live testing is parked: don't start the bot unless I ask. No Slack/Discord bots.
+Focus: the framework only: the core system (engine, catalog, projectors: web, text, Markdown, terminal, email, Telegram, Slack, Discord), providers, host, MCP and the bench, plus the playground viewer. The desktop app is Vakyartha, a separate repository (github.com/nranjan2code/vakyartha, locally ~/Projects/vakyartha); it consumes this repo as a submodule, so never import from or design around it here. Telegram live testing is parked: don't start the bot unless I ask. No Slack/Discord bots.
 
 Rules that matter most:
 - No third-party SDKs: everything is built on Node 24 built-ins and fetch.
@@ -23,13 +23,13 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
-- **Canvas reopening fix:** all live artifacts, including updates to existing ones, open in the canvas. `vak_render`/`vak_update` tool-start opens a pending panel before the first snapshot; the snapshot selects the actual target. Manual close suppresses reopening for the current turn, and the next request can reopen it. Saved history does not auto-open every artifact. Added deterministic SSE checks for early opening, target selection, manual close and failure cleanup in the wide/narrow WebKit smoke. 208 tests, typecheck and WebKit checks pass; fresh release rebuilt and installed to `/Applications/vak.app`, then relaunched. No paid model runs.
-
-- **Canvas and Artifacts:** app-only canvas beside chat, with a dedicated **Artifacts** page (one sidebar entry), metadata cards across saved chats, search/type filters/sorting/pagination, and reopening into the originating chat. The chat shows artifact reference cards only (user correction after seeing duplicate inline content); full content lives exclusively in the canvas and stays hidden when closed. The canvas moves the live surface rather than duplicating it, preserving drafts/actions; includes Preview/Text, copy, native/browser Markdown download, a surface picker, resize, full/split view, and shortcuts. Artifact render/update tool-start opens the canvas with progress; the first snapshot selects the correct artifact, and subsequent snapshots paint there. Manual close is respected for the remainder of that turn, and the next turn can reopen it. History redraws only restore the saved selection. Host session listing adds lightweight `surfaceSummaries` without messages/data. Research and verification: [apps/desktop/CANVAS.md](apps/desktop/CANVAS.md); deterministic wide/narrow WebKit smoke: `node apps/desktop/scripts/canvas-check.ts` after the UI build. No paid model calls. Verified: 208 Node tests and typecheck pass; WebKit smoke passes at 1100px and 620px (including a 27-item library); native export test passes (path confinement, duplicate names, existing files and symlinks). `npm run desktop:build` produced the `.app` and `.dmg` successfully. Follow-up correction: chat now shows only artifact reference cards; closing the canvas keeps content hidden and preserves drafts. Rebuilt the release and installed it to `/Applications/vak.app`, then relaunched locally. Verified in the installed app with the saved article: chat shows only its reference card, opening displays the article in the canvas, closing hides it again. The 208 tests, typecheck and wide/narrow WebKit smoke checks pass.
-
-- **Desktop FinOps:** Settings → FinOps now has duration, context composition, repeated context, output shape, token/cache and estimated-cost charts, per-turn details, a chat filter, editable model rates and CSV export. This is app-only (`apps/desktop`); keep accounting and prices out of the projection framework. Provider requests are observed by an app wrapper; telemetry is numeric and local. Old sessions are reconstructed with unknown usage/spend. See [apps/desktop/FINOPS.md](apps/desktop/FINOPS.md). Verified against a copy of the installed app's 22 turns (555s); WebKit rendered six charts with no horizontal overflow and turn selection worked. Five accounting tests include an authenticated HTTP chat against a local fake provider (no paid model call). Full suite: 194 passing, typecheck and UI build clean. The installed release needs a new build to include this feature.
-
-- **Tests:** 208 passing, typecheck clean, including five desktop FinOps tests. Latest framework round: rich-component contracts, list/step recovery and quoted table bindings.
+- **Framework and app split (2026-10-25, user's request):** the desktop app left this repository for its own, [Vakyartha](https://github.com/nranjan2code/vakyartha) (`~/Projects/vakyartha`), with its 7 commits of history (`git subtree split --prefix=apps/desktop`).
+  - **Dependency runs one way:** Vakyartha pins Projection as a git submodule (`framework/`) and links `framework/packages/*` as npm workspaces. Nothing here imports, builds or tests the app; this repo only links to it (README "Built with vak", SPECS §10).
+  - **What left:** `apps/desktop` (Tauri shell, UI, sidecar, FinOps, Canvas/Artifacts, integrations marketplace, channels, WebKit checks, their tests) and `apps/playground` (the app in a browser; now `npm run web` in Vakyartha on :5178). App history, status and next steps moved to Vakyartha's HANDOVER.md; its architecture (old SPECS §10) to its SPECS.md; the settings-storage security check to its SECURITY.md.
+  - **What stayed:** every `packages/*` package (including `@vak/host`, `@vak/mcp/client` and Telegram's `runTelegram`, which the app uses), the bench and replay gate, examples, scripts.
+  - **New playground** (`playground/`): the framework's own viewer, `@vak/host` plus one page of `<vak-surface>` on :5177 with no build step. `?session=` (MCP uses `mcp`, the bench `bench`) and `?model=provider:model`. Verified: a surface projected through `/api/project` rendered live and its button press came back through `/api/actions`.
+  - Root `package.json` lost Tauri and Vite (lockfile pruned); AGENTS.md rule 1 lost the `apps/desktop` exception.
+- **Tests:** 197 passing (the 11 app tests moved with the app), typecheck clean. Latest framework round: rich-component contracts, list/step recovery and quoted table bindings.
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios), re-recorded 2026-10-25 after the bench-category fixes:
 
   | | Now | Previous | Old flat baseline |
@@ -42,8 +42,6 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
   | Median per scenario | 24s | 26s | — |
 
   One run per scenario, so category numbers swing (intervals are wide). The comparison dip in this run: phone-plans (no action), restaurants (a template it never defined), flights (no cards or table): content, not engine faults. The gate run just before it had comparison at 80%. The parser rules from pizza-order came after the recording; replay shows no change to recorded scores.
-- **The app is installed** at `/Applications/vak.app` (data in `~/Library/Application Support/com.vakprojection.desktop`). **The playground may be running** (started from the session; stop it if not needed). The Telegram bot is stopped. One button press (Save Details on the booking confirmation) is saved in the chat's inbox and replays the next time the bot starts. The old long chat is archived in `.vak/telegram/archive/`.
-
 ## Done in this stretch
 
 - **Rich-component reliability fixes (2026-10-25, current round):**
@@ -65,33 +63,15 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
   - Re-record the component slice with:
     `npm run bench -- run ollama:qwen3.5:4b-mlx --runs 1 --only release-timeline,delivery-steps,javascript-snippet,london-places,photo-gallery,invoice-totals --slice components-v3 --plan tools/extended/examples/inline --save`.
 
-- **Framework and app, 2026-10-25 evening (user: "do them", then many additions):**
+- **Framework round, 2026-10-25 evening (user: "do them", then many additions; the app's part of this round is in Vakyartha's HANDOVER):**
   - **Local interactions** (`core/interact.ts`): web tables sort by header, filter, page; lists and card grids filter. Projector defaults by size (no model involvement); `sortable`/`searchable`/`pageSize` only switch them. `totals: true` adds a computed totals row (a total the model wrote is replaced; percentage columns and the first column are never summed). Shared value parsing ($1,299, 12%, 1.2k, dates).
-  - **One interface:** the playground now runs the desktop app's server (`apps/desktop/sidecar/server.ts`) open on :5177 and serves the same built UI; the old playground UI is gone. `?session=` opens a chat; surfaces projected from outside (MCP, `/api/project`) appear live and their actions reach the outside agent.
-  - **MCP client and integrations, security first:** `@vak/mcp/client` (stdio + Streamable HTTP, no SDK); per-tool policy Allow/Ask/Off from the tool's own hints (reads allowed; writes and open-internet ask); approvals over the chat stream (Allow once / for this chat / Deny); output wrapped and capped as untrusted data; servers get a minimal env (our keys never), own HOME/cwd. Built-ins: Web pages (SSRF-checked on every redirect, https only, 2 MB) and Time. Catalog: Files, Memory (MCP reference), Brave Search, GitHub (remote), Notion, Context7, pinned to versions ≥ 14 days old and installed with `npm --ignore-scripts --before=<14 days ago>`. Settings → Integrations: marketplace with original icons, trust badges, per-integration page (reach, setup, every tool with policy and "Try it", recent calls), add-your-own (unverified). Verified live: the 4B model called the web tool, the approval card stopped it, the answer used the real page.
+  - **MCP client and integrations, security first:** `@vak/mcp/client` (stdio + Streamable HTTP, no SDK); per-tool policy Allow/Ask/Off from the tool's own hints (reads allowed; writes and open-internet ask); approvals over the chat stream (Allow once / for this chat / Deny); output wrapped and capped as untrusted data; servers get a minimal env (our keys never), own HOME/cwd. Built-ins: Web pages (SSRF-checked on every redirect, https only, 2 MB) and Time. The integrations catalog, pinned installs and the Settings marketplace built on this are the app's (now in Vakyartha). Verified live: the 4B model called the web tool, the approval card stopped it, the answer used the real page.
   - **New components** (extended tier): timeline, steps, code (copy), map (places + OpenStreetMap links, no tiles), gallery. Web draws them; every other target gets them lowered (`core/lower.ts`). `grid` lost its `gallery` alias and `text` its `code` alias (no recorded output used them).
   - **New targets:** Markdown (`projectMarkdown`), terminal (`projectAnsi`, strips escape sequences), HTML email (`@vak/email`, table layout, inline styles, controls become one "Open to respond" link). Slack/Discord listeners not built (user preference: Telegram only).
   - **Packaging:** `node scripts/build-packages.ts` builds every package to `packages/*/dist` (JS + .d.ts + package.json with sibling deps); verified by installing the tarballs into an empty project (JS and TS). `@vak/kit`: `createVak({ model }).ask/act/render/email`. Examples in `examples/` (terminal chat, email digest, web page). Nothing published.
   - **Speed:** Anthropic cache breakpoints (system, tools, latest message), OpenAI `prompt_cache_key`, Ollama `keep_alive: 30m`. Profile (`scripts/profile-turn.ts`, 4B): ~3k tokens in, ~1.3k out, 25 tok/s overall; the whole tool call arrives at the end (Ollama does not stream tool arguments), so the UI shows an elapsed-time status. The next speed lever is fewer output tokens (needs a bench A/B, see Next).
-  - **App:** new icon (a sibling of the Vakyartha mark: ink tile, ivory speech bubble with the V, saffron line), tray icon from it, mark in the sidebar and empty screen; sidebar collapse/expand buttons; settings rows and selects laid out the same in WebKit and Chromium; UI errors go to the engine log; debug builds can run a probe script in the window (`VAK_DEBUG_JS`). Built and installed to /Applications.
-  - **Open from the user's testing:** "clicking doesn't change appearance" could not be reproduced (works in Chromium, off-screen WebKit, a `tauri://` WebKit harness, the dev window and a release-layout debug bundle); the reinstalled app now logs UI errors, so a repeat shows its cause in the engine log.
 
 ## Done before that
-
-- **Desktop app, everyday-driver round (user's review, 2026-10-25):**
-  - Host hardening: JSON-only bodies, Origin and Host checks (CSRF and DNS rebinding against the open playground), constant-time token check; session index (no full re-read per list), idle eviction (24 loaded), rename route.
-  - Desktop: context window (last 10 turns by default), "Ollama isn't running" hint, Keychain for keys, engine log file, single instance, tray with close-to-background, Dock reopen, launch at login, graceful sidecar stop, a guard for builds without the engine.
-  - Providers: 11 labs as declared OpenAI-compatible presets; Settings generated from the registry. The model list in Settings is the provider's own, fetched with its key (Ollama: installed models); nothing is pre-selected from an alphabetical list.
-  - Channels: Telegram runs inside the app (`runTelegram`, shared with the script), off by default, own model; Slack/Discord slots listed as coming.
-  - Settings is a full page with sections; themes (6, light-dark pairs) and text size, applied to surfaces too; desktop-style right-click everywhere.
-  - Verified in the browser pane with a live sidecar and the 4B model (chat, Keychain round-trip with a dummy key, themes, menus, rename); release `.app` built; single instance and quit checked. Not checked live: the tray, close-to-background and launch at login (need the real window), and the Telegram channel turned on (it would poll the real bot).
-
-- **Desktop app (user's request, 2026-10-25): `apps/desktop`**, a separate product on the framework, for everyday use.
-  - Stack, chosen for late October 2026: Tauri 2.12 (stable; 3.0 is still alpha), Vite 8, plain TypeScript UI (the content is already the `<vak-surface>` Web Component, so no UI framework), the engine as a Node 24 sidecar (the providers need `node:fs`/`node:net`, so the engine stays on Node unchanged).
-  - New framework package `@vak/host`: the playground's API extracted (chat, calibrate, project/actions/events, profile, models) plus saved sessions with a redraw timeline, bearer-token auth, CORS allowlist and app routes. The playground is now a thin wrapper; its behaviour is unchanged. `VakClient` takes headers.
-  - UI (after the user asked for minimal): sidebar of chats grouped by date, thread, composer with a model picker; provider/model, plan, calibration, API keys/endpoints and advanced generation options in Settings. Engine notes are hidden unless turned on in Settings.
-  - Verified in the browser pane against a live sidecar with the 4B model: dashboard rendered, chat restored after reload, signup form submitted and confirmed. Release `.app` built with the bundled Node and sidecar.
-  - AGENTS.md rule 1 now names the exception: `apps/desktop` may use Tauri and Vite; `packages/*` stay dependency-free.
 
 - **Empty frames from the 0.8B model (playground, user's workout query):** five `tabs` with titles and no panels, then the day cards as a `"children"` list after the nodes. The cards were dropped and the screen showed bare divider lines, with no error. Now: a second node-list key joins the nodes; empty layout containers below the root are removed (warning); a surface with nothing but empty containers is an error, so the model adds content. A per-container error was tried first and rejected: it failed recorded 4B output that is fine (empty stacks are invisible).
   - Note: the playground saves the model on every send, so a browser that used the old 0.8B default keeps it until the user types another model.
@@ -176,20 +156,19 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Next (in order)
 
-1. **Ask the user to retry Appearance in the installed app**; if it still fails, read `~/Library/Application Support/com.vakprojection.desktop/logs/engine.log` (`[ui error]` lines).
-2. **Core-smoke follow-up:** inspect the saved recipe missing its Ingredients heading and pizza action with no changed view (`reliability-core-smoke`), then choose general contract/engine fixes.
-3. **Bench A/B for compact output** (4B): the interface JSON is ~1.3k tokens per answer; a shorter authoring (data-first rows, fewer repeated props) could halve decode time. Measure with `npm run bench -- gate ... --plan`, never change blindly.
-4. **Before publishing:** confirm whether the `@vak` npm scope is available. The user chose MIT licensing and no external contributions; see `LICENSE` and `CONTRIBUTING.md`.
-5. **Integrations, next:** OAuth for remote servers (Linear, Notion remote), an update check against newer pinned versions, macOS sandbox profiles for local servers.
-6. **Parked until the user asks: Telegram live** (start the bot; the saved Save Details press replays).
-7. **Optional, ask first:** code signing/notarization and auto-update; Windows/Linux builds; near-miss id pairing.
+1. **Core-smoke follow-up:** inspect the saved recipe missing its Ingredients heading and pizza action with no changed view (`reliability-core-smoke`), then choose general contract/engine fixes.
+2. **Bench A/B for compact output** (4B): the interface JSON is ~1.3k tokens per answer; a shorter authoring (data-first rows, fewer repeated props) could halve decode time. Measure with `npm run bench -- gate ... --plan`, never change blindly.
+3. **Before publishing:** confirm whether the `@vak` npm scope is available. The user chose MIT licensing and no external contributions; see `LICENSE` and `CONTRIBUTING.md`.
+4. **Parked until the user asks: Telegram live** (start the bot; the saved Save Details press replays).
+5. **Optional, ask first:** near-miss id pairing.
+6. **When the app needs a framework change:** make it here (with tests), push, then move Vakyartha's `framework` pin; note anything that breaks an export in CHANGELOG.md.
+
+App work (installed-app checks, integrations UI, signing and builds) is tracked in Vakyartha's HANDOVER.md.
 
 ## Useful paths
 
 - Telegram transcripts: `.vak/telegram/<chat>.jsonl`; state: `.vak/telegram/<chat>.state.json`
 - Playground transcripts: `.vak/playground/<session>.jsonl`
 - Calibration and profile cache: `.vak/models.json`
-- Desktop dev data: `.vak/desktop/` (sessions, settings, integrations, `logs/engine.log`, `logs/tools.jsonl`); installed app: `~/Library/Application Support/com.vakprojection.desktop/`
-- Playground data: `.vak/playground/` (same layout)
-- WebKit check: `apps/desktop/scripts/webkit-check.swift` (off-screen WKWebView; renders and scripts pages as the app window does; usage in its header)
+- Playground data: `.vak/playground/sessions/` (saved sessions)
 - Bench results: `packages/bench/data/results/` (gitignored); baselines and cassettes: `packages/bench/data/{baselines,cassettes}/`

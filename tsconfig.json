@@ -22,13 +22,11 @@
   "include": [
     "packages/*/src/**/*.ts",
     "packages/*/test/**/*.ts",
-    "apps/*/**/*.ts",
+    "playground/**/*.ts",
     "scripts/**/*.ts",
     "examples/**/*.ts"
   ],
   "exclude": [
-    "apps/desktop/src-tauri",
-    "apps/desktop/dist",
     "node_modules"
   ]
 }

@@ -2,11 +2,11 @@
 
 **Let language models answer with interfaces.**
 
-vak turns model output into cards, dashboards, tables, charts, forms and buttons. The model describes an interface once using the Vak Projection Spec (VPS); the engine parses, repairs and validates it, then projects it onto the web, desktop, chat platforms or text. Button presses and form submissions go back to the model so the interface can evolve through a conversation.
+vak turns model output into cards, dashboards, tables, charts, forms and buttons. The model describes an interface once using the Vak Projection Spec (VPS); the engine parses, repairs and validates it, then projects it onto the web, chat platforms or text. Button presses and form submissions go back to the model so the interface can evolve through a conversation.
 
 Built for local models first, with Ollama `qwen3.5:4b-mlx` as the primary target. Hosted providers work too.
 
-[Quick start](#quick-start) · [Use in code](#use-in-code) · [Supported surfaces](#supported-surfaces) · [Documentation](#documentation) · [MIT license](LICENSE)
+[Quick start](#quick-start) · [Use in code](#use-in-code) · [Supported surfaces](#supported-surfaces) · [Built with vak](#built-with-vak) · [Documentation](#documentation) · [MIT license](LICENSE)
 
 ## Why vak
 
@@ -14,12 +14,12 @@ Built for local models first, with Ollama `qwen3.5:4b-mlx` as the primary target
 - **Repair before retry.** A lenient streaming parser and catalog-driven normalization recover malformed model output before asking the model to try again.
 - **Interactive answers.** Forms validate inputs; buttons carry context; web tables sort, filter and page locally without another model call.
 - **Local and hosted models.** Provider adapters use `fetch`, with model capabilities guiding generation mode and prompt contracts.
-- **No third-party runtime dependencies in the framework.** `packages/*` uses Node 24 built-ins, browser APIs and `fetch`. The separate desktop app uses Tauri and Vite; the playground serves that app’s UI.
+- **No third-party runtime dependencies in the framework.** `packages/*` and the playground use Node 24 built-ins, browser APIs and `fetch`.
 - **Regression checks from real output.** Recorded model calls replay through the current engine as part of the test suite.
 
 ## Quick start
 
-You need **Node.js 24+**, npm, and a running model provider. For local use, start Ollama with `qwen3.5:4b-mlx` available, or select another installed model in the app. Local Ollama inference needs no API key.
+You need **Node.js 24+**, npm, and a running model provider. For local use, start Ollama with `qwen3.5:4b-mlx` available. Local Ollama inference needs no API key.
 
 ```bash
 git clone https://github.com/nranjan2code/Projection.git
@@ -28,13 +28,13 @@ npm ci
 npm run playground
 ```
 
-Open [http://127.0.0.1:5177](http://127.0.0.1:5177), choose a model, and try:
+Open [http://127.0.0.1:5177](http://127.0.0.1:5177) and try:
 
 > Compare three laptops for a student, with a table and a button to choose each one.
 
-The playground is the desktop app’s UI in a browser, including saved chats, model settings, integrations and interactive surfaces. Its UI builds automatically when you start it; the framework runs directly from TypeScript sources.
+The playground is the framework's own viewer: `@vak/host` plus one page of `<vak-surface>`, with no build step. `?session=` picks a session (MCP agents project into `mcp`, `bench report` into `bench`) and `?model=provider:model` picks the model. For a full app with saved chats, settings and integrations, see [Vakyartha](#built-with-vak).
 
-For hosted providers, configure credentials in **Settings → Providers**, or copy [`.env.example`](.env.example) to `.env` and fill in the relevant keys. Hosted inference may incur provider charges. Keep `.env` and the `.vak/` data directory private.
+For hosted providers, copy [`.env.example`](.env.example) to `.env` and fill in the relevant keys. Hosted inference may incur provider charges. Keep `.env` and the `.vak/` data directory private.
 
 ## Use in code
 
@@ -63,7 +63,6 @@ See [examples](examples/README.md) for an interactive terminal chat, an HTML ema
 | Surface | What works today |
 |---|---|
 | Web / playground | Adaptive layouts, cards, charts, tables, forms, buttons and local sorting/filtering/pagination |
-| Desktop | The same UI in a Tauri app, with saved chats, provider settings, integrations and background Telegram support |
 | Telegram | Live bot; rich messages, inline buttons and validated forms asked one field at a time |
 | Slack | Block Kit projection and modal forms; a live bot listener is not implemented |
 | Discord | Components V2 projection and paged modal forms; a live bot listener is not implemented |
@@ -71,23 +70,6 @@ See [examples](examples/README.md) for an interactive terminal chat, an HTML ema
 | HTML email | Table-based HTML with a plain-text alternative; controls link out to respond |
 
 Components adapt to each target’s capabilities. For example, charts become data tables in Telegram, Slack and Discord.
-
-### Desktop app
-
-The desktop app adds a model picker, themes, provider and integration settings, channel controls and a menu-bar mode. macOS credentials are stored in the Keychain.
-
-**Artifacts** collects saved forms, dashboards and interfaces in a dedicated page with search, type filters and sorting. Open an artifact from any chat in the resizable canvas beside the conversation. Artifact creation and updates open the canvas automatically. The chat shows compact artifact cards; full content appears exclusively in the canvas, which keeps forms live and provides Preview/Text, copy, Markdown download and full/split views. See [Canvas and Artifacts](apps/desktop/CANVAS.md).
-
-Settings → FinOps charts per-turn duration, context growth, output shape, token/cache usage and estimated API cost, with editable model rates and CSV export. FinOps belongs to the app; the framework stays focused on projection. Historical usage that was never recorded remains unknown. See [desktop FinOps](apps/desktop/FINOPS.md).
-
-Building the native app requires Rust and the Tauri platform prerequisites in addition to Node 24+:
-
-```bash
-npm run desktop         # development window
-npm run desktop:build   # release bundle with the Node sidecar and npm
-```
-
-The current desktop workflow is tested on macOS. Builds are not yet code-signed or notarized; Windows and Linux builds remain unverified. See [SPECS.md, section 10](SPECS.md) for desktop architecture and behavior.
 
 ### Telegram
 
@@ -97,7 +79,7 @@ Create a bot with BotFather and set `TELEGRAM_BOT_TOKEN` in `.env`, then run:
 npm run telegram
 ```
 
-`VAK_PROVIDER` and `VAK_MODEL` select its model; see [`.env.example`](.env.example). Chats, surfaces and unfinished form state persist in `.vak/telegram/`. You can also enable Telegram from the desktop app’s channel settings. Run only one poller per bot token.
+`VAK_PROVIDER` and `VAK_MODEL` select its model; see [`.env.example`](.env.example). Chats, surfaces and unfinished form state persist in `.vak/telegram/`. Run only one poller per bot token.
 
 ### MCP hosts
 
@@ -132,7 +114,7 @@ Model → projection tools → streaming parser → repair + validation → surf
 
 A surface contains a node tree and a separate data model. Props bind to data with JSON Pointer placeholders such as `{/revenue}`. The component catalog defines schemas, aliases, defaults, repair rules and worked examples, keeping the prompt contract and engine behavior together.
 
-Provider adapters support Ollama, Anthropic, OpenAI, Gemini and OpenAI-compatible endpoints, including LM Studio and the hosted presets listed in Settings. Model capability profiles select tool calling or constrained JSON generation and the appropriate catalog tier.
+Provider adapters support Ollama, Anthropic, OpenAI, Gemini and OpenAI-compatible endpoints, including LM Studio and the hosted presets in `COMPATIBLE_PRESETS`. Model capability profiles select tool calling or constrained JSON generation and the appropriate catalog tier.
 
 ## Integrations and security
 
@@ -177,16 +159,20 @@ Hosted benchmark runs and optional semantic judges may incur charges. See [AGENT
 | `packages/slack`, `packages/discord` | Platform projectors and modal forms |
 | `packages/email`, `packages/kit` | HTML email projection and the `createVak()` API |
 | `packages/bench` | Scenarios, scoring, runners, replay and statistics |
-| `apps/desktop` | Tauri shell, shared UI and Node sidecar |
-| `apps/playground` | Browser entry point for the shared app |
+| `playground` | The framework's viewer: host + `<vak-surface>`, the MCP and bench target |
 | `examples`, `scripts` | Runnable examples and maintenance tools |
+
+## Built with vak
+
+**[Vakyartha](https://github.com/nranjan2code/vakyartha)** is the desktop app built on this framework (Tauri, macOS first): saved chats whose answers are interfaces, a model picker, provider and integration settings, an artifacts canvas, FinOps, and Telegram running in the background. It lives in its own repository and uses Projection as a git submodule pinned to a commit, so the dependency runs one way: the app draws on the framework, and nothing here depends on the app.
 
 ## Documentation
 
 - [Examples](examples/README.md) — runnable starting points.
-- [Architecture and specification](SPECS.md) — data model, engine, providers and app.
+- [Architecture and specification](SPECS.md) — data model, engine and providers.
 - [Scope](SCOPE.md) and [design research](STUDY.md) — goals and design choices.
 - [Security](SECURITY.md) — protections, limitations and vulnerability reporting.
+- [Releasing](RELEASING.md) — versions, tags and what apps built on the framework can rely on.
 - [Maintenance instructions](AGENTS.md) and [current state](HANDOVER.md) — working rules and next steps.
 
 ## Contributions
