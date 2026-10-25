@@ -349,7 +349,7 @@ export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts
       ? "- nodes starts with the node with id \"root\". Write each child node directly inside its parent's \"children\" array, so every node is defined where it is used. A template node (see each/template below) is its own entry in nodes."
       : "- nodes is a FLAT list. Put the node with id \"root\" first. Parents reference children by id in \"children\".",
     "- Put values in data and bind them: \"{/path}\" inside any string. A string that is only \"{/path}\" keeps the raw value.",
-    "- Repeat a node per list item with children: {\"each\": \"/items\", \"template\": \"tplId\"}; inside the template use relative paths like \"{name}\".",
+    "- Repeat a node per list item with children: {\"each\": \"/items\", \"template\": \"tplId\"}; inside the template use relative paths like \"{name}\"; for a list of plain values, \"{.}\" is the item.",
     "- Inputs use bind: \"/form/field\". A form's submit is an action name.",
     "- Put data in the surface's data field (vak_update: ops, or an object to merge), not inside nodes.",
     "- When the user acts on your UI you get a message starting with \"[ui action]\" holding {action, surface, data}.",

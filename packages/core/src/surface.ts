@@ -110,6 +110,25 @@ function unwrapJson(v: unknown): unknown {
   }
 }
 
+/**
+ * `nodes: "[ ...nodes ], \"data\": {...}"`: the model wrote the call's other
+ * members inside the nodes string, after the list. Read the string as the
+ * members of the call it was meant to be and return those extra members.
+ */
+function membersAfterList(key: string, v: unknown): Record<string, unknown> | undefined {
+  if (typeof v !== "string") return undefined;
+  const t = v.trim();
+  if (!t.startsWith("[") || !/\]\s*,\s*["']?[A-Za-z_]\w*["']?\s*:/.test(t)) return undefined;
+  try {
+    const whole = parseLenient(`{"${key}":${t}}`);
+    if (!isObject(whole)) return undefined;
+    const { [key]: _list, ...rest } = whole;
+    return Object.keys(rest).length ? rest : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export class SurfaceStore {
   readonly catalog: Catalog;
   readonly normalizer: Normalizer;
@@ -166,11 +185,19 @@ export class SurfaceStore {
   /** Dispatch a tool call by name. */
   apply(tool: string, args: unknown, opts: ApplyOptions = {}): Diagnostic[] {
     const parsed = unwrapJson(args);
-    const a: Record<string, unknown> = isObject(parsed) ? { ...parsed } : {};
+    let a: Record<string, unknown> = isObject(parsed) ? { ...parsed } : {};
+    const notes: Diagnostic[] = [];
+    for (const key of NODE_LIST_KEYS) {
+      const extra = membersAfterList(key, a[key]);
+      if (!extra) continue;
+      // Members the call itself already has win; the rest were meant for it.
+      a = { ...extra, ...a, [key]: a[key] };
+      notes.push({ severity: "warning", surface: String(a.surface ?? ""), message: `${Object.keys(extra).map((k) => `"${k}"`).join(", ")} was written inside "${key}" after the list; read as part of the call` });
+    }
     for (const key of ["nodes", "data", "ids"]) if (key in a) a[key] = unwrapJson(a[key]);
     switch (tool) {
-      case TOOL_RENDER: return this.render(a as unknown as RenderArgs, opts);
-      case TOOL_UPDATE: return this.update(a as unknown as UpdateArgs);
+      case TOOL_RENDER: return [...notes, ...this.render(a as unknown as RenderArgs, opts)];
+      case TOOL_UPDATE: return [...notes, ...this.update(a as unknown as UpdateArgs)];
       case TOOL_REMOVE: return this.remove(a as unknown as RemoveArgs);
       default: return [{ severity: "error", surface: String(a.surface ?? ""), message: `unknown tool ${tool}` }];
     }
@@ -580,7 +607,14 @@ export class SurfaceStore {
         if (r) out.children.push(r);
       }
     } else if (ch) {
-      const listPath = resolvePath(ch.each.replace(/^\{|\}$/g, ""), scope.base);
+      const each = ch.each.replace(/^\{|\}$/g, "");
+      let listPath = resolvePath(each, scope.base);
+      // Inside a list item, "/amenities" that is not top-level data but is a
+      // field of the item means the item's own list.
+      if (scope.base && each.startsWith("/") && getAt(state.data, listPath) === undefined) {
+        const own = resolvePath(each.slice(1), scope.base);
+        if (Array.isArray(getAt(state.data, own))) listPath = own;
+      }
       const list = getAt(state.data, listPath);
       if (Array.isArray(list)) {
         list.forEach((_, i) => {

@@ -21,13 +21,26 @@ export function isBinding(value: unknown): boolean {
   return typeof value === "string" && WHOLE.test(value);
 }
 
+/**
+ * A path's value in scope. In a list of plain values (strings, numbers) the
+ * item has no fields: "{.}" is the item, and so is any other relative name
+ * ("{item}", "{value}"), since nothing else could be meant.
+ */
+function lookup(path: string, scope: Scope): unknown {
+  if (!path.startsWith("/") && scope.base) {
+    const item = getAt(scope.data, scope.base);
+    if (path === "." || (item !== null && typeof item !== "object" && item !== undefined && !path.includes("/"))) return item;
+  }
+  return getAt(scope.data, resolvePath(path, scope.base));
+}
+
 export function interpolate(text: string, scope: Scope): unknown {
   const whole = WHOLE.exec(text);
-  if (whole && binds(whole[1]!, scope)) return getAt(scope.data, resolvePath(whole[1]!, scope.base));
+  if (whole && binds(whole[1]!, scope)) return lookup(whole[1]!, scope);
   return text.replace(BINDING, (match, path: string | undefined) => {
     if (path === undefined) return "{";
     if (!binds(path, scope)) return match;
-    const v = getAt(scope.data, resolvePath(path, scope.base));
+    const v = lookup(path, scope);
     if (v === undefined || v === null) return "";
     // A list of plain values inside text reads as a list, not as JSON.
     if (Array.isArray(v) && v.every((x) => x === null || typeof x !== "object")) return v.filter((x) => x !== null && x !== "").join(", ");

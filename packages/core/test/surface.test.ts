@@ -449,3 +449,17 @@ test("placeholders outside a list template are an error; double-escaped newlines
   const ok = store.render({ surface: "q", nodes: [{ id: "root", type: "stack", children: { each: "/xs", template: "t" } }, { id: "t", type: "text", props: { content: "{name} \\{literal}" } }], data: { xs: [{ name: "a" }] } });
   assert.ok(!ok.some((d) => /list template/.test(d.message)));
 });
+
+test("data written inside the nodes string after the list is part of the call; items' own lists and plain values bind", () => {
+  // From a live run: nodes: "[...], \"data\": {...}", an item list at "/amenities", plain items as "{item}".
+  const store = new SurfaceStore(basicCatalog);
+  const nodes = JSON.stringify([
+    { id: "root", type: "stack", children: { each: "/hotels", template: "h" } },
+    { id: "h", type: "card", props: { title: "{name}" }, children: ["a"] },
+    { id: "a", type: "stack", children: { each: "/amenities", template: "t" } },
+    { id: "t", type: "text", props: { content: "{item}" } },
+  ]);
+  const diags = store.apply("vak_render", { surface: "k", nodes: `${nodes}, "data": {"hotels":[{"name":"Zen","amenities":["Onsen","Tatami"]}]}` });
+  assert.ok(diags.some((d) => /"data" was written inside "nodes"/.test(d.message)));
+  assert.equal(projectText(store.resolve("k")!), "[Card] Zen\n  Onsen\n  Tatami");
+});
