@@ -543,6 +543,23 @@ export class SurfaceStore {
     return diags;
   }
 
+  /**
+   * A template holding one fixed button per item ("Book Zen", "Book Villa",
+   * ... with nothing from the item in them) was written as N buttons for N
+   * items: each copy keeps only its own. One fixed button ("Choose") is the
+   * normal pattern, since its click carries the item's data, and stays.
+   */
+  private perItemButtons(state: SurfaceState, templateId: string, count: number): Map<string, number> | undefined {
+    const ch = state.nodes.get(templateId)?.children;
+    if (!Array.isArray(ch) || count < 2) return undefined;
+    const fixed = ch.filter((id) => {
+      const n = state.nodes.get(id);
+      return n && this.catalog.components[n.type]?.role === "action" && !/(?<!\\)\{(?!\/)[^{}\s]+\}/.test(JSON.stringify(n.props ?? {}));
+    });
+    if (fixed.length !== count) return undefined;
+    return new Map(fixed.map((id, i) => [id, i]));
+  }
+
   private rootId(state: SurfaceState): string | undefined {
     if (state.nodes.has("root")) return "root";
     return state.nodes.keys().next().value;
@@ -621,9 +638,11 @@ export class SurfaceStore {
       }
       const list = getAt(state.data, listPath);
       if (Array.isArray(list)) {
+        const perItem = this.perItemButtons(state, ch.template, list.length);
         list.forEach((_, i) => {
           const itemScope = { data: state.data, base: `${listPath}/${i}` };
           const r = this.resolveNode(state, ch.template, itemScope, `${ch.template}#${i}`, next);
+          if (r && perItem) r.children = r.children.filter((c) => !perItem.has(c.id) || perItem.get(c.id) === i);
           if (r) out.children.push(r);
         });
       }

@@ -43,11 +43,12 @@ function lookup(path: string, scope: Scope): unknown {
 export function interpolate(text: string, scope: Scope): unknown {
   const whole = WHOLE.exec(text);
   if (whole && binds(whole[1]!, scope)) return lookup(whole[1]!, scope);
-  return text.replace(BINDING, (match, path: string | undefined) => {
+  return text.replace(BINDING, (match, path: string | undefined, offset: number) => {
     if (path === undefined) return "{";
     if (!binds(path, scope)) return match;
     const v = lookup(path, scope);
     if (v === undefined || v === null) return "";
+    if (typeof v === "string") return withoutRepeat(v, text.slice(offset + match.length));
     // A list of plain values inside text reads as a list, not as JSON.
     if (Array.isArray(v) && v.every((x) => x === null || typeof x !== "object")) return v.filter((x) => x !== null && x !== "").join(", ");
     return typeof v === "object" ? JSON.stringify(v) : String(v);
@@ -62,6 +63,18 @@ export function resolveValue(value: unknown, scope: Scope): unknown {
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value)) out[k] = resolveValue(v, scope);
     return out;
+  }
+  return value;
+}
+
+/**
+ * "{price}/night" with price "$800/night" would read "$800/night/night": when
+ * the text right after a placeholder repeats how the value already ends, the
+ * value gives up that ending (at least 3 characters).
+ */
+function withoutRepeat(value: string, after: string): string {
+  for (let k = Math.min(value.length, after.length); k >= 3; k--) {
+    if (value.endsWith(after.slice(0, k))) return value.slice(0, value.length - k);
   }
   return value;
 }

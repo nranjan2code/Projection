@@ -467,3 +467,23 @@ test("data written inside the nodes string after the list is part of the call; i
   assert.ok(diags.some((d) => /"data" was written inside "nodes"/.test(d.message)));
   assert.equal(projectText(store.resolve("k")!), "[Card] Zen\n  Onsen\n  Tatami");
 });
+
+test("one fixed button per item stays with its own item; repeated endings after a placeholder are dropped", () => {
+  // From a live run: "Book <hotel>" x3 inside the card template, price "$800/night" + "{price}/night".
+  const store = new SurfaceStore(basicCatalog);
+  store.render({
+    surface: "h",
+    nodes: [
+      { id: "root", type: "stack", children: { each: "/hotels", template: "c" } },
+      { id: "c", type: "card", props: { title: "{name}", subtitle: "{price}/night" }, children: ["b1", "b2"] },
+      { id: "b1", type: "button", props: { label: "Book Zen", action: "book" } },
+      { id: "b2", type: "button", props: { label: "Book Villa", action: "book" } },
+    ],
+    data: { hotels: [{ name: "Zen", price: "$800/night" }, { name: "Villa", price: "$1,200" }] },
+  });
+  assert.equal(projectText(store.resolve("h")!), "[Card] Zen — $800/night\n  [Button: Book Zen → book]\n[Card] Villa — $1,200/night\n  [Button: Book Villa → book]");
+  // A single fixed button per card is the normal pattern and stays in every card.
+  const trips = basicCatalog.examples.find((e) => e.render.surface === "trips")!.render;
+  store.render(structuredClone(trips));
+  assert.equal((projectText(store.resolve("trips")!).match(/\[Button: Choose/g) ?? []).length, 3);
+});
