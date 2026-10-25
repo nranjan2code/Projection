@@ -4,11 +4,11 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 
 ## Handover prompt (paste into a new session)
 
-> Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection. Read AGENTS.md (rules: no third-party SDKs, no hard-coded fixes, never blame the small model, secrets only in .env), SPECS.md (architecture) and HANDOVER.md (status and next steps). Run `npm test` first (106 tests should pass). Only Telegram is available for live chat testing; local Ollama `qwen3.5:4b-mlx` is the primary model. Don't restart the Telegram bot while I'm testing. Pick up from "Next" in HANDOVER.md and ask if in doubt.
+> Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection. Read AGENTS.md (rules: no third-party SDKs, no hard-coded fixes, never blame the small model, secrets only in .env), SPECS.md (architecture) and HANDOVER.md (status and next steps). Run `npm test` first (108 tests should pass). Only Telegram is available for live chat testing; local Ollama `qwen3.5:4b-mlx` is the primary model. Don't restart the Telegram bot while I'm testing. Pick up from "Next" in HANDOVER.md and ask if in doubt.
 
 ## Where things stand
 
-- **Main:** `6caedf7` (pushed). **Tests:** 106 passing, typecheck clean.
+- **Main:** `40246a2` (pushed). **Tests:** 108 passing, typecheck clean.
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios):
 
   | | Now | Old flat baseline |
@@ -20,10 +20,11 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 
   Weakest categories: planning (40% fully passing) and dashboard (60%).
 - **Running when this was written:**
-  - The Telegram bot (`npm run telegram`, logging to the session scratchpad).
-  - The playground (`.claude/launch.json` "playground").
-
-  The bot was started before `6caedf7`, so it lacks the top-level `{name}` binding fix. **Restart it once, when the user is idle.**
+  - The Telegram bot (`npm run telegram`), restarted on `40246a2`, so it has every fix below.
+  - The playground (`.claude/launch.json` "playground"), started before `6caedf7`. Restart it before the next web test.
+- **Working on right now:** live Telegram testing with "Compare three hotels in Kyoto and let me book one".
+  - The last reply (07:10) replayed through the current engine shows 3 cards, each with its price once, its amenities and its own Book button.
+  - Not yet seen live after the restart. **Ask the user to resend it and tap through booking.**
 
 ## Done in this stretch
 
@@ -56,6 +57,12 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
   - The plan bar shows authoring.
   - Per-session transcripts go to `.vak/playground/`.
   - A new surface scrolls into view.
+- **Telegram, from the latest live tests:**
+  - A surface changed in reply to a typed message moves to the bottom as a new message: "hi" used to edit an old message far up the chat. After a tap, surfaces are still edited in place.
+  - Top-level `{name}` binds to the surface's own data (the model retried 3 times on `{booking_info}`).
+  - One fixed button per item stays with its own item ("Book X" ×3 used to repeat in every card).
+  - A repeated ending after a placeholder is dropped ("$800/night/night").
+- **Docs:** AGENTS.md, SPECS.md and this file.
 - **Web tests passed** in the browser pane:
   - examples render; buttons send the item's data
   - form validation: required, email, choice, checkbox, correct submit data
@@ -64,20 +71,25 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 
 ## Next (in order)
 
-1. **Finish the web tests** (interrupted by the usage limit):
+1. **Confirm the live Telegram hotel flow** after the `40246a2` restart: the user resends the hotel request and taps a Book button. Expect one Book button per card and single "/night".
+2. **Make long chats fast.** Each Telegram chat sends its whole saved history to the model on every turn, so even "hi" takes about a minute on the 4B model.
+   - Make `/start` begin a fresh conversation: clear messages, surfaces and tokens for that chat.
+   - Send only the recent turns plus the current surfaces' state to the model.
+
+   This is a general mechanism in `runAgent` or the bot, not a per-chat hack.
+3. **Finish the web tests** (interrupted by the usage limit):
    - live dashboard prompt (charts)
    - workout tabs prompt
-   - tablet and phone viewports (`Tablet`/`Phone` buttons in the playground, or the browser pane's resize)
+   - tablet and phone viewports
 
-   Check the header wrapping at narrow widths: at 800px, the provider/model/viewport/New chat controls wrap into 3 rows.
-2. **Restart the Telegram bot once when idle** (picks up `6caedf7`). Retest "Compare three hotels in Kyoto and let me book one" and tap through booking.
-3. **Model-design issues worth general fixes** (seen live, not fixed):
-   - Book buttons placed inside a card template repeat per card. Lint could warn when a template contains buttons whose labels name other items.
-   - A price with "/night" is repeated by the template ("$800/night/night").
-   - A form saying "choose your hotel" but having no hotel field.
-4. **Weak bench categories:** planning (tabs/sections, itinerary text) and dashboard (charts). Analyze `packages/bench/data/results/2026-10-25T01-01-37-105Z_run_*.jsonl` failures and fix root causes; prove with replay plus a live gate run.
-5. **Re-record the form slice baseline** on inline (`--category form --slice form --save`); it is still flat v2.
-6. **Optional, ask first:**
+   Check the header wrapping at narrow widths: at 800px, the playground's controls wrap into 3 rows.
+4. **Model-design issue still open:** a form says "choose your hotel" but has no hotel field. Consider a lint warning, or rely on the action data already carrying the chosen item.
+5. **Weak bench categories:** planning (tabs/sections, itinerary text) and dashboard (charts).
+   - Analyze failures in `packages/bench/data/results/2026-10-25T01-01-37-105Z_run_*.jsonl` and fix root causes.
+   - Prove it with replay plus a live gate run (`npm run bench -- gate ollama:qwen3.5:4b-mlx --runs 1`, ~25 min local).
+   - Re-record the baseline after engine changes that move scores.
+6. **Re-record the form slice baseline** on inline (`--category form --slice form --save`); it is still flat v2.
+7. **Optional, ask first:**
    - prompt caching
    - near-miss id pairing
    - a security review of the projectors
