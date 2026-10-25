@@ -37,10 +37,39 @@ function lookup(path: string, scope: Scope): unknown {
     const item = getAt(scope.data, scope.base);
     if (path === "." || (item !== null && typeof item !== "object" && item !== undefined && !path.includes("/"))) return item;
   }
-  return getAt(scope.data, scope.base === "" && !path.startsWith("/") ? `/${path}` : resolvePath(path, scope.base));
+  const pointer = scope.base === "" && !path.startsWith("/") ? `/${path}` : resolvePath(path, scope.base);
+  return getLenient(scope.data, pointer);
 }
 
+/**
+ * A pointer's value, with the path habits models bring from elsewhere, tried
+ * only when the exact pointer finds nothing:
+ * - "{/data/revenue}" with data {revenue}: the call's "data" field counted as
+ *   the first step (4B, bench sales-q3 and web-analytics)
+ * - "{/data.visitors}": dots as separators, as in JavaScript (4B, bench gate
+ *   web-analytics)
+ */
+function getLenient(data: unknown, pointer: string): unknown {
+  const v = getAt(data, pointer);
+  if (v !== undefined) return v;
+  if (pointer.includes(".") && pointer !== "/.") {
+    const dotted = getLenient(data, pointer.replace(/\./g, "/"));
+    if (dotted !== undefined) return dotted;
+  }
+  if (pointer.startsWith("/data/") && getAt(data, "/data") === undefined) return getAt(data, pointer.slice(5));
+  return undefined;
+}
+
+/** A JSON pointer into the data model: "/items", "/a/b/0". */
+const POINTER = /^\/[A-Za-z0-9_~.\-]+(?:\/[A-Za-z0-9_~.\-]+)*$/;
+
 export function interpolate(text: string, scope: Scope): unknown {
+  // A stat's value "/data/visitors" (4B, bench web-analytics): a bare pointer
+  // that names data the surface has is that data, not text to show.
+  if (POINTER.test(text)) {
+    const v = lookup(text, { data: scope.data, base: "" });
+    if (v !== undefined) return v;
+  }
   const whole = WHOLE.exec(text);
   if (whole && binds(whole[1]!, scope)) return lookup(whole[1]!, scope);
   return text.replace(BINDING, (match, path: string | undefined, offset: number) => {
@@ -48,7 +77,7 @@ export function interpolate(text: string, scope: Scope): unknown {
     if (!binds(path, scope)) return match;
     const v = lookup(path, scope);
     if (v === undefined || v === null) return "";
-    if (typeof v === "string") return withoutRepeat(v, text.slice(offset + match.length));
+    if (typeof v === "string") return withoutRepeat(withoutCurrencyRepeat(v, text.slice(0, offset)), text.slice(offset + match.length));
     // A list of plain values inside text reads as a list, not as JSON.
     if (Array.isArray(v) && v.every((x) => x === null || typeof x !== "object")) return v.filter((x) => x !== null && x !== "").join(", ");
     return typeof v === "object" ? JSON.stringify(v) : String(v);
@@ -65,6 +94,15 @@ export function resolveValue(value: unknown, scope: Scope): unknown {
     return out;
   }
   return value;
+}
+
+/**
+ * "${/aov}" with aov "$438.50" would read "$$438.50": a currency sign written
+ * before a placeholder whose value already starts with it is not repeated.
+ */
+function withoutCurrencyRepeat(value: string, before: string): string {
+  const sign = before.at(-1);
+  return sign && /\p{Sc}/u.test(sign) && value.startsWith(sign) ? value.slice(sign.length) : value;
 }
 
 /**

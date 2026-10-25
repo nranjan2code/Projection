@@ -120,6 +120,12 @@ function normalizeChart(p: Record<string, unknown>): Record<string, unknown> {
   if (!Array.isArray(s) || s.length === 0) return p;
   if (s.every(numeric)) return { ...p, series: [{ values: s.map(Number) }] };
   if (s.every((v) => Array.isArray(v))) return { ...p, series: (s as unknown[][]).map((values) => ({ values: values.map(Number) })) };
+  // A series of annotations ("Peak Day": ["N/A", ..., "Fri peak"]) beside real
+  // ones (4B, bench web-analytics) has nothing to plot: it is dropped rather
+  // than failing the whole chart.
+  const values = (x: unknown) => (x && typeof x === "object" && Array.isArray((x as { values?: unknown }).values) ? ((x as { values: unknown[] }).values) : undefined);
+  const plottable = (x: unknown) => !values(x) || values(x)!.some(numeric);
+  if (s.some(plottable) && !s.every(plottable)) return { ...p, series: s.filter(plottable) };
   return p;
 }
 

@@ -11,8 +11,8 @@
     "examples": true,
     "authoring": "inline"
   },
-  "commit": "e0ee74e-dirty",
-  "at": "2026-10-25T01:21:59.145Z",
+  "commit": "11ae8b3-dirty",
+  "at": "2026-10-25T08:10:47.835Z",
   "summary": {
     "runs": 30,
     "complete": {
@@ -22,38 +22,38 @@
       "n": 30
     },
     "score": {
-      "value": 0.8861111111111112,
-      "lo": 0.812480816137133,
-      "hi": 0.9597414060850894,
+      "value": 0.9146825396825397,
+      "lo": 0.8559511398272426,
+      "hi": 0.9734139395378367,
       "n": 30
     },
     "byCategory": {
       "comparison": {
         "runs": 5,
         "complete": {
-          "value": 0.8,
-          "lo": 0.375534627029995,
-          "hi": 0.9637758917743693,
+          "value": 0.4,
+          "lo": 0.11762077314099711,
+          "hi": 0.7692757205908813,
           "n": 5
         },
         "score": {
-          "value": 0.9,
-          "lo": 0.7040036000000001,
-          "hi": 1,
+          "value": 0.75,
+          "lo": 0.5077419658073006,
+          "hi": 0.9922580341926994,
           "n": 5
         }
       },
       "dashboard": {
         "runs": 5,
         "complete": {
-          "value": 0.6,
-          "lo": 0.23072427940911855,
-          "hi": 0.8823792268590028,
+          "value": 1,
+          "lo": 0.5655175313406071,
+          "hi": 1,
           "n": 5
         },
         "score": {
-          "value": 0.82,
-          "lo": 0.6017476457674044,
+          "value": 1,
+          "lo": 1,
           "hi": 1,
           "n": 5
         }
@@ -76,14 +76,14 @@
       "planning": {
         "runs": 5,
         "complete": {
-          "value": 0.4,
-          "lo": 0.11762077314099711,
-          "hi": 0.7692757205908813,
+          "value": 0.6,
+          "lo": 0.23072427940911855,
+          "hi": 0.8823792268590028,
           "n": 5
         },
         "score": {
-          "value": 0.7766666666666666,
-          "lo": 0.5376010447583865,
+          "value": 0.8666666666666666,
+          "lo": 0.7066362761925236,
           "hi": 1,
           "n": 5
         }
@@ -91,14 +91,14 @@
       "information": {
         "runs": 2,
         "complete": {
-          "value": 1,
-          "lo": 0.3423802239546494,
-          "hi": 1,
+          "value": 0.5,
+          "lo": 0.09453120463920084,
+          "hi": 0.9054687953607992,
           "n": 2
         },
         "score": {
-          "value": 1,
-          "lo": 1,
+          "value": 0.8333333333333333,
+          "lo": 0.5066726666666665,
           "hi": 1,
           "n": 2
         }
@@ -112,8 +112,8 @@
           "n": 8
         },
         "score": {
-          "value": 0.8875,
-          "lo": 0.7419683128760428,
+          "value": 0.9613095238095237,
+          "lo": 0.9114704173908108,
           "hi": 1,
           "n": 8
         }
@@ -132,28 +132,28 @@
       },
       "phone-plans": {
         "runs": 1,
-        "complete": 1,
-        "score": 1
+        "complete": 0,
+        "score": 0.6666666666666666
       },
       "restaurants": {
         "runs": 1,
-        "complete": 1,
-        "score": 1
+        "complete": 0,
+        "score": 0.3333333333333333
       },
       "flights": {
         "runs": 1,
         "complete": 0,
-        "score": 0.5
+        "score": 0.75
       },
       "sales-q3": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.5
+        "complete": 1,
+        "score": 1
       },
       "web-analytics": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.6
+        "complete": 1,
+        "score": 1
       },
       "budget-pie": {
         "runs": 1,
@@ -203,22 +203,22 @@
       "rome-itinerary": {
         "runs": 1,
         "complete": 0,
-        "score": 0.3333333333333333
+        "score": 0.6666666666666666
       },
       "recipe": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.8
+        "complete": 1,
+        "score": 1
       },
       "sql-study-plan": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.75
+        "complete": 1,
+        "score": 1
       },
       "onboarding-checklist": {
         "runs": 1,
-        "complete": 1,
-        "score": 1
+        "complete": 0,
+        "score": 0.6666666666666666
       },
       "rest-vs-graphql": {
         "runs": 1,
@@ -227,8 +227,8 @@
       },
       "paris-weather": {
         "runs": 1,
-        "complete": 1,
-        "score": 1
+        "complete": 0,
+        "score": 0.6666666666666666
       },
       "hotel-booking-flow": {
         "runs": 1,
@@ -252,29 +252,29 @@
       },
       "quiz": {
         "runs": 1,
-        "complete": 1,
-        "score": 1
+        "complete": 0,
+        "score": 0.8333333333333334
       },
       "pizza-order": {
         "runs": 1,
-        "complete": 1,
-        "score": 1
+        "complete": 0,
+        "score": 0.8571428571428571
       },
       "bug-ticket-flow": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.5
+        "complete": 1,
+        "score": 1
       },
       "itinerary-edit": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.6
+        "complete": 1,
+        "score": 1
       }
     },
-    "medianMs": 26342,
+    "medianMs": 23951,
     "usage": {
-      "input": 162498,
-      "output": 29488
+      "input": 123325,
+      "output": 23544
     }
   }
 }

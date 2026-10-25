@@ -129,3 +129,29 @@ test("a key that opens with one quote and closes with the other", () => {
   // An apostrophe inside an ordinary string value is untouched.
   assert.deepEqual(parseLenient(`{"content":"it's: fine","n":1}`), { content: "it's: fine", n: 1 });
 });
+
+test("key and value glued into one string, and a key with its separator before the value", () => {
+  // 4B: "type:section" (bench gate job-application) and "type:=","select" (form cassette).
+  assert.deepEqual(parseLenient('{"id":"s","type:section","props":{}}'), { id: "s", type: "section", props: {} });
+  assert.deepEqual(parseLenient('{"id":"c","type:=","select", "props":{}}'), { id: "c", type: "select", props: {} });
+  // Prose with a colon after a value still continues that value.
+  assert.deepEqual(parseLenient('{"body": "Pick up a", "Note: b"}'), { body: "Pick up a\nNote: b" });
+});
+
+test("a value missing its opening quote", () => {
+  // 4B: "type":select" (bench gate job-application); "content": **"Plank" ...", (gate workout-tabs).
+  assert.deepEqual(parseLenient('{"type":select","props":{"a":1}}'), { type: "select", props: { a: 1 } });
+  assert.deepEqual(parseLenient('{"content": **Bold** (3 sets: hold).", "variant": "code"}'), { content: "**Bold** (3 sets: hold).", variant: "code" });
+});
+
+test("a spaced key: value string after an id is a member, after prose it continues the prose", () => {
+  // 4B, bench pizza-order: {"id": "total_price", "type: stat", ...} made the id "total_price\ntype: stat".
+  assert.deepEqual(parseLenient('{"id": "total_price", "type: stat", "props": {}}'), { id: "total_price", type: "stat", props: {} });
+  assert.deepEqual(parseLenient('{"body": "Pickup at noon", "Note: b"}'), { body: "Pickup at noon\nNote: b" });
+});
+
+test("a colon inside the key's quotes, and an unquoted key inside an array", () => {
+  // 4B, bench pizza-order: {"id: "topping_details", type: list, ...} and "...}}, span:2},".
+  assert.deepEqual(parseLenient('{"id: "topping_details", type: list}'), { id: "topping_details", type: "list" });
+  assert.deepEqual(parseLenient('{"children":[{"id":"a"}, span:2}'), { children: [{ id: "a" }], span: 2 });
+});

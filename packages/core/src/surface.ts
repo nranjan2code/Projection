@@ -13,6 +13,7 @@ import { LAYOUT_TYPES } from "./projector.ts";
 import {
   type Children,
   NODE_LIST_KEYS,
+  NODE_PROPS_KEYS,
   NODE_TYPE_KEYS,
   type NodePatch,
   type RemoveArgs,
@@ -83,7 +84,13 @@ export interface ApplyOptions {
 }
 
 /** Keys that are node structure rather than props. */
-const NODE_KEYS = new Set<string>(["id", "props", "children", ...NODE_TYPE_KEYS]);
+const NODE_KEYS = new Set<string>(["id", "children", ...NODE_TYPE_KEYS, ...NODE_PROPS_KEYS]);
+
+/** A node's props, under whichever props key it used (see NODE_PROPS_KEYS); the first one that holds an object. */
+function propsOf(raw: Record<string, unknown>): Record<string, unknown> {
+  for (const k of NODE_PROPS_KEYS) if (isObject(raw[k])) return raw[k] as Record<string, unknown>;
+  return {};
+}
 
 function isObject(v: unknown): v is Record<string, unknown> {
   return v !== null && typeof v === "object" && !Array.isArray(v);
@@ -128,6 +135,27 @@ function membersAfterList(key: string, v: unknown): Record<string, unknown> | un
   } catch {
     return undefined;
   }
+}
+
+/** Call members with a meaning of their own; anything else may be misplaced nodes. */
+const CALL_KEYS = new Set<string>(["surface", "title", "data", "ids", "ops", "id", "children", ...NODE_LIST_KEYS, ...NODE_TYPE_KEYS, ...NODE_PROPS_KEYS]);
+
+/** Read an argument's value as a list of node-shaped objects (each has an id or a type), or undefined. */
+function asNodeList(v: unknown): Record<string, unknown>[] | undefined {
+  let list: unknown = v;
+  if (typeof v === "string") {
+    const t = v.trim();
+    if (!t.startsWith("{") && !t.startsWith("[")) return undefined;
+    try {
+      // `{...}, {...}]`: the rest of the nodes list, so read it as one.
+      list = parseLenient(t.startsWith("{") ? `[${t}` : t);
+    } catch {
+      return undefined;
+    }
+  }
+  const items = Array.isArray(list) ? list : [list];
+  const nodeLike = (x: unknown) => isObject(x) && (typeof x.id === "string" || NODE_TYPE_KEYS.some((k) => typeof x[k] === "string"));
+  return items.length > 0 && items.every(nodeLike) ? (items as Record<string, unknown>[]) : undefined;
 }
 
 export class SurfaceStore {
@@ -196,6 +224,7 @@ export class SurfaceStore {
       notes.push({ severity: "warning", surface: String(a.surface ?? ""), message: `${Object.keys(extra).map((k) => `"${k}"`).join(", ")} was written inside "${key}" after the list; read as part of the call` });
     }
     for (const key of ["nodes", "data", "ids"]) if (key in a) a[key] = unwrapJson(a[key]);
+    notes.push(...this.nodesInOtherArgs(a));
     switch (tool) {
       case TOOL_RENDER: return [...notes, ...this.render(a as unknown as RenderArgs, opts)];
       case TOOL_UPDATE: return [...notes, ...this.update(a as unknown as UpdateArgs)];
@@ -332,6 +361,32 @@ export class SurfaceStore {
   // -------------------------------------------------------------------------
   // Ingest (see normalize.ts for the pipeline)
 
+  /**
+   * `{"nodes": "[...]", "chart": "{...}, {...}]"}`: the 4B model wrote the rest
+   * of its nodes list as an argument of its own, named after the first node's
+   * component (bench sales-q3: the chart and table were lost). Node-shaped
+   * values of unknown arguments join the nodes list; the argument's name is
+   * the type of a node that has none.
+   */
+  private nodesInOtherArgs(a: Record<string, unknown>): Diagnostic[] {
+    const listKey = NODE_LIST_KEYS.find((k) => Array.isArray(a[k]));
+    if (!listKey) return [];
+    const moved: string[] = [];
+    for (const [key, value] of Object.entries(a)) {
+      if (CALL_KEYS.has(key)) continue;
+      const nodes = asNodeList(value);
+      if (!nodes) continue;
+      const named = this.normalizer.resolveType(key);
+      for (const n of nodes) if (named && !NODE_TYPE_KEYS.some((k) => n[k] !== undefined)) n.type = named.type;
+      a[listKey] = [...(a[listKey] as unknown[]), ...nodes];
+      delete a[key];
+      moved.push(key);
+    }
+    return moved.length
+      ? [{ severity: "warning", surface: String(a.surface ?? ""), message: `nodes written in ${moved.map((k) => `"${k}"`).join(", ")} were read as part of "${listKey}"` }]
+      : [];
+  }
+
   /** Ids written so far in the current render/update call. */
   private callIds = new Set<string>();
 
@@ -342,7 +397,53 @@ export class SurfaceStore {
   private repair(state: SurfaceState): Diagnostic[] {
     const { nodes, repairs } = repairStructure(state.nodes, this.normalizer, (t) => this.nextId(t));
     state.nodes = nodes;
-    return repairs.map((r) => ({ severity: "warning" as const, surface: state.id, node: r.node, message: r.message }));
+    return [...repairs.map((r) => ({ severity: "warning" as const, surface: state.id, node: r.node, message: r.message })), ...this.bindInputNames(state)];
+  }
+
+  /** Nodes rendered per list item (templates and everything inside them). */
+  private templateNodes(state: SurfaceState): Set<string> {
+    const inTemplate = new Set<string>();
+    const mark = (id: string) => {
+      if (inTemplate.has(id)) return;
+      inTemplate.add(id);
+      const ch = state.nodes.get(id)?.children;
+      if (Array.isArray(ch)) ch.forEach(mark);
+      else if (ch) mark(ch.template);
+    };
+    for (const n of state.nodes.values()) if (n.children && !Array.isArray(n.children)) mark(n.children.template);
+    return inTemplate;
+  }
+
+  /**
+   * "Total: {size}, {crust}" outside any list, with no surface data of those
+   * names but inputs bound to "/form/size" and "/form/crust" (4B, bench
+   * pizza-order): the name is that input's value. Only when exactly one input's
+   * bind path ends in the name; otherwise lintUnbound reports it.
+   */
+  private bindInputNames(state: SurfaceState): Diagnostic[] {
+    const binds = [...state.nodes.values()].map((n) => n.props?.bind).filter((b): b is string => typeof b === "string" && b.startsWith("/"));
+    if (!binds.length) return [];
+    const inTemplate = this.templateNodes(state);
+    const diags: Diagnostic[] = [];
+    const rewrite = (v: unknown, node: string): unknown => {
+      if (typeof v === "string") {
+        return v.replace(/(?<!\\)\{([A-Za-z_][\w-]*)\}/g, (m, name: string) => {
+          if (getAt(state.data, `/${name}`) !== undefined) return m;
+          const hits = binds.filter((b) => b.endsWith(`/${name}`));
+          if (hits.length !== 1) return m;
+          diags.push({ severity: "warning", surface: state.id, node, message: `{${name}} read as the value of the input bound to "${hits[0]}"` });
+          return `{${hits[0]}}`;
+        });
+      }
+      if (Array.isArray(v)) return v.map((x) => rewrite(x, node));
+      if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, rewrite(x, node)]));
+      return v;
+    };
+    for (const node of state.nodes.values()) {
+      if (inTemplate.has(node.id) || !node.props || node.props.bind !== undefined) continue;
+      node.props = rewrite(node.props, node.id) as Record<string, unknown>;
+    }
+    return diags;
   }
 
   private normalizeChildren(raw: unknown, into: Map<string, VpsNode>, surface: string, diags: Diagnostic[], merge = false): Children | undefined {
@@ -423,9 +524,12 @@ export class SurfaceStore {
     }
 
     // Props sent at the node's top level are props.
-    const props: Record<string, unknown> = isObject(raw.props) ? { ...raw.props } : {};
+    const props: Record<string, unknown> = { ...propsOf(raw) };
     for (const [k, v] of Object.entries(raw)) if (!NODE_KEYS.has(k) && !(k in props)) props[k] = v;
     for (const k of Object.keys(props)) if (isMetaKey(k)) delete props[k];
+    // `"description": null`, `"payload": null` (4B, bench recipe): null is "none",
+    // as in a patch, not a value that fails the prop's type.
+    for (const k of Object.keys(props)) if (props[k] === null) delete props[k];
     // `each` + `template` written as props are this node's children spec.
     let rawChildren = raw.children;
     if (rawChildren === undefined && props.each !== undefined && props.template !== undefined) {
@@ -436,6 +540,13 @@ export class SurfaceStore {
 
     const typeKey = NODE_TYPE_KEYS.find((k) => raw[k] !== undefined && raw[k] !== null && raw[k] !== "");
     const rawType = typeKey ? raw[typeKey] : undefined;
+    // `{"data": {...}}` alone in a nodes list is the surface's data, not a node
+    // (4B, bench recipe: inferred as a chart, since "data" is a series alias,
+    // and reported as a chart missing its series).
+    if (rawType === undefined && rawChildren === undefined && givenId === undefined && Object.keys(props).length === 1 && isObject(unwrapJson(props.data))) {
+      this.takeNodeData(props, undefined);
+      return undefined;
+    }
     let match = this.normalizer.resolveType(rawType);
     if (!match && rawType === undefined) {
       match = this.normalizer.inferType(props, { id: givenId, hasChildren: rawChildren !== undefined });
@@ -443,6 +554,16 @@ export class SurfaceStore {
       else if (Object.keys(props).length === 0 && rawChildren === undefined) {
         diags.push({ severity: "warning", surface, node: givenId, message: "node with no type, props or children was dropped" });
         return undefined;
+      }
+    }
+    // `{"id":"chart","type":"chart","children":[{"props":{...}}]}` (4B, bench
+    // dashboard-filter, three retries in a row): a component that can't hold
+    // children, given one child that is nothing but props, owns those props.
+    if (match && !this.normalizer.canHoldChildren(match.type) && Array.isArray(rawChildren) && rawChildren.length === 1) {
+      const only = rawChildren[0];
+      if (isObject(only) && Object.keys(only).length > 0 && Object.keys(only).every((k) => (NODE_PROPS_KEYS as readonly string[]).includes(k))) {
+        Object.assign(props, { ...propsOf(only), ...props });
+        rawChildren = undefined;
       }
     }
     this.takeNodeData(props, match?.type);
@@ -509,7 +630,7 @@ export class SurfaceStore {
   private mergePatch(node: VpsNode, patch: NodePatch, nodes: Map<string, VpsNode>, surface: string, diags: Diagnostic[]): void {
     const raw = patch as unknown as Record<string, unknown>;
     const props = { ...node.props };
-    const incoming: Record<string, unknown> = isObject(patch.props) ? { ...patch.props } : {};
+    const incoming: Record<string, unknown> = { ...propsOf(raw) };
     for (const [k, v] of Object.entries(raw)) if (!NODE_KEYS.has(k) && !(k in incoming)) incoming[k] = v;
     for (const [k, v] of Object.entries(incoming)) {
       if (v === null) delete props[k];
@@ -591,15 +712,7 @@ export class SurfaceStore {
    * braces: an error, so the model supplies the value.
    */
   private lintUnbound(state: SurfaceState): Diagnostic[] {
-    const inTemplate = new Set<string>();
-    const mark = (id: string) => {
-      if (inTemplate.has(id)) return;
-      inTemplate.add(id);
-      const ch = state.nodes.get(id)?.children;
-      if (Array.isArray(ch)) ch.forEach(mark);
-      else if (ch) mark(ch.template);
-    };
-    for (const n of state.nodes.values()) if (n.children && !Array.isArray(n.children)) mark(n.children.template);
+    const inTemplate = this.templateNodes(state);
     const diags: Diagnostic[] = [];
     for (const node of state.nodes.values()) {
       if (inTemplate.has(node.id)) continue;

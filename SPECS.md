@@ -30,7 +30,7 @@ In MCP there is also `vak_wait_action`.
 `packages/core/src/basic-catalog.ts` defines 21 components with JSON Schema props and vak extensions:
 - `aliases`, `enumAliases`, `default`, `format: "markdown"`, `pattern`
 - `namesComponent` on a prop: a value outside its enum that names another component retypes the node (input `kind: "date"` → `date`)
-- component-level `normalize`, `defaults`, `finalize`
+- component-level `normalize`, `defaults`, `finalize` (e.g. the chart's `normalize` reads bare number lists as a series and drops a series with no numbers beside real ones)
 - `role` (`form`/`action`) and `tier` (`core`/`extended`)
 - worked `examples`, which must render with zero diagnostics
 
@@ -40,16 +40,22 @@ In MCP there is also `vak_wait_action`.
 
 1. **Lenient streaming JSON parser** (`partial-json.ts`).
    - Handles prefixes, comments, single quotes (and a key opened with one quote and closed with the other), unquoted keys and Python literals.
+   - Missing quotes: a word missing its opening quote (`"type":select"`), prose missing it (`"content": **Bold** ...",` runs to the first quote a delimiter follows), key and value in one string (`"type:section"`, `"type:=","select"`, and `"type: stat"` right after a single-token value such as an id), and a colon inside the key's quotes (`"id: "x"`).
+   - A `key:` inside an array, quoted or not, ends the array.
    - Mismatched closers are read as a typo, an omitted closer or a stray extra, whichever the following closers fit. When no closers follow it directly, the reading under which the rest of the text's closers line up best wins.
    - Values after a closed top-level list (`[a], b` or `[a]}, b`) continue it.
    - A keyless value, or a value after a stray colon, continues the previous member.
    - JSON written inside a string without escaping is read as a structure.
-   - A `"key":` inside an array ends the array.
    - A `{` where an object key belongs, inside an array, ends the object: its `}` was omitted and the array's next element begins.
-2. **Call recovery** (`SurfaceStore.apply`): members written inside the nodes string after the list (`"[...], \"data\": {...}"`) belong to the call.
+   - A key repeated in one object whose values are both lists of objects (`"children"` twice) concatenates; other repeats are last-wins.
+   - A closed string that escapes its own quotes stays a string (the embedded-JSON reading is for unescaped JSON).
+2. **Call recovery** (`SurfaceStore.apply`):
+   - Members written inside the nodes string after the list (`"[...], \"data\": {...}"`) belong to the call.
+   - An unknown argument holding node-shaped objects (`"chart": "{...}, {...}]"`) joins the nodes list; its name types a node that has none.
 3. **Normalizer** (`normalize.ts`).
    - Type resolution: name → alias → schema-scored inference. A `namesComponent` prop whose value names another component (by name or alias, with its presets) makes the node that component when the result validates; the prop is dropped.
-   - Prop preparation: presets, bare pointers (`"/items"`) where a prop takes a binding become `{/items}`, coercion, defaults, HTML → markdown, double-escaped `\n` repair.
+   - Node keys: `prop`, `properties`, `attributes`, `attrs` mean `props`. `null` props are omitted. A typeless `{"data": {...}}` in a nodes list is surface data. A leaf component whose only child is a bare `{props}` object owns those props.
+   - Prop preparation: `{{path}}` → `{path}`, presets, bare pointers (`"/items"`) where a string isn't valid, at any depth, become `{/items}`, coercion, defaults, HTML → markdown, double-escaped `\n` repair.
    - An inline node reusing an id already written in the same call gets its own id (`actions_2`) instead of replacing the first.
    - Structure repair:
      - prose children become text
@@ -64,7 +70,12 @@ In MCP there is also `vak_wait_action`.
    - inputs nothing submits
    - an empty layout root
    - placeholders that can never fill
-6. **Resolve** → `ResolvedSurface` (bindings, templates, visibility). A list path inside an item falls back to the item's own field.
+6. **Resolve** → `ResolvedSurface` (bindings, templates, visibility).
+   - A list path inside an item falls back to the item's own field.
+   - A pointer that finds nothing is retried with dots as separators (`/data.visitors`) and without a leading `/data` step.
+   - A whole-string bare pointer that names existing data is that data (a stat's `"/visitors"`).
+   - A currency sign before a placeholder whose value starts with it is not repeated.
+   - Before lint, a top-level `{name}` with no surface data of that name, where exactly one input's bind path ends in `/name`, binds to that input's value.
 
 ## 4. Providers, agent loop, policy
 

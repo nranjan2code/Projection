@@ -650,3 +650,21 @@ test("a key opened with a double quote and closed with a single one ends at that
   const button = [...store.get("q3_dashboard")!.nodes.values()].find((n) => n.props?.action === "view_july");
   assert.deepEqual(button?.props?.payload, { month: "July" });
 });
+
+test("a top-level name that only an input's bind path ends in is that input's value", () => {
+  // 4B, bench pizza-order: a live total "{size} pizza, {crust} crust" beside
+  // selects bound to /form/size and /form/crust was an error and two retries.
+  const store = new SurfaceStore(basicCatalog);
+  const diags = store.apply("vak_render", {
+    surface: "pizza",
+    nodes: [
+      { id: "root", type: "form", props: { submit: "order" }, children: ["size", "crust", "total"] },
+      { id: "size", type: "select", props: { label: "Size", bind: "/form/size", options: ["Small", "Large"] } },
+      { id: "crust", type: "select", props: { label: "Crust", bind: "/form/crust", options: ["Thin", "Thick"] } },
+      { id: "total", type: "text", props: { content: "{size} pizza, {crust} crust, {sauce} sauce" } },
+    ],
+  });
+  assert.deepEqual(diags.filter((d) => d.severity === "error").map((d) => d.message.slice(0, 20)), ["{sauce} has no value"]);
+  store.setValue("pizza", "/form/size", "Large");
+  assert.match(projectText(store.resolve("pizza")!), /Large pizza, {2}crust/);
+});

@@ -7,7 +7,7 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 ```
 Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection.
 
-First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 124 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
+First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 138 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
 
 Focus: the core system. That means the engine (parser, normalizer, lint, resolve), the catalog, and the projectors (web, text, Telegram, Slack, Discord as renderers, tested offline), and the bench. Telegram live testing is parked: don't start the bot unless I ask.
 
@@ -23,21 +23,30 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
-- **Tests:** 124 passing, typecheck clean. The 2026-10-25 afternoon work (below) is in the working tree; check `git log` to see whether it was committed.
-- **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios):
+- **Tests:** 138 passing, typecheck clean. The 2026-10-25 afternoon work (below) is in the working tree; check `git log` to see whether it was committed.
+- **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios), re-recorded 2026-10-25 after the bench-category fixes:
 
-  | | Now | Old flat baseline |
-  |---|---|---|
-  | Fully passing | **73%** [56–86] | 47% [30–64] |
-  | Check score | 89% [81–96] | — |
-  | Follow-up turns (interaction) | 75% | 38% |
-  | Median per scenario | 26s | — |
+  | | Now | Previous | Old flat baseline |
+  |---|---|---|---|
+  | Fully passing | **73%** [56–86] | 73% [56–86] | 47% [30–64] |
+  | Check score | **91%** [86–97] | 89% [81–96] | — |
+  | Dashboard (fully passing) | 100% | 60% | — |
+  | Planning | 60% | 40% | — |
+  | Comparison | 40% | 80% | — |
+  | Median per scenario | 24s | 26s | — |
 
-  Weakest categories: planning (40% fully passing) and dashboard (60%). The engine fixes below have not been measured on a live gate run yet.
-- **Nothing is running.** The Telegram bot is stopped. One button press (Save Details on the booking confirmation) is saved in the chat's inbox and replays the next time the bot starts. The old long chat is archived in `.vak/telegram/archive/`.
+  One run per scenario, so category numbers swing (intervals are wide). The comparison dip in this run: phone-plans (no action), restaurants (a template it never defined), flights (no cards or table): content, not engine faults. The gate run just before it had comparison at 80%. The parser rules from pizza-order came after the recording; replay shows no change to recorded scores.
+- **The playground may be running** (started from the session; stop it if not needed). The Telegram bot is stopped. One button press (Save Details on the booking confirmation) is saved in the chat's inbox and replays the next time the bot starts. The old long chat is archived in `.vak/telegram/archive/`.
 
 ## Done in this stretch
 
+- **Weak bench categories (was Next #1):** every planning and dashboard failure in the 2026-10-25 run and gates that had an engine cause is fixed, each as a general rule with a test from the recorded call (`packages/core/test/bench-outputs.test.ts`, fixture `fixtures/bench-4b-2026-10-25.json`):
+  - paths: `/data/` as a first step, dotted paths, bare pointers at any depth and as whole text values that name data, `{{path}}`, no doubled currency sign
+  - call shape: nodes in a stray argument (`"chart": "{...}, {...}]"`), `prop`/`properties`/`attributes` as props, `null` props omitted, a lone `{data}` object, a leaf's props written as its only child, a repeated `children` key concatenating
+  - parser: escaped strings stay strings, values missing their opening quote, key and value in one string (`"type:section"`, `"type:=","select"`)
+  - chart: a series of text annotations is dropped beside real series
+  - From the re-recorded run (pizza-order): `"type: stat"` after an id, `"id: "x"`, unquoted `key:` in an array, and `{size}` binding to the one input bound to `/form/size`.
+  - Live gate (4B, before the last three parser rules): fully passing 73% → 77%, check score 89% → 92%, dashboard 60% → 100%, planning 40% (content choices, see Next #1). No significant regression.
 - **Web tests finished (was Next #1)** in the browser pane, 4B model, live. Each defect found was fixed generally, with a test from the real call:
   - Workout tabs: every day's button had the id `"actions"`; each replaced the last (Day 1 showed "Start Day 5"). An inline node reusing an id from the same call now gets its own id.
   - Dashboard 1: a root list closed early (`]}, {alert}`) lost the alert silently; `rows: "/top_products"` showed the path. Values after a closed top-level list continue it past stray closers; bare pointers bind.
@@ -104,10 +113,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Next (in order)
 
-1. **Weak bench categories:** planning (tabs/sections, itinerary text) and dashboard (charts).
-   - Analyze failures in `packages/bench/data/results/2026-10-25T01-01-37-105Z_run_*.jsonl` and fix root causes.
-   - Prove it with replay plus a live gate run (`npm run bench -- gate ollama:qwen3.5:4b-mlx --runs 1`, ~25 min local), which also measures the parser and settings fixes above.
-   - Re-record the baseline when engine changes move scores.
+1. **Planning content choices** (the rest of the old "weak categories" item): in the latest gate, recipe listed ingredients as cards and onboarding-checklist used cards with "Mark Complete" buttons. Both are reasonable UIs, so they fail the rubric's list/checkbox checks without an engine defect. Options: catalog hints (list: "ingredients, steps"; checkbox: "checklists"), or leave it. Ask the user; don't tune the rubric.
 2. **Form design:** a form says "choose your hotel" but has no hotel field. Consider a lint warning, or rely on the action data already carrying the chosen item.
 3. **The MCP server still teaches flat authoring.** Its instructions say "nodes is a FLAT list" (`packages/mcp`, via `systemPrompt` without a plan). Decide whether MCP clients (often strong models) should get the inline rule too, and pass `authoring` through if so.
 4. **Re-record the form slice baseline** on inline (`--category form --slice form --save`); it is still flat v2.

@@ -278,13 +278,42 @@ class Parser {
       // the array's next element begins. Leave it to the array (read as a
       // key, its members overwrote this object's and lost the field).
       if (c === "{" && this.enclosedBy("[")) return obj;
-      const key = this.key();
+      let key = this.key();
       if (key === MISSING) {
         this.incomplete.add(obj);
         return obj;
       }
       this.skip();
       const next = this.s[this.i];
+      // `{"id: "topping_details", ...}` (4B, bench pizza-order): the colon went
+      // inside the key's quotes; the value follows directly.
+      const colonInKey = typeof key === "string" && next !== ":" && next !== "=" && next !== "," && next !== "}" && /^[A-Za-z_$][\w$-]*\s*:\s*$/.test(key);
+      if (colonInKey) key = (key as string).replace(/\s*:\s*$/, "");
+      // Key and value written in one string, or the key with its separator:
+      // `"type:section",` and `"type:=","select",` (4B, bench job-application,
+      // gate and form cassette). Only the tight form; "Note: b" is prose that
+      // continues the previous member.
+      // With a space after the colon (`"id": "total_price", "type: stat"`, 4B,
+      // bench pizza-order) it is a member only when the previous value is a
+      // single token: prose can continue prose, not an id.
+      const prevToken = lastKey !== undefined && typeof obj[lastKey] === "string" && /^[\w.:/-]+$/.test(obj[lastKey] as string);
+      const shape = prevToken ? /^([A-Za-z_$][\w$-]*)\s*(?::=?|=)\s*([A-Za-z0-9_][\w./-]*)?$/ : /^([A-Za-z_$][\w$-]*)(?::=?|=)([A-Za-z0-9_][\w./-]*)?$/;
+      const joined = (next === "," || next === "}") && typeof key === "string" ? shape.exec(key) : null;
+      if (joined && !(joined[1]! in obj)) {
+        if (joined[2] !== undefined) {
+          obj[joined[1]!] = joined[2];
+          lastKey = joined[1]!;
+          continue;
+        }
+        // The value is the next comma-separated string.
+        const after = /^,\s*("(?:[^"\\]|\\.)*")\s*(?=[,}])/.exec(this.s.slice(this.i));
+        if (after) {
+          obj[joined[1]!] = JSON.parse(after[1]!) as string;
+          lastKey = joined[1]!;
+          this.i += after[0].length;
+          continue;
+        }
+      }
       if (next === "," || next === "}") {
         // A value with no key: it continues the previous member.
         if (lastKey !== undefined) {
@@ -303,7 +332,12 @@ class Parser {
         return obj;
       }
       if (key === "__proto__") continue;
-      obj[key as string] = v;
+      // `"children": [...], ..., "children": [...]` in one object (4B, bench
+      // web-analytics): the second list is more of the same, not a correction;
+      // last-wins dropped the table. Lists of objects (nodes, rows) concatenate.
+      const prev = obj[key as string];
+      const objects = (x: unknown): x is object[] => Array.isArray(x) && x.length > 0 && x.every((e) => e !== null && typeof e === "object" && !Array.isArray(e));
+      obj[key as string] = objects(prev) && objects(v) ? [...prev, ...v] : v;
       lastKey = key as string;
       if (isString && this.truncated && !before) {
         let set = this.partialKeys.get(obj);
@@ -356,6 +390,8 @@ class Parser {
       if ((c === '"' || c === "'") && this.enclosedBy("{") && /^("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')\s*:/.test(this.s.slice(this.i, this.i + 300))) {
         return arr;
       }
+      // The same with an unquoted key (`}, span:2}`, 4B, bench pizza-order).
+      if (this.enclosedBy("{") && /^[A-Za-z_$][\w$-]*\s*:(?!\/)/.test(this.s.slice(this.i, this.i + 100))) return arr;
       const v = this.value();
       if (v === MISSING) {
         this.incomplete.add(arr);
@@ -386,6 +422,10 @@ class Parser {
     const stringEnd = this.i;
     this.i = start;
     if (asString.closed && isJson(asString.value)) return MISSING;
+    // A closed string that escapes its own quotes was written as a string on
+    // purpose (bench sales-q3: "{\"kind\": ...}, {...}]", the rest of a nodes
+    // list); read raw, only its first object survived.
+    if (asString.closed && s.slice(start + 1, stringEnd - 1).includes(`\\${quote}`)) return MISSING;
     const sub = new Parser(s.slice(start + 1), true);
     const v = sub.value();
     if (v === MISSING || sub.sawTruncation || (typeof v === "object" && v !== null && sub.incomplete.has(v))) return MISSING;
@@ -492,6 +532,22 @@ class Parser {
   ident(): Parsed {
     const m = /^[A-Za-z_]\w*/.exec(this.s.slice(this.i));
     if (!m) {
+      // `"content": **"Plank Variation" - Side Plank** (3 sets...).", "variant"`
+      // (4B, bench gate workout-tabs): prose whose opening quote was left out.
+      // It runs to the first quote a delimiter follows; skipped a character at
+      // a time, its words became the node's children.
+      if (/[*#>`(!~]/.test(this.s[this.i]!)) {
+        const end = /"\s*[,}\]]/.exec(this.s.slice(this.i));
+        if (end) {
+          const raw = this.s.slice(this.i, this.i + end.index);
+          this.i += end.index + 1;
+          try {
+            return JSON.parse(`"${raw.replace(/(?<!\\)"/g, '\\"')}"`) as string;
+          } catch {
+            return raw;
+          }
+        }
+      }
       this.i++;
       return this.eof ? ((this.truncated = true), MISSING) : this.value();
     }
@@ -502,6 +558,10 @@ class Parser {
       this.truncated = true;
       return MISSING;
     }
+    // `"type":select",` (4B, bench gate job-application): a word whose opening
+    // quote was left out. Its closing quote would open a string that swallows
+    // the members after it.
+    if (/^"\s*[,}\]]/.test(this.s.slice(this.i))) this.i++;
     // Bare word: keep it as a string rather than failing.
     return m[0];
   }

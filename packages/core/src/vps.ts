@@ -68,3 +68,5 @@ export type ToolName = typeof TOOL_RENDER | typeof TOOL_UPDATE | typeof TOOL_REM
  */
 export const NODE_LIST_KEYS = ["nodes", "components", "elements", "children", "ui", "items", "layout"] as const;
 export const NODE_TYPE_KEYS = ["type", "component", "element", "widget"] as const;
+/** "prop" (4B, bench sql-study-plan: label, bind and options were ignored), "attributes" (HTML). */
+export const NODE_PROPS_KEYS = ["props", "prop", "properties", "attributes", "attrs"] as const;
