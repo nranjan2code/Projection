@@ -4,6 +4,9 @@ A projection engine that lets any LLM answer with **rich, interactive UI** (card
 
 **Zero runtime dependencies.** Provider clients, the streaming parser, schema validation, the renderer and the server are all written here. The only dev dependencies are TypeScript (type checking only) and Node type definitions.
 
+
+Docs: [SPECS.md](SPECS.md) (architecture), [AGENTS.md](AGENTS.md) (rules for contributors and coding agents), [HANDOVER.md](HANDOVER.md) (current state and next steps).
+
 ## How it works
 
 ```
