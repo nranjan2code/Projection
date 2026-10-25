@@ -134,6 +134,7 @@ export interface HostTurn {
 }
 
 export interface HostRunOptions {
+  completion?: "projection" | "response";
   signal?: AbortSignal;
   emit?: (event: AgentEvent) => void;
   tools?: AgentTool[];
@@ -439,11 +440,12 @@ export function createHost(opts: HostOptions): VakHost {
       messages: s.messages,
       emit,
       instructions: controls.instructions ?? instructions(),
+      completion: controls.completion,
       maxSteps: controls.maxSteps,
       maxTokens: controls.maxTokens,
       schemaMode: body.schemaMode === "strict" ? "strict" : "compact",
       // Grammar-constrained output cannot call other tools; integrations need tool calling.
-      generation: tools.length ? "tools" : body.generation === "tools" || body.generation === "constrained" ? body.generation : "auto",
+      generation: tools.length || controls.completion === "response" ? "tools" : body.generation === "tools" || body.generation === "constrained" ? body.generation : "auto",
       tools,
       effort: body.effort === "low" || body.effort === "medium" || body.effort === "high" ? body.effort : undefined,
       history: typeof body.history === "number" && body.history > 0 ? body.history : undefined,

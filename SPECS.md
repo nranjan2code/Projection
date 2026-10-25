@@ -88,6 +88,7 @@ In MCP there is also `vak_wait_action`.
 ## 4. Providers, agent loop, policy
 
 - **Adapters over `fetch`:** Anthropic, OpenAI (Responses API and Chat Completions), Gemini, Ollama. Each implements `describeModel()`.
+- **Run completion:** `runAgent` and public `host.run` default to ending on a clean projection. Opt-in `completion: "response"` uses tool generation and lets publication be progress; the same run continues until a response without tool calls, a step bound, error or cancellation. Direct constrained-only generation cannot express that workflow and rejects the combination. Completion of a run does not certify an application outcome.
 - **`runAgent` generation modes:**
   - `tools`: the projection tools.
   - `constrained`: grammar-decoded `{reply, render}`.

@@ -3,6 +3,11 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: response-oriented run completion
+
+- `runAgent` and public `host.run` accept `completion: "response"`: tool runs can publish progress surfaces, perform further tool work and publish additional results before ending on a response without tool calls. Defaults still stop on a clean projection. Step limits, errors, cancellation and publication remain unchanged. The host selects tool generation for this mode; direct constrained-only response protocols reject it explicitly.
+- Added general completion guidance distinguishing surface IDs from nested nodes, and tests for interleaved publication/tools, step exhaustion, constrained-mode rejection and public-host propagation. 238 tests and typecheck pass. No new dependency or app-specific task policy.
+
 ## 2026-10-26: MCP event streams with CRLF line endings
 
 - `McpClient` over HTTP now reads a `text/event-stream` reply whose lines end in CRLF or CR, as the SSE format allows, including a line ending split across chunks. Before, it only split events on LF, so a server such as Tavily's remote MCP server (`mcp.tavily.com`) never had its reply read and the request hung until its timeout.

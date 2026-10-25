@@ -75,6 +75,8 @@ export interface RunOptions {
    * window so the model can keep updating them. Default: everything.
    */
   history?: number;
+  /** Projection ends ordinary UI turns; response lets tool runs publish progress and continue. */
+  completion?: "projection" | "response";
   maxSteps?: number;
   maxTokens?: number;
   effort?: ChatRequest["effort"];
@@ -116,6 +118,8 @@ export function resolveRun(opts: RunOptions): ResolvedRun {
   // so a follow-up can update it.
   if (opts.plan) catalog = withTier(catalog, opts.plan.tier, [...namedComponents(catalog, lastRequest(opts), { aliases: true }), ...shownTypes(opts.store)]);
   const requested = opts.generation && opts.generation !== "auto" ? opts.generation : (opts.plan?.generation ?? opts.generation);
+  if (opts.completion !== undefined && opts.completion !== "projection" && opts.completion !== "response") throw new Error("Unknown completion policy");
+  if (opts.completion === "response" && requested === "constrained") throw new Error("Response completion requires tool generation");
   const generation = generationMode({ ...opts, generation: requested });
   return {
     catalog,
@@ -136,6 +140,7 @@ export function buildSystem(opts: RunOptions, run: ResolvedRun = resolveRun(opts
   if (requested.length) {
     parts.push("Requested components: use these exact types, with every supplied item and verbatim labels, captions and source. Do not replace them with other components.\n" + requested.map(([name, def]) => `type: ${name}. ${def.hint ?? ""} Props schema (supply values): ${JSON.stringify(toWireSchema(def.props))}`).join("\n"));
   }
+  if (opts.completion === "response") parts.push("Publishing a surface is progress, not the end of this run. Continue any remaining requested tool work and outputs. Before finishing, compare the published surface IDs and component types with the request: sections or nodes within one surface are not separate surfaces. Finish with a short text response without tool calls when the requested work is ready for review, or explain what input or access is missing. Tool responses and a rendered interface alone are not proof of an external effect.");
   return parts.join("\n\n");
 }
 
@@ -435,7 +440,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
     // A clean projection with nothing else pending ends the turn: the UI
     // is the answer, and the user's next interaction starts a new run.
     const onlyProjection = calls.every((c) => VAK_TOOLS.has(c.name));
-    if (allOk && onlyProjection) {
+    if (allOk && onlyProjection && opts.completion !== "response") {
       emit({ type: "run_end", stop: "projected", usage });
       return { stop: "projected" };
     }
