@@ -23,7 +23,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
-- **Tests:** 181 passing, typecheck clean. The round below ("Framework and app, 2026-10-25 evening") is not committed yet.
+- **Tests:** 181 passing, typecheck clean. Everything below is committed and pushed (latest: the "Framework and app, 2026-10-25 evening" round).
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios), re-recorded 2026-10-25 after the bench-category fixes:
 
   | | Now | Previous | Old flat baseline |
@@ -152,13 +152,12 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 ## Next (in order)
 
 1. **Ask the user to retry Appearance in the installed app**; if it still fails, read `~/Library/Application Support/com.vakprojection.desktop/logs/engine.log` (`[ui error]` lines).
-2. **Commit this round** (when the user asks): run the secret scan first.
-3. **Bench A/B for compact output** (4B): the interface JSON is ~1.3k tokens per answer; a shorter authoring (data-first rows, fewer repeated props) could halve decode time. Measure with `npm run bench -- gate ... --plan`, never change blindly.
-4. **Bench scenarios for the new components and totals**, so the replay gate protects them (none recorded yet).
-5. **Decisions for the user before publishing:** a license (the repo has none), and whether the `@vak` npm scope is available to them (it is not registered today).
-6. **Integrations, next:** OAuth for remote servers (Linear, Notion remote), an update check against newer pinned versions, macOS sandbox profiles for local servers.
-7. **Parked until the user asks: Telegram live** (start the bot; the saved Save Details press replays).
-8. **Optional, ask first:** code signing/notarization and auto-update; Windows/Linux builds; near-miss id pairing.
+2. **Bench A/B for compact output** (4B): the interface JSON is ~1.3k tokens per answer; a shorter authoring (data-first rows, fewer repeated props) could halve decode time. Measure with `npm run bench -- gate ... --plan`, never change blindly.
+3. **Bench scenarios for the new components and totals**, so the replay gate protects them (none recorded yet).
+4. **Decisions for the user before publishing:** a license (the repo has none), and whether the `@vak` npm scope is available to them (it is not registered today).
+5. **Integrations, next:** OAuth for remote servers (Linear, Notion remote), an update check against newer pinned versions, macOS sandbox profiles for local servers.
+6. **Parked until the user asks: Telegram live** (start the bot; the saved Save Details press replays).
+7. **Optional, ask first:** code signing/notarization and auto-update; Windows/Linux builds; near-miss id pairing.
 
 ## Useful paths
 
