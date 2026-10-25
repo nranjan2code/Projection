@@ -48,6 +48,9 @@ try {
 const bot = new TelegramBot({ api, provider, model, plan, log: (l) => console.error(l) });
 console.error(`vak telegram bot @${username} · ${providerId}/${model} · plan ${plan.generation}/${plan.tier}/${plan.examples ? "examples" : "plain"}`);
 
+// A long-running bot logs unexpected failures instead of dying on them.
+process.on("unhandledRejection", (err) => console.error(`unhandled: ${(err as Error)?.message ?? String(err)}`));
+
 let offset = 0;
 for (;;) {
   try {

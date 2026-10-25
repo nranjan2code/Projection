@@ -55,6 +55,15 @@ export class TelegramApi {
     }
   }
 
+  /** Replace a message's content with plain text (fallback when rich content is refused). */
+  async editText(chatId: number, messageId: number, text: string): Promise<void> {
+    try {
+      await this.call("editMessageText", { chat_id: chatId, message_id: messageId, text });
+    } catch (err) {
+      if (!(err instanceof TelegramError && /not modified/i.test(err.message))) throw err;
+    }
+  }
+
   sendMessage(chatId: number, text: string, extra: { reply_markup?: InlineKeyboard | { force_reply: true } } = {}): Promise<TgMessage> {
     return this.call("sendMessage", { chat_id: chatId, text, ...extra });
   }

@@ -3,11 +3,15 @@
 // in place as surfaces change; buttons route to form flows or actions, and
 // every user action goes back to the model.
 
-import { basicCatalog, type Catalog, SurfaceStore } from "@vak/core";
+import { basicCatalog, type Catalog, projectText, SurfaceStore } from "@vak/core";
 import { actionMessage, type Message, type ProjectionPlan, type Provider, runAgent } from "@vak/providers";
-import type { TelegramApi, TgUpdate } from "./api.ts";
+import { type TelegramApi, TelegramError, type TgUpdate } from "./api.ts";
 import { FormFlow, stepsOf } from "./flow.ts";
-import { type Control, projectTelegram, telegramProfile } from "./project.ts";
+import { MediaVerifier } from "./media.ts";
+import { type Control, imageSources, projectTelegram, telegramProfile } from "./project.ts";
+
+/** Telegram's limit for a plain-text message. */
+const MAX_TEXT = 4096;
 
 const START_TEXT = [
   "Hi! Ask me anything and I'll answer with an interactive view: tables, cards, forms and buttons right here in the chat.",
@@ -27,6 +31,8 @@ export interface BotOptions {
   instructions?: string;
   /** Minimum gap between edits of one message while a surface streams (Telegram rate-limits edits). */
   editIntervalMs?: number;
+  /** Verifies image URLs before embedding them (default: a public-https verifier). */
+  media?: { isImage(url: string): Promise<boolean> };
   log?: (line: string) => void;
 }
 
@@ -48,9 +54,11 @@ interface Chat {
 export class TelegramBot {
   private opts: BotOptions;
   private chats = new Map<number, Chat>();
+  private media: { isImage(url: string): Promise<boolean> };
 
   constructor(opts: BotOptions) {
     this.opts = opts;
+    this.media = opts.media ?? new MediaVerifier();
   }
 
   private chat(id: number): Chat {
@@ -172,7 +180,8 @@ export class TelegramBot {
         if (e.type === "text_delta") reply += e.delta;
         if (e.type === "surface") {
           dirty.add(e.snapshot.id);
-          pending = pending.then(() => flush(false));
+          // Contain failures here: an unhandled rejection would end the process.
+          pending = pending.then(() => flush(false)).catch((err) => this.opts.log?.(`chat ${chat.id}: publish failed: ${(err as Error).message}`));
         }
         if (e.type === "error") this.opts.log?.(`chat ${chat.id}: ${e.message}`);
       },
@@ -182,23 +191,45 @@ export class TelegramBot {
     if (reply.trim()) await api.sendMessage(chat.id, reply.trim());
   }
 
-  /** Send or edit the rich message for one surface. */
+  /**
+   * Send or edit the message for one surface. Rich HTML first (only verified
+   * images); if Telegram refuses it, again without media; if that fails too,
+   * the plain-text projection. The user always gets an answer.
+   */
   private async publish(chat: Chat, surfaceId: string): Promise<void> {
     const resolved = chat.store.resolve(surfaceId);
     if (!resolved) return;
-    const projection = projectTelegram(resolved, (key, kind) => {
+    const tokenFor = (key: string, kind: Control["kind"]) => {
       // Reuse a token for the same control so already-sent buttons keep working.
       for (const [token, t] of chat.tokens) if (t.surface === surfaceId && t.key === key && t.kind === kind) return token;
       const token = `c${(chat.nextToken++).toString(36)}`;
-      chat.tokens.set(token, { token, key, kind, surface: surfaceId });
+      chat.tokens.set(token, { token, key, kind, label: "", surface: surfaceId });
       return token;
-    });
+    };
+    const verified = new Set<string>();
+    await Promise.all(imageSources(resolved).map(async (src) => (await this.media.isImage(src)) && verified.add(src)));
+
+    const rich = projectTelegram(resolved, tokenFor, { allowImage: (src) => verified.has(src) });
+    const attempts = [
+      { label: "rich", html: rich.html },
+      ...(verified.size ? [{ label: "rich without media", html: projectTelegram(resolved, tokenFor).html }] : []),
+    ];
     const messageId = chat.posted.get(surfaceId);
-    if (messageId === undefined) {
-      const sent = await this.opts.api.sendRichMessage(chat.id, projection.html);
-      chat.posted.set(surfaceId, sent.message_id);
-    } else {
-      await this.opts.api.editRichMessage(chat.id, messageId, projection.html);
+    for (const attempt of attempts) {
+      try {
+        if (messageId === undefined) chat.posted.set(surfaceId, (await this.opts.api.sendRichMessage(chat.id, attempt.html)).message_id);
+        else await this.opts.api.editRichMessage(chat.id, messageId, attempt.html);
+        return;
+      } catch (err) {
+        if (!(err instanceof TelegramError && err.code === 400)) throw err;
+        this.opts.log?.(`chat ${chat.id}: ${attempt.label} message refused: ${err.message}`);
+      }
     }
+    // Last resort: the text projection, still interactive through an inline keyboard.
+    const text = projectText(resolved).slice(0, MAX_TEXT);
+    const keyboard = rich.controls.map((c) => [{ text: c.label || "Open", callback_data: c.token }]);
+    const markup = keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {};
+    if (messageId === undefined) chat.posted.set(surfaceId, (await this.opts.api.sendMessage(chat.id, text, markup)).message_id);
+    else await this.opts.api.editText(chat.id, messageId, text);
   }
 }

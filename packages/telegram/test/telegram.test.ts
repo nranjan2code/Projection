@@ -63,6 +63,8 @@ let server: Server;
 let base = "";
 const calls: { method: string; params: any }[] = [];
 let nextId = 100;
+/** When set, the fake Bot API refuses matching rich messages with this description. */
+let refuseRich: ((html: string) => string | undefined) | undefined;
 before(async () => {
   server = createServer((req, res) => {
     let body = "";
@@ -71,6 +73,11 @@ before(async () => {
       const method = req.url!.split("/").pop()!;
       const params = body ? JSON.parse(body) : {};
       calls.push({ method, params });
+      const refusal = params.rich_message && refuseRich?.(params.rich_message.html);
+      if (refusal) {
+        res.setHeader("content-type", "application/json");
+        return void res.end(JSON.stringify({ ok: false, error_code: 400, description: `Bad Request: ${refusal}` }));
+      }
       const result = method.startsWith("send") ? { message_id: nextId++, chat: { id: params.chat_id } } : true;
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({ ok: true, result }));
@@ -139,4 +146,61 @@ test("bot: message → rich form → step-by-step answers → submit → model u
   const edit = last("editMessageText");
   assert.equal(edit.params.message_id, 100, "the same message is edited in place");
   assert.match(edit.params.rich_message.html, /<blockquote><b>Welcome, Ada!<\/b>/);
+});
+
+test("media check: only https URLs on public addresses are fetched", async () => {
+  const { isPublicAddress, isPublicHttpsUrl } = await import("../src/media.ts");
+  for (const a of ["127.0.0.1", "10.1.2.3", "172.20.0.1", "192.168.1.5", "169.254.169.254", "100.64.0.1", "0.0.0.0", "::1", "fd00::1", "fe80::1", "::ffff:10.0.0.1"]) {
+    assert.equal(isPublicAddress(a), false, a);
+  }
+  assert.equal(isPublicAddress("93.184.216.34"), true);
+  for (const u of ["http://example.com/a.jpg", "https://localhost/a.jpg", "https://127.0.0.1/a.jpg", "https://[::1]/a.jpg", "https://user:pw@example.com/a.jpg", "https://printer.local/x.png", "javascript:alert(1)"]) {
+    assert.equal(await isPublicHttpsUrl(u), false, u);
+  }
+});
+
+const hotelCard = { surface: "h", nodes: [{ id: "root", type: "card", props: { title: "Hotel Kyo", image: "https://img.example.com/kyo.jpg" }, children: ["book"] }, { id: "book", type: "button", props: { label: "Book", action: "book" } }] };
+
+test("a refused photo is retried without media; buttons survive", async () => {
+  refuseRich = (html) => (html.includes("<img") ? "RICH_MESSAGE_PHOTO_NO_MEDIA_FOUND" : undefined);
+  const logs: string[] = [];
+  const bot = new TelegramBot({
+    api: new TelegramApi("TEST", base),
+    provider: scripted([{ name: "vak_render", args: hotelCard }]),
+    model: "m",
+    editIntervalMs: 0,
+    media: { isImage: async () => true },
+    log: (l) => logs.push(l),
+  });
+  const before = calls.length;
+  await bot.handle({ update_id: 1, message: { message_id: 1, chat: { id: 77 }, text: "hotels" } });
+  const sends = calls.slice(before).filter((c) => c.method === "sendRichMessage");
+  assert.equal(sends.length, 2, "first with the photo, then without");
+  assert.match(sends[0]!.params.rich_message.html, /<img src="https:\/\/img\.example\.com\/kyo\.jpg"\/>/);
+  assert.doesNotMatch(sends[1]!.params.rich_message.html, /<img/);
+  assert.match(sends[1]!.params.rich_message.html, /<tg-button type="callback_data" data="c\d+">Book<\/tg-button>/);
+  assert.ok(logs.some((l) => /refused: .*RICH_MESSAGE_PHOTO_NO_MEDIA_FOUND/.test(l)));
+  refuseRich = undefined;
+});
+
+test("unverified images are never sent; if rich messages fail entirely, text with a keyboard is", async () => {
+  refuseRich = () => "RICH_MESSAGE_INVALID";
+  const bot = new TelegramBot({
+    api: new TelegramApi("TEST", base),
+    provider: scripted([{ name: "vak_render", args: hotelCard }]),
+    model: "m",
+    editIntervalMs: 0,
+    media: { isImage: async () => false },
+    log: () => {},
+  });
+  const before = calls.length;
+  await bot.handle({ update_id: 1, message: { message_id: 1, chat: { id: 78 }, text: "hotels" } });
+  const mine = calls.slice(before);
+  const rich = mine.filter((c) => c.method === "sendRichMessage");
+  assert.equal(rich.length, 1, "no media to drop, so one rich attempt");
+  assert.doesNotMatch(rich[0]!.params.rich_message.html, /<img/, "an unverified image is not embedded");
+  const text = mine.find((c) => c.method === "sendMessage")!;
+  assert.match(text.params.text, /\[Card\] Hotel Kyo/);
+  assert.equal(text.params.reply_markup.inline_keyboard[0][0].text, "Book");
+  refuseRich = undefined;
 });
