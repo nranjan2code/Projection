@@ -65,6 +65,8 @@ const calls: { method: string; params: any }[] = [];
 let nextId = 100;
 /** When set, the fake Bot API refuses matching rich messages with this description. */
 let refuseRich: ((html: string) => string | undefined) | undefined;
+/** Message ids the fake chat no longer has (the user deleted them). */
+const deleted = new Set<number>();
 before(async () => {
   server = createServer((req, res) => {
     let body = "";
@@ -73,7 +75,7 @@ before(async () => {
       const method = req.url!.split("/").pop()!;
       const params = body ? JSON.parse(body) : {};
       calls.push({ method, params });
-      const refusal = params.rich_message && refuseRich?.(params.rich_message.html);
+      const refusal = method === "editMessageText" && deleted.has(params.message_id) ? "message to edit not found" : params.rich_message && refuseRich?.(params.rich_message.html);
       if (refusal) {
         res.setHeader("content-type", "application/json");
         return void res.end(JSON.stringify({ ok: false, error_code: 400, description: `Bad Request: ${refusal}` }));
@@ -246,4 +248,35 @@ test("bot: a restarted bot keeps the chat, its buttons and a form in progress", 
   // Restart again mid-form: the next answer continues where it was.
   await make().handle({ update_id: 3, message: { message_id: 3, chat, text: "Ada" } });
   assert.match(ours().at(-1)!.params.text, /^2\/4 · Email/);
+});
+
+test("bot: an update cut off by a restart is handled again on start", async () => {
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const stateDir = mkdtempSync(`${tmpdir()}/vak-tg-`);
+  const trips = basicCatalog.examples.find((e) => e.render.surface === "trips")!.render;
+  // The first bot never finishes its turn, like a process stopped mid-reply.
+  const stuck: Provider = { id: "stuck", async *stream() { await new Promise(() => {}); } };
+  void new TelegramBot({ api: new TelegramApi("TEST", base), provider: stuck, model: "m", stateDir }).handle({ update_id: 1, message: { message_id: 1, chat: { id: 55 }, text: "trips" } });
+  await new Promise((r) => setTimeout(r, 20));
+  const before = calls.length;
+  const restarted = new TelegramBot({ api: new TelegramApi("TEST", base), provider: scripted([{ name: "vak_render", args: trips }]), model: "m", editIntervalMs: 0, stateDir });
+  assert.equal(await restarted.resume(), 1);
+  assert.ok(calls.slice(before).some((c) => c.method === "sendRichMessage" && c.params.chat_id === 55));
+  assert.equal(await new TelegramBot({ api: new TelegramApi("TEST", base), provider: stuck, model: "m", stateDir }).resume(), 0, "finished updates are not replayed");
+});
+
+test("bot: a surface whose message the user deleted is sent again as a new message", async () => {
+  const trips = basicCatalog.examples.find((e) => e.render.surface === "trips")!.render;
+  const again = { ...trips, title: "Trips, updated" };
+  const bot = new TelegramBot({ api: new TelegramApi("TEST", base), provider: scripted([{ name: "vak_render", args: trips }, { name: "vak_render", args: again }]), model: "m", editIntervalMs: 0 });
+  await bot.handle({ update_id: 1, message: { message_id: 1, chat: { id: 66 }, text: "trips" } });
+  const first = calls.filter((c) => c.method === "sendRichMessage" && c.params.chat_id === 66).length;
+  // The user deletes the bot's message; the model then updates the same surface.
+  for (let id = 100; id < nextId; id++) deleted.add(id);
+  await bot.handle({ update_id: 2, message: { message_id: 2, chat: { id: 66 }, text: "update it" } });
+  const sends = calls.filter((c) => c.method === "sendRichMessage" && c.params.chat_id === 66);
+  assert.equal(sends.length, first + 1);
+  assert.match(sends.at(-1)!.params.rich_message.html, /Trips, updated/);
+  deleted.clear();
 });

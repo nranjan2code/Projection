@@ -185,8 +185,8 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
   // The capability policy picks how to ask this model; explicit options still win.
   const planned = await planFor(entry.id, body.model);
   if (planned.plan) {
-    const { generation, tier, examples, maxSteps, reasons } = planned.plan;
-    emit({ type: "plan", generation, tier, examples, maxSteps, reasons });
+    const { generation, tier, examples, authoring, maxSteps, reasons } = planned.plan;
+    emit({ type: "plan", generation, tier, examples, authoring, maxSteps, reasons });
   }
 
   const started = Date.now();

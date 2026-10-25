@@ -20,7 +20,7 @@ export function addUsage(a: Usage | undefined, b: Usage | undefined): Usage | un
 export type AgentEvent =
   | { type: "run_start"; runId: string; provider: string; model: string }
   /** How the engine will ask this model for UI, and why (from the capability policy). */
-  | { type: "plan"; generation: string; tier: string; examples: boolean; maxSteps: number; reasons: string[] }
+  | { type: "plan"; generation: string; tier: string; examples: boolean; authoring?: string; maxSteps: number; reasons: string[] }
   | { type: "text_delta"; delta: string }
   | { type: "tool_start"; id: string; name: string }
   | { type: "tool_end"; id: string; name: string; result: string; isError?: boolean }

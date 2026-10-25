@@ -48,6 +48,9 @@ try {
 const bot = new TelegramBot({ api, provider, model, plan, log: (l) => console.error(l), transcriptDir: `${repo}.vak/telegram`, stateDir: `${repo}.vak/telegram` });
 console.error(`vak telegram bot @${username} · ${providerId}/${model} · plan ${plan.generation}/${plan.tier}/${plan.examples ? "examples" : "plain"}/${plan.authoring ?? "flat"}`);
 
+// Not awaited: replayed turns run alongside polling.
+void bot.resume().then((n) => n && console.error(`resumed ${n} unfinished update(s) from before the restart`));
+
 // A long-running bot logs unexpected failures instead of dying on them.
 process.on("unhandledRejection", (err) => console.error(`unhandled: ${(err as Error)?.message ?? String(err)}`));
 

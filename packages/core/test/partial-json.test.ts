@@ -82,3 +82,21 @@ test("a stray extra closer is dropped when the closers after it fit the open con
   const text = '[{"id":"card","children":[{"id":"b","props":{"style":"primary"}}}]}, {"id":"form"}]';
   assert.deepEqual(parseLenient(text), [{ id: "card", children: [{ id: "b", props: { style: "primary" } }] }, { id: "form" }]);
 });
+
+test("JSON written inside a string without escaping is read as the structure it is", () => {
+  // From a live 4B run (Telegram, hotels): inner quotes unescaped, closing quote left out.
+  assert.deepEqual(parseLenient('{"a":"["x (1)","y"]","b":1}'), { a: ["x (1)", "y"], b: 1 });
+  assert.deepEqual(parseLenient('[{"a":"["x","y"]},{"a":2}]'), [{ a: ["x", "y"] }, { a: 2 }]);
+  // Strings that only look like JSON stay strings.
+  assert.deepEqual(parseLenient('{"t":"{name}","u":"[note] text","v":"[1,2]"}'), { t: "{name}", u: "[note] text", v: "[1,2]" });
+});
+
+test("a second value after a stray colon continues the previous member", () => {
+  assert.deepEqual(parseLenient('[{"d":"Ryokan": ["Onsen","Tatami"],"n":1},{"n":2}]'), [{ d: "Ryokan\nOnsen\nTatami", n: 1 }, { n: 2 }]);
+});
+
+test("a key inside an array means the array's closer was omitted", () => {
+  // From a live 4B run: `"hotels":[{...},{...}, "bookings":{}}` — no "]".
+  assert.deepEqual(parseLenient('{"hotels":[{"n":1},{"n":2}, "bookings":{}}'), { hotels: [{ n: 1 }, { n: 2 }], bookings: {} });
+  assert.deepEqual(parseLenient('{"tags":["a", "b"], "n": 1}'), { tags: ["a", "b"], n: 1 });
+});

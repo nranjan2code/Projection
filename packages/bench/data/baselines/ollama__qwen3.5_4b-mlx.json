@@ -8,26 +8,72 @@
   "config": {
     "generation": "tools",
     "tier": "core",
-    "examples": true
+    "examples": true,
+    "authoring": "inline"
   },
-  "commit": "8088d82-dirty",
-  "at": "2026-10-24T16:31:05.955Z",
+  "commit": "e0ee74e-dirty",
+  "at": "2026-10-25T01:21:59.145Z",
   "summary": {
     "runs": 30,
     "complete": {
-      "value": 0.4666666666666667,
-      "lo": 0.30232388795369436,
-      "hi": 0.6385770050304025,
+      "value": 0.7333333333333333,
+      "lo": 0.5555203815871325,
+      "hi": 0.8581733675241899,
       "n": 30
     },
     "score": {
-      "value": 0.7523809523809526,
-      "lo": 0.6465637920573545,
-      "hi": 0.8581981127045507,
+      "value": 0.8861111111111112,
+      "lo": 0.812480816137133,
+      "hi": 0.9597414060850894,
       "n": 30
     },
     "byCategory": {
       "comparison": {
+        "runs": 5,
+        "complete": {
+          "value": 0.8,
+          "lo": 0.375534627029995,
+          "hi": 0.9637758917743693,
+          "n": 5
+        },
+        "score": {
+          "value": 0.9,
+          "lo": 0.7040036000000001,
+          "hi": 1,
+          "n": 5
+        }
+      },
+      "dashboard": {
+        "runs": 5,
+        "complete": {
+          "value": 0.6,
+          "lo": 0.23072427940911855,
+          "hi": 0.8823792268590028,
+          "n": 5
+        },
+        "score": {
+          "value": 0.82,
+          "lo": 0.6017476457674044,
+          "hi": 1,
+          "n": 5
+        }
+      },
+      "form": {
+        "runs": 5,
+        "complete": {
+          "value": 1,
+          "lo": 0.5655175313406071,
+          "hi": 1,
+          "n": 5
+        },
+        "score": {
+          "value": 1,
+          "lo": 1,
+          "hi": 1,
+          "n": 5
+        }
+      },
+      "planning": {
         "runs": 5,
         "complete": {
           "value": 0.4,
@@ -42,78 +88,33 @@
           "n": 5
         }
       },
-      "dashboard": {
-        "runs": 5,
-        "complete": {
-          "value": 0.4,
-          "lo": 0.11762077314099711,
-          "hi": 0.7692757205908813,
-          "n": 5
-        },
-        "score": {
-          "value": 0.65,
-          "lo": 0.33838558450567296,
-          "hi": 0.9616144154943271,
-          "n": 5
-        }
-      },
-      "form": {
-        "runs": 5,
-        "complete": {
-          "value": 0.8,
-          "lo": 0.375534627029995,
-          "hi": 0.9637758917743693,
-          "n": 5
-        },
-        "score": {
-          "value": 0.96,
-          "lo": 0.88160144,
-          "hi": 1,
-          "n": 5
-        }
-      },
-      "planning": {
-        "runs": 5,
-        "complete": {
-          "value": 0.6,
-          "lo": 0.23072427940911855,
-          "hi": 0.8823792268590028,
-          "n": 5
-        },
-        "score": {
-          "value": 0.8300000000000001,
-          "lo": 0.5989236523353929,
-          "hi": 1,
-          "n": 5
-        }
-      },
       "information": {
         "runs": 2,
         "complete": {
-          "value": 0,
-          "lo": 0,
-          "hi": 0.6576197760453506,
+          "value": 1,
+          "lo": 0.3423802239546494,
+          "hi": 1,
           "n": 2
         },
         "score": {
-          "value": 0.5416666666666666,
-          "lo": 0.1333408333333333,
-          "hi": 0.9499925,
+          "value": 1,
+          "lo": 1,
+          "hi": 1,
           "n": 2
         }
       },
       "interaction": {
         "runs": 8,
         "complete": {
-          "value": 0.375,
-          "lo": 0.13684428473912286,
-          "hi": 0.694257607346229,
+          "value": 0.75,
+          "lo": 0.40927542792725174,
+          "hi": 0.9285207879020445,
           "n": 8
         },
         "score": {
-          "value": 0.6755952380952381,
-          "lo": 0.4272594751617486,
-          "hi": 0.9239310010287276,
+          "value": 0.8875,
+          "lo": 0.7419683128760428,
+          "hi": 1,
           "n": 8
         }
       }
@@ -126,13 +127,13 @@
       },
       "laptops-compare": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.8
+        "complete": 1,
+        "score": 1
       },
       "phone-plans": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.3333333333333333
+        "complete": 1,
+        "score": 1
       },
       "restaurants": {
         "runs": 1,
@@ -142,32 +143,32 @@
       "flights": {
         "runs": 1,
         "complete": 0,
-        "score": 0.75
+        "score": 0.5
       },
       "sales-q3": {
         "runs": 1,
-        "complete": 1,
-        "score": 1
+        "complete": 0,
+        "score": 0.5
       },
       "web-analytics": {
         "runs": 1,
-        "complete": 1,
-        "score": 1
+        "complete": 0,
+        "score": 0.6
       },
       "budget-pie": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.6666666666666666
+        "complete": 1,
+        "score": 1
       },
       "server-health": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.25
+        "complete": 1,
+        "score": 1
       },
       "running-week": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.3333333333333333
+        "complete": 1,
+        "score": 1
       },
       "newsletter": {
         "runs": 1,
@@ -176,8 +177,8 @@
       },
       "job-application": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.8
+        "complete": 1,
+        "score": 1
       },
       "bug-report": {
         "runs": 1,
@@ -201,13 +202,13 @@
       },
       "rome-itinerary": {
         "runs": 1,
-        "complete": 1,
-        "score": 1
+        "complete": 0,
+        "score": 0.3333333333333333
       },
       "recipe": {
         "runs": 1,
         "complete": 0,
-        "score": 0.4
+        "score": 0.8
       },
       "sql-study-plan": {
         "runs": 1,
@@ -221,18 +222,18 @@
       },
       "rest-vs-graphql": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.75
+        "complete": 1,
+        "score": 1
       },
       "paris-weather": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.3333333333333333
+        "complete": 1,
+        "score": 1
       },
       "hotel-booking-flow": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.16666666666666666
+        "complete": 1,
+        "score": 1
       },
       "beta-signup-flow": {
         "runs": 1,
@@ -246,18 +247,18 @@
       },
       "todo-add": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.7142857142857143
+        "complete": 1,
+        "score": 1
       },
       "quiz": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.16666666666666666
+        "complete": 1,
+        "score": 1
       },
       "pizza-order": {
         "runs": 1,
-        "complete": 0,
-        "score": 0.8571428571428571
+        "complete": 1,
+        "score": 1
       },
       "bug-ticket-flow": {
         "runs": 1,
@@ -266,14 +267,14 @@
       },
       "itinerary-edit": {
         "runs": 1,
-        "complete": 1,
-        "score": 1
+        "complete": 0,
+        "score": 0.6
       }
     },
-    "medianMs": 33893,
+    "medianMs": 26342,
     "usage": {
-      "input": 264161,
-      "output": 35463
+      "input": 162498,
+      "output": 29488
     }
   }
 }

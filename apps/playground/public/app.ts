@@ -98,14 +98,14 @@ modelInput.addEventListener("input", () => {
 });
 
 // --- capability plan -------------------------------------------------------------------
-interface PlanInfo { generation: string; tier: string; examples: boolean; maxSteps: number; reasons: string[] }
+interface PlanInfo { generation: string; tier: string; examples: boolean; authoring?: string; maxSteps: number; reasons: string[] }
 const planText = $<HTMLElement>("plan-text");
 const calibrateBtn = $<HTMLButtonElement>("calibrate");
 let planTimer: ReturnType<typeof setTimeout> | undefined;
 let calibrationCalls = 0;
 
 function describePlan(p: PlanInfo): string {
-  const parts = [p.generation, p.tier === "core" ? "core components" : "full catalog", p.examples ? "worked examples" : "no examples"];
+  const parts = [p.generation, p.tier === "core" ? "core components" : "full catalog", p.examples ? "worked examples" : "no examples", p.authoring === "inline" ? "inline children" : "flat nodes"];
   return parts.join(" · ");
 }
 

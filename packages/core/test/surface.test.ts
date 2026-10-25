@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { basicCatalog } from "../src/basic-catalog.ts";
 import { formatDiagnostics, SurfaceStore } from "../src/surface.ts";
 import { ToolCallStream } from "../src/stream.ts";
+import { projectText } from "../src/text-projector.ts";
 
 const trip = {
   surface: "trip",
@@ -424,4 +425,27 @@ test("an update that replaces a parent's children removes what it cut out, and a
   assert.deepEqual(st.nodes.get("book")!.children, [], "the cards stay with their first parent");
   assert.ok(diags.some((d) => d.node === "h1" && /kept under "compare"/.test(d.message)));
   assert.deepEqual(st.nodes.get("root")!.children, ["compare", "book"]);
+});
+
+test("a list template listed among children renders only per item; lists in text read as lists", () => {
+  // From a live run: {each, template} written as a children item, with the template beside it.
+  const store = new SurfaceStore(basicCatalog);
+  store.render({
+    surface: "h",
+    nodes: [{ id: "root", type: "grid", children: [{ each: "/hotels", template: "h" }, { id: "h", type: "card", props: { title: "{name}", body: "{amenities}" } }] as never }],
+    data: { hotels: [{ name: "Zen", amenities: ["Onsen", "Tatami"] }, { name: "Villa", amenities: ["Gym"] }] },
+  });
+  const text = projectText(store.resolve("h")!);
+  assert.equal((text.match(/\[Card\]/g) ?? []).length, 2);
+  assert.doesNotMatch(text, /\{name\}/);
+  assert.match(text, /Onsen, Tatami/);
+});
+
+test("placeholders outside a list template are an error; double-escaped newlines become line breaks", () => {
+  const store = new SurfaceStore(basicCatalog);
+  const diags = store.render({ surface: "p", nodes: [{ id: "root", type: "card", props: { title: "Hotels", body: "{description}\\n\\n**Price**: {price}" } }] });
+  assert.ok(diags.some((d) => d.severity === "error" && /\{description\}, \{price\} can only be filled inside a list template/.test(d.message)));
+  assert.equal(store.get("p")!.nodes.get("root")!.props!.body, "{description}\n\n**Price**: {price}");
+  const ok = store.render({ surface: "q", nodes: [{ id: "root", type: "stack", children: { each: "/xs", template: "t" } }, { id: "t", type: "text", props: { content: "{name} \\{literal}" } }], data: { xs: [{ name: "a" }] } });
+  assert.ok(!ok.some((d) => /list template/.test(d.message)));
 });

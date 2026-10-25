@@ -28,8 +28,17 @@ const IDENT_VALUES: Record<string, unknown> = {
   True: true, False: false, None: null, undefined: null,
 };
 
+function isJson(text: string): boolean {
+  try {
+    JSON.parse(text);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 class Parser {
-  private i = 0;
+  i = 0;
   /** Open containers, innermost last, for repairing mismatched closers. */
   private open: ("{" | "[")[] = [];
   private truncated = false;
@@ -90,7 +99,11 @@ class Parser {
     const c = this.s[this.i]!;
     if (c === "{") return this.object();
     if (c === "[") return this.array();
-    if (c === '"' || c === "'") return this.string().value;
+    if (c === '"' || c === "'") {
+      const embedded = this.embeddedJson(c);
+      if (embedded !== MISSING) return embedded;
+      return this.string().value;
+    }
     if (c === "-" || c === "+" || c === "." || (c >= "0" && c <= "9")) return this.number();
     return this.ident();
   }
@@ -190,6 +203,26 @@ class Parser {
         this.i++;
         return obj;
       }
+      if (c === ":" && lastKey !== undefined) {
+        // `"k": "v": [ ... ]`: a second value after a stray colon continues
+        // the previous member, like a value with no key (and its closers are
+        // its own, not this object's).
+        this.i++;
+        const v = this.value();
+        if (v === MISSING) {
+          this.incomplete.add(obj);
+          return obj;
+        }
+        const prev = obj[lastKey];
+        const items = Array.isArray(v) ? v : [v];
+        if (typeof prev === "string") obj[lastKey] = [prev, ...items.map((x) => (typeof x === "string" ? x : JSON.stringify(x)))].join("\n");
+        else if (Array.isArray(prev)) prev.push(...items);
+        if (this.truncated) {
+          this.incomplete.add(obj);
+          return obj;
+        }
+        continue;
+      }
       const key = this.key();
       if (key === MISSING) {
         this.incomplete.add(obj);
@@ -263,6 +296,11 @@ class Parser {
         this.i++;
         continue;
       }
+      // `"key":` cannot be an array item: this array's "]" was omitted and the
+      // enclosing object continues. Leave the member to it.
+      if ((c === '"' || c === "'") && this.enclosedBy("{") && /^("(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*')\s*:/.test(this.s.slice(this.i, this.i + 300))) {
+        return arr;
+      }
       const v = this.value();
       if (v === MISSING) {
         this.incomplete.add(arr);
@@ -274,6 +312,39 @@ class Parser {
         return arr;
       }
     }
+  }
+
+  /**
+   * "[\"a\", \"b\"]" written without escaping the inner quotes ("["a","b"]")
+   * ends the string early and scatters the rest. When a string opens with a
+   * container whose read stays balanced and is followed right away by the
+   * closing quote (or, when that was left out too, directly by a delimiter),
+   * that container is the value. A properly
+   * escaped JSON string is left a string (the schema coerces it later).
+   */
+  private embeddedJson(quote: string): Parsed {
+    const s = this.s;
+    const open = s[this.i + 1];
+    if (open !== "[" && open !== "{") return MISSING;
+    const start = this.i;
+    const asString = this.string();
+    const stringEnd = this.i;
+    this.i = start;
+    if (asString.closed && isJson(asString.value)) return MISSING;
+    const sub = new Parser(s.slice(start + 1), true);
+    const v = sub.value();
+    if (v === MISSING || sub.sawTruncation || (typeof v === "object" && v !== null && sub.incomplete.has(v))) return MISSING;
+    let j = start + 1 + sub.i;
+    // Only when the string really ended inside the container ("{name}" is a
+    // whole string that merely looks like one).
+    if (asString.closed && stringEnd > j) return MISSING;
+    while (/\s/.test(s[j] ?? "")) j++;
+    // The closing quote may be there or omitted; a delimiter must follow.
+    let k = s[j] === quote ? j + 1 : j;
+    while (/\s/.test(s[k] ?? "")) k++;
+    if (k < s.length && !",}]".includes(s[k]!)) return MISSING;
+    this.i = s[j] === quote ? j + 1 : j;
+    return v;
   }
 
   peekString(): boolean {

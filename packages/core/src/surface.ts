@@ -8,7 +8,7 @@ import { runChecks } from "./checks.ts";
 import { isMetaKey, Normalizer, repairStructure, type TypeMatch } from "./normalize.ts";
 import { parseLenient } from "./partial-json.ts";
 import { getAt, parsePointer, resolvePath, setAt } from "./pointer.ts";
-import { coerce, validate } from "./schema.ts";
+import { coerce, type JSONSchema, validate } from "./schema.ts";
 import {
   type Children,
   NODE_LIST_KEYS,
@@ -480,13 +480,45 @@ export class SurfaceStore {
     return [{ severity: "error", surface: state.id, node: root.id, message: "the surface is empty: add the content as children of the root, or remove the surface and answer in text" }];
   }
 
+  /**
+   * `{name}` placeholders fill only inside a list template (from each item).
+   * Anywhere else they can never resolve, and the user would see the braces:
+   * an error, so the model uses `{/path}` or moves the node into a template.
+   */
+  private lintUnbound(state: SurfaceState): Diagnostic[] {
+    const inTemplate = new Set<string>();
+    const mark = (id: string) => {
+      if (inTemplate.has(id)) return;
+      inTemplate.add(id);
+      const ch = state.nodes.get(id)?.children;
+      if (Array.isArray(ch)) ch.forEach(mark);
+      else if (ch) mark(ch.template);
+    };
+    for (const n of state.nodes.values()) if (n.children && !Array.isArray(n.children)) mark(n.children.template);
+    const diags: Diagnostic[] = [];
+    for (const node of state.nodes.values()) {
+      if (inTemplate.has(node.id)) continue;
+      const found = new Set<string>();
+      const scan = (v: unknown): void => {
+        if (typeof v === "string") for (const m of v.matchAll(/(?<!\\)\{([A-Za-z_][^{}\s]*)\}/g)) found.add(m[1]!);
+        else if (Array.isArray(v)) v.forEach(scan);
+        else if (v && typeof v === "object") Object.values(v).forEach(scan);
+      };
+      scan(node.props);
+      if (!found.size) continue;
+      const names = [...found].map((f) => `{${f}}`).join(", ");
+      diags.push({ severity: "error", surface: state.id, node: node.id, message: `${names} can only be filled inside a list template, and this node is not in one: use {/path} for surface data, or render it from children {each, template}` });
+    }
+    return diags;
+  }
+
   private rootId(state: SurfaceState): string | undefined {
     if (state.nodes.has("root")) return "root";
     return state.nodes.keys().next().value;
   }
 
   lint(state: SurfaceState): Diagnostic[] {
-    const diags: Diagnostic[] = [...this.lintSubmittable(state), ...this.lintEmpty(state)];
+    const diags: Diagnostic[] = [...this.lintSubmittable(state), ...this.lintEmpty(state), ...this.lintUnbound(state)];
     const skip = (v: unknown) => isBinding(v);
     for (const node of state.nodes.values()) {
       if (node.type === "$invalid") {
@@ -526,7 +558,7 @@ export class SurfaceStore {
     const node = state.nodes.get(id);
     if (!node) return { key, id, type: "$pending", props: {}, children: [] };
     if (path.has(id)) return { key, id, type: "$invalid", props: {}, children: [], error: "cycle" };
-    const resolved = resolveValue(node.props ?? {}, scope) as Record<string, unknown>;
+    const resolved = textProps(propsSchema(this.catalog, node.type), resolveValue(node.props ?? {}, scope) as Record<string, unknown>);
     const finalize = this.catalog.components[node.type]?.finalize;
     const props = finalize ? finalize(resolved) : resolved;
 
@@ -679,4 +711,17 @@ function collectIds(raw: unknown, into: Set<string>): void {
   if (!isObject(raw)) return;
   if (typeof raw.id === "string") into.add(raw.id);
   collectIds(raw.children, into);
+}
+
+/** A text prop bound to a list of plain values shows them as text ("Onsen, Tatami"), not as JSON. */
+function textProps(schema: JSONSchema | undefined, props: Record<string, unknown>): Record<string, unknown> {
+  const fields = schema?.properties;
+  if (!fields) return props;
+  let out = props;
+  for (const [k, v] of Object.entries(props)) {
+    if (fields[k]?.type !== "string" || !Array.isArray(v) || !v.every((x) => x === null || typeof x !== "object")) continue;
+    if (out === props) out = { ...props };
+    out[k] = v.filter((x) => x !== null && x !== "").join(", ");
+  }
+  return out;
 }

@@ -3,7 +3,7 @@
 // in place as surfaces change; buttons route to form flows or actions, and
 // every user action goes back to the model.
 
-import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { basicCatalog, type Catalog, projectText, type SurfaceSnapshot, SurfaceStore } from "@vak/core";
 import { actionMessage, type Message, type ProjectionPlan, type Provider, runAgent } from "@vak/providers";
 import { type TelegramApi, TelegramError, type TgUpdate } from "./api.ts";
@@ -54,6 +54,8 @@ interface SavedChat {
   choicePrompt?: { messageId: number; text: string };
   nextToken: number;
   flow?: FlowState;
+  /** Updates received but not finished; replayed after a restart. */
+  inbox?: TgUpdate[];
 }
 
 interface Chat {
@@ -74,6 +76,8 @@ interface Chat {
   busy: Promise<void>;
   /** Updates queued or in progress; a press while > 0 waits its turn. */
   pending: number;
+  /** Received, not yet finished (saved, so a restart picks them up). */
+  inbox: TgUpdate[];
   nextToken: number;
 }
 
@@ -90,7 +94,7 @@ export class TelegramBot {
   private chat(id: number): Chat {
     let c = this.chats.get(id);
     if (!c) {
-      c = { id, store: new SurfaceStore(this.opts.catalog ?? basicCatalog), messages: [], posted: new Map(), shown: new Map(), tokens: new Map(), choiceTokens: new Map(), busy: Promise.resolve(), pending: 0, nextToken: 0 };
+      c = { id, store: new SurfaceStore(this.opts.catalog ?? basicCatalog), messages: [], posted: new Map(), shown: new Map(), tokens: new Map(), choiceTokens: new Map(), busy: Promise.resolve(), pending: 0, inbox: [], nextToken: 0 };
       this.restore(c);
       this.chats.set(id, c);
     }
@@ -120,6 +124,30 @@ export class TelegramBot {
     chat.choicePrompt = saved.choicePrompt;
     chat.nextToken = saved.nextToken;
     if (saved.flow) chat.flow = FormFlow.restore(chat.store, saved.flow);
+    // A restart mid-update: the conversation was saved before it, so run it again.
+    this.unfinished.push(...(saved.inbox ?? []));
+  }
+
+  private unfinished: TgUpdate[] = [];
+
+  /**
+   * After a restart: handle the updates that were received but not finished.
+   * Telegram will not send them again (they were confirmed), so only the saved
+   * inboxes know about them.
+   */
+  async resume(): Promise<number> {
+    const dir = this.opts.stateDir;
+    if (!dir) return 0;
+    let files: string[];
+    try {
+      files = readdirSync(dir).filter((f) => f.endsWith(".state.json"));
+    } catch {
+      return 0;
+    }
+    for (const f of files) this.chat(Number(f.slice(0, -".state.json".length)));
+    const todo = this.unfinished.splice(0);
+    await Promise.all(todo.map((u) => this.handle(u, { resumed: true })));
+    return todo.length;
   }
 
   private save(chat: Chat): void {
@@ -136,6 +164,7 @@ export class TelegramBot {
       choicePrompt: chat.choicePrompt,
       nextToken: chat.nextToken,
       flow: chat.flow?.save(),
+      inbox: chat.inbox,
     };
     try {
       mkdirSync(this.opts.stateDir!, { recursive: true });
@@ -148,7 +177,7 @@ export class TelegramBot {
   }
 
   /** Handle one update; work for a chat runs in order. */
-  handle(update: TgUpdate): Promise<void> {
+  handle(update: TgUpdate, how: { resumed?: boolean } = {}): Promise<void> {
     const chatId = update.message?.chat.id ?? update.callback_query?.message?.chat.id;
     if (chatId === undefined) return Promise.resolve();
     const chat = this.chat(chatId);
@@ -156,15 +185,20 @@ export class TelegramBot {
     // Telegram expires unanswered queries within seconds, and the press itself
     // is still handled in order below.
     const q = update.callback_query;
-    if (q) {
+    if (q && !how.resumed) {
       const note = chat.pending ? "Still working on the last reply; this runs next." : undefined;
       void this.opts.api.answerCallbackQuery(q.id, note).catch((err) => this.opts.log?.(`chat ${chatId}: ${(err as Error).message}`));
     }
     chat.pending++;
+    chat.inbox.push(update);
+    this.save(chat);
     chat.busy = chat.busy
       .then(() => this.process(chat, update))
       .catch((err) => this.opts.log?.(`chat ${chatId}: ${(err as Error).message}`))
-      .then(() => this.save(chat))
+      .then(() => {
+        chat.inbox = chat.inbox.filter((u) => u !== update);
+        this.save(chat);
+      })
       .finally(() => void chat.pending--);
     return chat.busy;
   }
@@ -355,8 +389,9 @@ export class TelegramBot {
       { label: "rich", html: rich.html },
       ...(verified.size ? [{ label: "rich without media", html: projectTelegram(resolved, tokenFor).html }] : []),
     ];
-    const messageId = chat.posted.get(surfaceId);
-    for (const attempt of attempts) {
+    let messageId = chat.posted.get(surfaceId);
+    for (let i = 0; i < attempts.length; i++) {
+      const attempt = attempts[i]!;
       try {
         if (messageId === undefined) chat.posted.set(surfaceId, (await this.opts.api.sendRichMessage(chat.id, attempt.html)).message_id);
         else await this.opts.api.editRichMessage(chat.id, messageId, attempt.html);
@@ -364,6 +399,15 @@ export class TelegramBot {
         return;
       } catch (err) {
         if (!(err instanceof TelegramError && err.code === 400)) throw err;
+        if (messageId !== undefined && /message to edit not found/i.test(err.message)) {
+          // The user deleted it (or cleared the chat): show the surface as a new message.
+          this.opts.log?.(`chat ${chat.id}: message for ${surfaceId} is gone; sending it again`);
+          chat.posted.delete(surfaceId);
+          chat.shown.delete(surfaceId);
+          messageId = undefined;
+          i--; // the same attempt, as a new message
+          continue;
+        }
         this.opts.log?.(`chat ${chat.id}: ${attempt.label} message refused: ${err.message}`);
       }
     }

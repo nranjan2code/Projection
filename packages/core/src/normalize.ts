@@ -181,7 +181,7 @@ export class Normalizer {
     }
     // Prose declared as markdown: inline HTML becomes markdown.
     for (const [k, sub] of Object.entries(schema.properties ?? {})) {
-      if (sub.format === "markdown" && typeof p[k] === "string") p[k] = htmlToMarkdown(p[k] as string);
+      if (sub.format === "markdown" && typeof p[k] === "string") p[k] = htmlToMarkdown(unescapeNewlines(p[k] as string));
     }
     return p;
   }
@@ -233,6 +233,17 @@ export function repairStructure(
       siblings.splice(siblings.indexOf(node.id) + 1, 0, ...kids.filter((k) => !siblings.includes(k)));
     }
     repairs.push({ node: node.id, message: `${node.type} cannot have children; they were placed after it` });
+  }
+
+  // A template node renders once per list item, never as a plain child:
+  // listed among children too, it would show once more with its
+  // placeholders unfilled.
+  const templates = new Set<string>();
+  for (const node of nodes.values()) if (node.children && !Array.isArray(node.children)) templates.add(node.children.template);
+  for (const node of nodes.values()) {
+    if (!Array.isArray(node.children) || !node.children.some((c) => templates.has(c))) continue;
+    for (const c of node.children.filter((c) => templates.has(c))) repairs.push({ node: c, message: `is a list template, so it renders once per item; removed from the children of "${node.id}"` });
+    node.children = node.children.filter((c) => !templates.has(c));
   }
 
   // A node listed by two parents would show twice: it stays with the first
@@ -287,4 +298,13 @@ export function repairStructure(
   root.children = [...((root.children as string[] | undefined) ?? []), ...orphans];
   for (const id of orphans) repairs.push({ node: id, message: `not referenced by any parent; attached to "root"` });
   return { nodes, repairs };
+}
+
+/**
+ * Prose whose newlines were escaped twice arrives with literal "\\n" and no
+ * real line breaks; it was meant as line breaks. Text that already has real
+ * newlines is left alone (a literal "\\n" there is likely meant, e.g. in code).
+ */
+function unescapeNewlines(s: string): string {
+  return s.includes("\n") || !s.includes("\\n") ? s : s.replace(/(?:\\r)?\\n/g, "\n").replace(/\\t/g, "\t");
 }

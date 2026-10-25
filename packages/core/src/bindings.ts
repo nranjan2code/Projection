@@ -29,6 +29,8 @@ export function interpolate(text: string, scope: Scope): unknown {
     if (!binds(path, scope)) return match;
     const v = getAt(scope.data, resolvePath(path, scope.base));
     if (v === undefined || v === null) return "";
+    // A list of plain values inside text reads as a list, not as JSON.
+    if (Array.isArray(v) && v.every((x) => x === null || typeof x !== "object")) return v.filter((x) => x !== null && x !== "").join(", ");
     return typeof v === "object" ? JSON.stringify(v) : String(v);
   });
 }
