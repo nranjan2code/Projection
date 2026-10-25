@@ -4,11 +4,26 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 
 ## Handover prompt (paste into a new session)
 
-> Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection. Read AGENTS.md (rules: no third-party SDKs, no hard-coded fixes, never blame the small model, secrets only in .env), SPECS.md (architecture) and HANDOVER.md (status and next steps). Run `npm test` first (109 tests should pass). Only Telegram is available for live chat testing; local Ollama `qwen3.5:4b-mlx` is the primary model. Don't restart the Telegram bot while I'm testing. Pick up from "Next" in HANDOVER.md and ask if in doubt.
+```
+Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection.
+
+First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 109 tests should pass. Nothing is running: start the playground (.claude/launch.json "playground") and the Telegram bot (`npm run telegram`) when needed, and tell me when you do.
+
+Rules that matter most:
+- No third-party SDKs: everything is built on Node 24 built-ins and fetch.
+- No shortcuts or hard-coded fixes: every repair is a catalog declaration or a general engine rule, with a test built from the real model output.
+- Never blame the small model: local Ollama `qwen3.5:4b-mlx` is the primary target.
+- Secrets live only in .env. Never print them, and run the secret scan on the staged diff before every push. The repo is public: github.com/nranjan2code/Projection. Git identity: Nisheeth Ranjan <nisheethranjan@icloud.com>.
+- Ask before any paid model run (OpenAI).
+- Only Telegram is available for live chat testing (no Slack or Discord bots). Don't restart the Telegram bot while I'm testing; restart only when it's idle, and tell me first.
+- To diagnose a bad reply, read the raw tool calls in .vak/telegram/<chat>.jsonl or .vak/playground/<session>.jsonl, replay them through SurfaceStore.apply, and fix the general cause.
+
+Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
+```
 
 ## Where things stand
 
-- **Main:** see `git log` (pushed). **Tests:** 109 passing, typecheck clean.
+- **Main:** `0c75d41` (pushed, working tree clean). **Tests:** 109 passing, typecheck clean.
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios):
 
   | | Now | Old flat baseline |
@@ -19,12 +34,10 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
   | Median per scenario | 26s | — |
 
   Weakest categories: planning (40% fully passing) and dashboard (60%).
-- **Running when this was written:**
-  - The Telegram bot (`npm run telegram`), restarted on `40246a2`, so it has every fix below.
-  - The playground (`.claude/launch.json` "playground"), started before `6caedf7`. Restart it before the next web test.
-- **Working on right now:** live Telegram testing with "Compare three hotels in Kyoto and let me book one".
-  - The last reply (07:10) replayed through the current engine shows 3 cards, each with its price once, its amenities and its own Book button.
-  - Not yet seen live after the restart. **Ask the user to resend it and tap through booking.**
+- **Nothing is running.** The Telegram bot, the playground and every background task are stopped. Telegram chat state is saved in `.vak/telegram/`, so the bot resumes the chat when started. Ollama is a separate app.
+- **Where we stopped:** live Telegram testing with "Compare three hotels in Kyoto and let me book one".
+  - The last fix (`0c75d41`) means a button never reaches Telegram without text. One empty label used to make Telegram refuse the whole message, sending the user the plain-text fallback.
+  - Neither that fix nor `40246a2` (one Book button per card, a single "/night") has been seen live yet.
 
 ## Done in this stretch
 
@@ -72,7 +85,11 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 
 ## Next (in order)
 
-1. **Confirm the live Telegram hotel flow** after the `40246a2` restart: the user resends the hotel request and taps a Book button. Expect one Book button per card and single "/night".
+1. **Confirm the live Telegram hotel flow:** start the bot, have the user send the hotel request and tap a Book button. Expect:
+   - one Book button per card
+   - a single "/night"
+   - no plain-text fallback
+   - a booking confirmation with real values (no `{placeholders}`)
 2. **Make long chats fast.** Each Telegram chat sends its whole saved history to the model on every turn, so even "hi" takes about a minute on the 4B model.
    - Make `/start` begin a fresh conversation: clear messages, surfaces and tokens for that chat.
    - Send only the recent turns plus the current surfaces' state to the model.
@@ -89,8 +106,9 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
    - Analyze failures in `packages/bench/data/results/2026-10-25T01-01-37-105Z_run_*.jsonl` and fix root causes.
    - Prove it with replay plus a live gate run (`npm run bench -- gate ollama:qwen3.5:4b-mlx --runs 1`, ~25 min local).
    - Re-record the baseline after engine changes that move scores.
-6. **Re-record the form slice baseline** on inline (`--category form --slice form --save`); it is still flat v2.
-7. **Optional, ask first:**
+6. **The MCP server still teaches flat authoring.** Its instructions say "nodes is a FLAT list" (`packages/mcp`, via `systemPrompt` without a plan). Decide whether MCP clients (often strong models) should get the inline rule too, and pass `authoring` through if so.
+7. **Re-record the form slice baseline** on inline (`--category form --slice form --save`); it is still flat v2.
+8. **Optional, ask first:**
    - prompt caching
    - near-miss id pairing
    - a security review of the projectors
