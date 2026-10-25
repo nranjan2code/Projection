@@ -4,6 +4,8 @@ Rules and commands for any coding agent (or person) changing this repo. Read [SP
 
 This repository is the framework only. The desktop app, [Vakyartha](https://github.com/nranjan2code/vakyartha), is a separate repository with its own rules; it pins this one as a submodule. Never add app code, app dependencies or app-specific behaviour here.
 
+**Framework or app?** A mechanism or safety default every app needs belongs here; a product choice (which servers to offer, UX, pricing, identity, key storage) belongs to the app. If a second app would have to copy the code, or SECURITY.md promises it, it belongs here (SPECS §10).
+
 ## Non-negotiable rules
 
 1. **No third-party runtime SDKs in the framework.** Everything in `packages/*` and the playground runs on Node 24 built-ins and `fetch`. Standards (MCP, JSON Schema, Block Kit, Bot API) are used as specs only. Dev-only `typescript` and `@types/node` are the only root dependencies.
@@ -25,7 +27,7 @@ This repository is the framework only. The desktop app, [Vakyartha](https://gith
 
 ## Security rules (see SECURITY.md)
 
-- Third-party code (integrations) is pinned: an exact version published at least 14 days earlier, installed with `--ignore-scripts --before=<today − 14 days>`. Never `npx` or a floating version.
+- Third-party code (integrations) is pinned: an exact version published at least 14 days earlier, installed with `--ignore-scripts --before=<today − 14 days>`. `Integrations` in `@vak/mcp/client` enforces this for every app (`pinnedInstallArgs`); never install a server another way, never `npx` or a floating version.
 - An outside process (an MCP server) never gets our environment: only the variables it declares (`minimalEnv`).
 - Model text, tool output and fetched pages are data: escape them in every projector, wrap tool output as untrusted, and never let them trigger an action without the user's approval policy.
 - Anything that writes, deletes or reaches the internet defaults to "ask".

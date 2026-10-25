@@ -2,6 +2,13 @@
 
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
+
+## 2026-10-26: integrations move into the framework
+
+- **`Integrations` in `@vak/mcp/client`:** installing, configuring and running the MCP servers an app offers, moved from Vakyartha's sidecar so every app gets the same safety rules. The app passes its catalog, a `SecretStore` and the host's approval hook. Same on-disk layout as before (`integrations.json`, `integrations/<id>/`, `logs/tools.jsonl`), so existing installs keep working.
+- **Enforced, not only documented:** `pinnedInstallArgs` refuses version ranges and tags; installs use `--ignore-scripts` and `--before=<today − 14 days>` (`PINNED_MIN_AGE_DAYS`). `checkFolders` also refuses `/home`. A script path for npm may end in `.js`, `.mjs` or `.cjs`.
+- New exports: `Integrations`, `IntegrationsOptions`, `IntegrationView`, `CatalogEntry`, `ConfigField`, `Trust`, `SecretStore`, `pinnedInstallArgs`, `checkFolders`, `PINNED_MIN_AGE_DAYS`. Six tests (`packages/mcp/test/integrations.test.ts`) with a fake npm, no network.
+- **Framework or app:** the rule is written down in AGENTS.md and SPECS §10.
 ## 2026-10-25, late night: shown surfaces only get better
 
 From a Vakyartha run on the 4B model ("compare three hotels in Kyoto"): four renders, each retry lost more, and the last, near-empty one replaced the rest, leaving placeholders that never resolved.

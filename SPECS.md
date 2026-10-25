@@ -136,6 +136,13 @@ Shared chat logic lives in `core/chat.ts`: form fields, reading typed answers, t
 - results are capped at 12k characters and wrapped as `<tool_output>`, labelled as data not instructions
 Built-in tools with the same shape: `webFetchServer` (https only, public addresses only, every redirect re-checked, 2 MB, text extracted) and `timeServer`.
 
+**Integrations** (`Integrations` in `@vak/mcp/client`): installing, configuring and running the servers an app offers, so every app gets the same safety rules. The app passes its catalog (`CatalogEntry[]`: builtin, pinned npm, remote https, or local command), a `SecretStore` and the host's approval hook; the framework does the rest:
+- npm servers install at an exact version (`pinnedInstallArgs` refuses ranges and tags) with `--ignore-scripts` and `--before=<today − PINNED_MIN_AGE_DAYS (14)>`, into `<dataDir>/integrations/<id>/pkg`
+- each server runs with `<dataDir>/integrations/<id>/home` as its HOME and only its declared secrets (env or header)
+- folder settings go through `checkFolders` (absolute, existing, never a system root or the home folder)
+- per-tool policies persist in `<dataDir>/integrations.json`; "allow for this chat" lasts for that session; servers the user adds are `custom` (unverified, https or loopback only for remote); calls go to `<dataDir>/logs/tools.jsonl`
+- `view()` gives a settings screen everything it shows (status, missing setup, tools with policies, recent calls); `toolsFor(session)` gives a turn its tools
+
 ## 8. Host (`@vak/host`)
 
 The HTTP + SSE API that runs the agent loop for a UI, on Node built-ins only, so any app can mount it (`createHost(options).handle(req, res)` returns false for paths that are not its own).
@@ -153,6 +160,7 @@ The HTTP + SSE API that runs the agent loop for a UI, on Node built-ins only, so
 Apps live in their own repositories and consume the framework one way: they import `@vak/*`, and nothing in this repository imports, builds or tests them.
 
 - **[Vakyartha](https://github.com/nranjan2code/vakyartha)**, the desktop app (Tauri 2 shell, Vite UI, the engine as a Node sidecar on `@vak/host`), split out of this repository on 2026-10-25 with its history. It pins Projection as a git submodule (`framework/`) and links `framework/packages/*` as npm workspaces. App-only features (FinOps, Canvas and Artifacts, integrations marketplace, channels) are specified in its own SPECS.md.
+- **What belongs where:** a mechanism or safety default that every app needs is the framework's; a policy or product choice (which servers to offer, UX, pricing, identity, where keys are stored) is the app's. Two tests: would a second app have to copy this code? Does the framework's SECURITY.md promise it? If either is yes, it belongs here. Example: `Integrations` (how servers are installed and run) is the framework's; Vakyartha's catalog (which servers, versions and descriptions) is the app's.
 - **What an app may rely on:** each package's `exports` (`@vak/core`, `@vak/web`, `@vak/host`, `@vak/providers`, `@vak/mcp/client`, `@vak/telegram`, …). A change that breaks one is called out in CHANGELOG.md so the app can move its pin deliberately.
 - **The playground** (`playground/`) is the framework's own viewer, not an app: `@vak/host` plus one page of `<vak-surface>` on loopback :5177. `@vak/mcp` and `bench report` project into it (`/api/project`, `/api/actions`, `/api/events`); `?session=` and `?model=` pick the session and model.
 
