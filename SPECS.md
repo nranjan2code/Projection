@@ -52,7 +52,7 @@ In MCP there is also `vak_wait_action`.
    - A closed string that escapes its own quotes stays a string (the embedded-JSON reading is for unescaped JSON).
 2. **Call recovery** (`SurfaceStore.apply`):
    - Members written inside the nodes string after the list (`"[...], \"data\": {...}"`) belong to the call.
-   - An unknown argument holding node-shaped objects (`"chart": "{...}, {...}]"`) joins the nodes list; its name types a node that has none.
+   - An unknown argument holding node-shaped objects (`"chart": "{...}, {...}]"`), or a second node-list key (`"children": [...]` after `"nodes"`), joins the nodes list; an unknown argument's name types a node that has none.
 3. **Normalizer** (`normalize.ts`).
    - Type resolution: name → alias → schema-scored inference. A `namesComponent` prop whose value names another component (by name or alias, with its presets) makes the node that component when the result validates; the prop is dropped.
    - Node keys: `prop`, `properties`, `attributes`, `attrs` mean `props`. `null` props are omitted. A typeless `{"data": {...}}` in a nodes list is surface data, and so is an id-less, typeless object whose keys describe no component (a form's starting values written as a child). A leaf component whose only child is a bare `{props}` object owns those props.
@@ -64,12 +64,13 @@ In MCP there is also `vak_wait_action`.
      - a list template listed as a plain child is removed
      - a node with two parents keeps the first
      - an object of node settings only (`{"priority": "secondary"}`) in a children list applies to the node before it
+     - layout containers below the root with no children and no text of their own are removed (warning)
 4. **Update semantics:** nodes a patch cuts out of the tree are removed, and the model gets a warning naming them.
 5. **Lint** (diagnostics go back to the model as the tool result). Errors are:
    - invalid props
    - missing children
    - inputs nothing submits
-   - an empty layout root
+   - an empty surface: nothing reachable but layout containers with no text of their own
    - placeholders that can never fill
    - an input bound under data that can't hold it (`/todos/new` while `/todos` is a list)
 6. **Resolve** → `ResolvedSurface` (bindings, templates, visibility).

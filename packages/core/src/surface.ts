@@ -373,7 +373,9 @@ export class SurfaceStore {
     if (!listKey) return [];
     const moved: string[] = [];
     for (const [key, value] of Object.entries(a)) {
-      if (CALL_KEYS.has(key)) continue;
+      // Another node-list key after the list (`"nodes": "[...]", "children": [...]`,
+      // 0.8B, playground workout plan) holds more nodes, not a call setting.
+      if (CALL_KEYS.has(key) && !((NODE_LIST_KEYS as readonly string[]).includes(key) && key !== listKey)) continue;
       const nodes = asNodeList(value);
       if (!nodes) continue;
       const named = this.normalizer.resolveType(key);
@@ -397,7 +399,28 @@ export class SurfaceStore {
   private repair(state: SurfaceState): Diagnostic[] {
     const { nodes, repairs } = repairStructure(state.nodes, this.normalizer, (t) => this.nextId(t));
     state.nodes = nodes;
-    return [...repairs.map((r) => ({ severity: "warning" as const, surface: state.id, node: r.node, message: r.message })), ...this.bindInputNames(state)];
+    return [...repairs.map((r) => ({ severity: "warning" as const, surface: state.id, node: r.node, message: r.message })), ...this.bindInputNames(state), ...this.dropEmptyContainers(state)];
+  }
+
+  /**
+   * Layout containers below the root with no children and nothing of their own
+   * to show draw empty frames: the 0.8B workout plan's five "tabs" (titled, with
+   * no panels) showed as bare divider lines. They are removed; if nothing is
+   * left, lintEmpty reports the surface as empty so the model adds content.
+   */
+  private dropEmptyContainers(state: SurfaceState): Diagnostic[] {
+    const rootId = this.rootId(state);
+    const empty = new Set<string>();
+    for (const [nid, n] of state.nodes) {
+      if (nid === rootId || !LAYOUT_TYPES.has(n.type) || (n.children !== undefined && (!Array.isArray(n.children) || n.children.length))) continue;
+      const declared = this.catalog.components[n.type]?.props.properties ?? {};
+      if (["title", "description", "content"].some((k) => k in declared && typeof n.props?.[k] === "string" && n.props[k])) continue;
+      empty.add(nid);
+    }
+    if (!empty.size) return [];
+    for (const nid of empty) state.nodes.delete(nid);
+    for (const n of state.nodes.values()) if (Array.isArray(n.children)) n.children = n.children.filter((c) => !empty.has(c));
+    return [{ severity: "warning", surface: state.id, message: `empty containers removed (no children, nothing to show): ${[...empty].map((e) => `"${e}"`).join(", ")}` }];
   }
 
   /** Nodes rendered per list item (templates and everything inside them). */
@@ -705,11 +728,19 @@ export class SurfaceStore {
   private lintEmpty(state: SurfaceState): Diagnostic[] {
     const id = this.rootId(state);
     const root = id ? state.nodes.get(id) : undefined;
-    // Only a bare layout container is empty; a card or section with content is not.
-    if (!root || !LAYOUT_TYPES.has(root.type)) return [];
-    if (["title", "description", "content"].some((k) => typeof root.props?.[k] === "string" && root.props[k])) return [];
-    const ch = root.children;
-    if (ch && (!Array.isArray(ch) || ch.length)) return [];
+    if (!root) return [];
+    // Content is any component that isn't a layout container, or a container
+    // showing text of its own (a section's title). Five "tabs" nodes with titles
+    // but no panels in a grid (0.8B, playground 2026-10-25) drew only divider
+    // lines and passed as clean, so the model never fixed it.
+    const showsText = (n: VpsNode) => {
+      const declared = this.catalog.components[n.type]?.props.properties ?? {};
+      return ["title", "description", "content"].some((k) => k in declared && typeof n.props?.[k] === "string" && n.props[k]);
+    };
+    for (const nid of reachable(state.nodes)) {
+      const n = state.nodes.get(nid)!;
+      if (!LAYOUT_TYPES.has(n.type) || showsText(n)) return [];
+    }
     return [{ severity: "error", surface: state.id, node: root.id, message: "the surface is empty: add the content as children of the root, or remove the surface and answer in text" }];
   }
 

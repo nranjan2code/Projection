@@ -7,7 +7,7 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 ```
 Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection.
 
-First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 142 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
+First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 143 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
 
 Focus: the core system. That means the engine (parser, normalizer, lint, resolve), the catalog, and the projectors (web, text, Telegram, Slack, Discord as renderers, tested offline), and the bench. Telegram live testing is parked: don't start the bot unless I ask.
 
@@ -23,7 +23,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
-- **Tests:** 142 passing, typecheck clean. All work below is committed and pushed (see `git log`).
+- **Tests:** 143 passing, typecheck clean. All work below is committed and pushed (see `git log`).
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios), re-recorded 2026-10-25 after the bench-category fixes:
 
   | | Now | Previous | Old flat baseline |
@@ -40,6 +40,8 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Done in this stretch
 
+- **Empty frames from the 0.8B model (playground, user's workout query):** five `tabs` with titles and no panels, then the day cards as a `"children"` list after the nodes. The cards were dropped and the screen showed bare divider lines, with no error. Now: a second node-list key joins the nodes; empty layout containers below the root are removed (warning); a surface with nothing but empty containers is an error, so the model adds content. A per-container error was tried first and rejected: it failed recorded 4B output that is fine (empty stacks are invisible).
+  - Note: the playground saves the model on every send, so a browser that used the old 0.8B default keeps it until the user types another model.
 - **Playground defaults to the 4B model:** Ollama's declared default is `qwen3.5:4b-mlx` (`OLLAMA_MODEL` overrides; falls back to the first installed model if it is missing). Before, the first listed model was picked, which was the 0.8B one. A model chosen in the browser is still remembered. Same sales-dashboard query: 0.8B needed a retry and showed empty KPIs; 4B rendered KPIs, a monthly chart and a top-5 table in one clean call (39s).
 - **Form slice baseline re-recorded on inline (was Next #1):** 3 runs × 5 form scenarios: fully passing 73% [48–89] (flat: 73%), check score 95% (flat: 94%), median 22.5s (flat: 17.4s). No difference within noise. Failures: two content misses (no form; no meal question), csat with too few inputs, and job-application run 0, which retried three times on a typeless object of form values and timed out. That object is now read as surface data (replay 0.80 → 1.00).
 - **MCP authoring (was Next #1), the user's choice: inline, configurable.** `@vak/mcp` now teaches inline children in its instructions and tool schema, matching the playground and Telegram; `VAK_AUTHORING=flat` (env) or `authoring: "flat"` (option) switches back. A running MCP server picks it up on restart.

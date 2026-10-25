@@ -132,3 +132,23 @@ test("job-application (form slice): a typeless, id-less object of form values in
   assert.ok(last.diags.some((d) => /data written inside nodes was merged/.test(d.message)));
   assert.equal(store.get(last.surface)!.data.resume_uploaded, false);
 });
+
+test("workout plan (playground, 0.8B): nodes after the list are kept; empty containers go; an empty surface is an error", () => {
+  // Five "tabs" with titles and no panels, the list closed, then the day cards
+  // as "children" after it: the cards were dropped and the user saw five empty
+  // frames, with no error for the model.
+  const { last, errors, text, store } = replay("workout-playground-0.8b");
+  assert.deepEqual(errors(last.diags), []);
+  assert.ok(last.diags.some((d) => /nodes written in "children" were read as part of "nodes"/.test(d.message)));
+  assert.ok(last.diags.some((d) => /empty containers removed/.test(d.message)));
+  assert.match(text, /\[Card\] Cardio Day/);
+  assert.ok(![...store.get(last.surface)!.nodes.values()].some((n) => n.type === "tabs"));
+
+  // Without the cards there is nothing left to show: an error, so the model adds content.
+  const bare = new SurfaceStore(basicCatalog);
+  const d = bare.apply("vak_render", {
+    surface: "w",
+    nodes: [{ id: "root", type: "grid", children: [{ id: "t1", type: "tabs", props: { title: "Day 1" } }, { id: "t2", type: "tabs", props: { title: "Day 2" } }] }],
+  });
+  assert.ok(d.some((x) => x.severity === "error" && /the surface is empty/.test(x.message)));
+});
