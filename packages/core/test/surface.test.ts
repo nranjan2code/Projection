@@ -441,10 +441,14 @@ test("a list template listed among children renders only per item; lists in text
   assert.match(text, /Onsen, Tatami/);
 });
 
-test("placeholders outside a list template are an error; double-escaped newlines become line breaks", () => {
+test("placeholders with no value are an error, surface data by name binds; double-escaped newlines become line breaks", () => {
   const store = new SurfaceStore(basicCatalog);
   const diags = store.render({ surface: "p", nodes: [{ id: "root", type: "card", props: { title: "Hotels", body: "{description}\\n\\n**Price**: {price}" } }] });
-  assert.ok(diags.some((d) => d.severity === "error" && /\{description\}, \{price\} can only be filled inside a list template/.test(d.message)));
+  assert.ok(diags.some((d) => d.severity === "error" && /\{description\}, \{price\} has no value/.test(d.message)));
+  // From a live run: "{details}" with "details" in the surface's own data means "{/details}".
+  const own = store.render({ surface: "c", nodes: [{ id: "root", type: "alert", props: { title: "Booked", body: "{details}" } }], data: { details: "Code KYOTO-1" } });
+  assert.ok(!own.some((d) => /has no value/.test(d.message)));
+  assert.match(projectText(store.resolve("c")!), /Code KYOTO-1/);
   assert.equal(store.get("p")!.nodes.get("root")!.props!.body, "{description}\n\n**Price**: {price}");
   const ok = store.render({ surface: "q", nodes: [{ id: "root", type: "stack", children: { each: "/xs", template: "t" } }, { id: "t", type: "text", props: { content: "{name} \\{literal}" } }], data: { xs: [{ name: "a" }] } });
   assert.ok(!ok.some((d) => /list template/.test(d.message)));

@@ -297,6 +297,10 @@ function mount(turn: Turn, snap: SurfaceSnapshot): void {
     mounted.set(snap.id, el);
     turn.surfaces.append(el);
     el.attach(client.store, snap.id);
+    // A new interface is the answer: bring its top into view (a reply to a
+    // click otherwise lands below the fold and looks like nothing happened).
+    const shown = el;
+    requestAnimationFrame(() => shown.scrollIntoView({ block: "start", behavior: "smooth" }));
   } else el.refresh();
 }
 

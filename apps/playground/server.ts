@@ -7,7 +7,7 @@
 // Usage: npm run playground   (env: PORT, OLLAMA_HOST, ANTHROPIC_API_KEY,
 //        OPENAI_API_KEY, GEMINI_API_KEY, OPENAI_COMPAT_BASE_URL/_API_KEY; .env is read)
 
-import { readFile, stat } from "node:fs/promises";
+import { appendFile, mkdir, readFile, stat } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { stripTypeScriptTypes } from "node:module";
 import path from "node:path";
@@ -139,6 +139,19 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+/** Each turn's messages and raw tool calls, per session, for diagnosing model output. */
+async function record(sessionId: string, messages: Message[]): Promise<void> {
+  try {
+    const dir = path.join(repo, ".vak/playground");
+    await mkdir(dir, { recursive: true });
+    const at = new Date().toISOString();
+    const lines = messages.map((m) => JSON.stringify({ at, role: m.role, content: m.content, toolCalls: m.toolCalls, isError: m.isError }));
+    await appendFile(path.join(dir, `${sessionId.replace(/[^\w-]/g, "_")}.jsonl`), lines.map((l) => `${l}\n`).join(""));
+  } catch (err) {
+    console.error(`transcript not written: ${(err as Error).message}`);
+  }
+}
+
 async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const body = await readJson(req);
   const entry = PROVIDERS.find((p) => p.id === body.provider);
@@ -190,6 +203,7 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
   }
 
   const started = Date.now();
+  const from = s.messages.length - 1;
   const result = await runAgent({
     plan: planned.plan,
     provider: entry.make({ think: Boolean(body.think) }),
@@ -204,6 +218,7 @@ async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<vo
     signal: ctrl.signal,
   });
   console.log(`[chat] ${entry.id}/${body.model} → ${result.stop} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+  await record(String(body.session ?? "default"), s.messages.slice(from));
   if (s.busy === ctrl) s.busy = undefined;
   res.end();
 }

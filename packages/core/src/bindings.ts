@@ -1,6 +1,7 @@
 // `{/path}` interpolation. A string that is exactly one binding yields the raw
 // value (so numbers and arrays survive); otherwise values are stringified in place.
-// Relative paths (`{name}`) only bind inside a template scope; `\{` escapes.
+// Relative paths (`{name}`) bind inside a template scope, or at the top level
+// to the surface's own data of that name; `\{` escapes.
 
 import { getAt, resolvePath } from "./pointer.ts";
 
@@ -13,8 +14,13 @@ export interface Scope {
   base: string;
 }
 
+/**
+ * Absolute paths always bind; relative ones inside a list item. At the top
+ * level, "{name}" binds to the surface's own "name" when it has one: that is
+ * the only thing it can mean.
+ */
 function binds(path: string, scope: Scope): boolean {
-  return path.startsWith("/") || scope.base !== "";
+  return path.startsWith("/") || scope.base !== "" || getAt(scope.data, `/${path}`) !== undefined;
 }
 
 export function isBinding(value: unknown): boolean {
@@ -31,7 +37,7 @@ function lookup(path: string, scope: Scope): unknown {
     const item = getAt(scope.data, scope.base);
     if (path === "." || (item !== null && typeof item !== "object" && item !== undefined && !path.includes("/"))) return item;
   }
-  return getAt(scope.data, resolvePath(path, scope.base));
+  return getAt(scope.data, scope.base === "" && !path.startsWith("/") ? `/${path}` : resolvePath(path, scope.base));
 }
 
 export function interpolate(text: string, scope: Scope): unknown {

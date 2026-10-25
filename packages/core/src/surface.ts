@@ -9,6 +9,7 @@ import { isMetaKey, Normalizer, repairStructure, type TypeMatch } from "./normal
 import { parseLenient } from "./partial-json.ts";
 import { getAt, parsePointer, resolvePath, setAt } from "./pointer.ts";
 import { coerce, type JSONSchema, validate } from "./schema.ts";
+import { LAYOUT_TYPES } from "./projector.ts";
 import {
   type Children,
   NODE_LIST_KEYS,
@@ -497,20 +498,22 @@ export class SurfaceStore {
     }];
   }
 
-  /** A container root with nothing in it shows the user only a title: an error, so the model fills it. */
+  /** A layout root with nothing in it shows the user only a title: an error, so the model fills it. */
   private lintEmpty(state: SurfaceState): Diagnostic[] {
     const id = this.rootId(state);
     const root = id ? state.nodes.get(id) : undefined;
-    if (!root || !this.catalog.components[root.type]?.children) return [];
+    // Only a bare layout container is empty; a card or section with content is not.
+    if (!root || !LAYOUT_TYPES.has(root.type)) return [];
+    if (["title", "description", "content"].some((k) => typeof root.props?.[k] === "string" && root.props[k])) return [];
     const ch = root.children;
     if (ch && (!Array.isArray(ch) || ch.length)) return [];
     return [{ severity: "error", surface: state.id, node: root.id, message: "the surface is empty: add the content as children of the root, or remove the surface and answer in text" }];
   }
 
   /**
-   * `{name}` placeholders fill only inside a list template (from each item).
-   * Anywhere else they can never resolve, and the user would see the braces:
-   * an error, so the model uses `{/path}` or moves the node into a template.
+   * `{name}` fills from a list item, or from the surface's own data of that
+   * name. With neither it can never resolve and the user would see the
+   * braces: an error, so the model supplies the value.
    */
   private lintUnbound(state: SurfaceState): Diagnostic[] {
     const inTemplate = new Set<string>();
@@ -527,14 +530,15 @@ export class SurfaceStore {
       if (inTemplate.has(node.id)) continue;
       const found = new Set<string>();
       const scan = (v: unknown): void => {
-        if (typeof v === "string") for (const m of v.matchAll(/(?<!\\)\{([A-Za-z_][^{}\s]*)\}/g)) found.add(m[1]!);
-        else if (Array.isArray(v)) v.forEach(scan);
+        if (typeof v === "string") {
+          for (const m of v.matchAll(/(?<!\\)\{([A-Za-z_][^{}\s]*)\}/g)) if (getAt(state.data, `/${m[1]}`) === undefined) found.add(m[1]!);
+        } else if (Array.isArray(v)) v.forEach(scan);
         else if (v && typeof v === "object") Object.values(v).forEach(scan);
       };
       scan(node.props);
       if (!found.size) continue;
       const names = [...found].map((f) => `{${f}}`).join(", ");
-      diags.push({ severity: "error", surface: state.id, node: node.id, message: `${names} can only be filled inside a list template, and this node is not in one: use {/path} for surface data, or render it from children {each, template}` });
+      diags.push({ severity: "error", surface: state.id, node: node.id, message: `${names} has no value: there is no such surface data, and this node is not inside a list template. Put the value in "data", or render the node from children {each, template}` });
     }
     return diags;
   }
