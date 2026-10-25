@@ -76,7 +76,7 @@ Components adapt to each target’s capabilities. For example, charts become dat
 
 The desktop app adds a model picker, themes, provider and integration settings, channel controls and a menu-bar mode. macOS credentials are stored in the Keychain.
 
-**Artifacts** collects saved forms, dashboards and interfaces in a dedicated page with search, type filters and sorting. Open an artifact from any chat in the resizable canvas beside the conversation. The chat shows compact artifact cards; full content appears exclusively in the canvas, which keeps forms live and provides Preview/Text, copy, Markdown download and full/split views. See [Canvas and Artifacts](apps/desktop/CANVAS.md).
+**Artifacts** collects saved forms, dashboards and interfaces in a dedicated page with search, type filters and sorting. Open an artifact from any chat in the resizable canvas beside the conversation. Artifact creation and updates open the canvas automatically. The chat shows compact artifact cards; full content appears exclusively in the canvas, which keeps forms live and provides Preview/Text, copy, Markdown download and full/split views. See [Canvas and Artifacts](apps/desktop/CANVAS.md).
 
 Settings → FinOps charts per-turn duration, context growth, output shape, token/cache usage and estimated API cost, with editable model rates and CSV export. FinOps belongs to the app; the framework stays focused on projection. Historical usage that was never recorded remains unknown. See [desktop FinOps](apps/desktop/FINOPS.md).
 
