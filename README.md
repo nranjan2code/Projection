@@ -76,6 +76,8 @@ Components adapt to each target’s capabilities. For example, charts become dat
 
 The desktop app adds a model picker, themes, provider and integration settings, channel controls and a menu-bar mode. macOS credentials are stored in the Keychain.
 
+Settings → FinOps charts per-turn duration, context growth, output shape, token/cache usage and estimated API cost, with editable model rates and CSV export. FinOps belongs to the app; the framework stays focused on projection. Historical usage that was never recorded remains unknown. See [desktop FinOps](apps/desktop/FINOPS.md).
+
 Building the native app requires Rust and the Tauri platform prerequisites in addition to Node 24+:
 
 ```bash

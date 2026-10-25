@@ -23,7 +23,9 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
-- **Tests:** 189 passing for this round, typecheck clean. Latest round: component benchmark coverage and literal code bindings. The shared workspace also has four passing tests from separate desktop FinOps work.
+- **Desktop FinOps:** Settings → FinOps now has duration, context composition, repeated context, output shape, token/cache and estimated-cost charts, per-turn details, a chat filter, editable model rates and CSV export. This is app-only (`apps/desktop`); keep accounting and prices out of the projection framework. Provider requests are observed by an app wrapper; telemetry is numeric and local. Old sessions are reconstructed with unknown usage/spend. See [apps/desktop/FINOPS.md](apps/desktop/FINOPS.md). Verified against a copy of the installed app's 22 turns (555s); WebKit rendered six charts with no horizontal overflow and turn selection worked. Five accounting tests include an authenticated HTTP chat against a local fake provider (no paid model call). Full suite: 194 passing, typecheck and UI build clean. The installed release needs a new build to include this feature.
+
+- **Tests:** 194 passing, typecheck clean, including five desktop FinOps tests. Latest framework round: component benchmark coverage and literal code bindings.
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios), re-recorded 2026-10-25 after the bench-category fixes:
 
   | | Now | Previous | Old flat baseline |
