@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
-import { createServer, type Server } from "node:http";
+import { createServer, request, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -85,7 +85,9 @@ test("with a token, requests without it are refused; allowed origins get CORS", 
   assert.equal(ok.status, 200);
   assert.equal(ok.headers.get("access-control-allow-origin"), "tauri://localhost");
   const other = await fetch(`${base}/api/providers`, { headers: { authorization: "Bearer t0k", origin: "https://evil.example" } });
+  assert.equal(other.status, 403);
   assert.equal(other.headers.get("access-control-allow-origin"), null);
+  assert.equal((await fetch(`${base}/api/providers`, { headers: { authorization: "Bearer t0k0" } })).status, 401);
   // Preflight carries no credentials and must pass so the real request can.
   const pre = await fetch(`${base}/api/chat`, { method: "OPTIONS", headers: { origin: "tauri://localhost" } });
   assert.equal(pre.status, 204);
@@ -95,5 +97,54 @@ test("with a token, requests without it are refused; allowed origins get CORS", 
 test("paths outside /api are left to the app", async () => {
   const { base, server } = await serve();
   assert.equal((await fetch(`${base}/index.html`)).status, 404);
+  server.close();
+});
+
+// A web page can POST to a loopback port without a preflight when the body is
+// text/plain, and a rebinding DNS name makes a page "same-origin" with it.
+test("an open host refuses cross-site requests, non-JSON bodies and rebinding host names", async () => {
+  const { base, server } = await serve();
+  const body = JSON.stringify({ session: "x", provider: "scripted", model: "m", message: "hi" });
+  const plain = await fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "text/plain" }, body });
+  assert.equal(plain.status, 415);
+  const site = await fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json", origin: "https://evil.example" }, body });
+  assert.equal(site.status, 403);
+  // Its own page (same origin) is fine.
+  const own = await fetch(`${base}/api/providers`, { headers: { origin: base } });
+  assert.equal(own.status, 200);
+  const rebound = await new Promise<number>((resolve, reject) => {
+    const req = request(`${base}/api/providers`, { headers: { host: "attacker.example:80" } }, (res) => {
+      res.resume();
+      resolve(res.statusCode ?? 0);
+    });
+    req.on("error", reject);
+    req.end();
+  });
+  assert.equal(rebound, 403);
+  server.close();
+});
+
+test("many saved sessions: the list stays complete while only recent ones stay loaded", async () => {
+  const { base, server } = await serve();
+  for (let i = 0; i < 30; i++) await chat(base, { session: `s${i}`, provider: "scripted", model: "m", message: `chat ${i}` });
+  const list = (await (await fetch(`${base}/api/sessions`)).json()) as { id: string }[];
+  assert.equal(list.length, 30);
+  // The first one was evicted from memory and reloads from disk intact.
+  const view = (await (await fetch(`${base}/api/sessions/s0`)).json()) as SessionView;
+  assert.equal(view.title, "chat 0");
+  assert.equal(view.surfaces[0]?.id, "kpi");
+  await fetch(`${base}/api/sessions/s0`, { method: "DELETE" });
+  assert.equal(((await (await fetch(`${base}/api/sessions`)).json()) as unknown[]).length, 29);
+  server.close();
+});
+
+test("a chat can be renamed; an empty title is refused", async () => {
+  const { base, server } = await serve();
+  await chat(base, { session: "r1", provider: "scripted", model: "m", message: "first message" });
+  const put = (title: unknown) => fetch(`${base}/api/sessions/r1`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ title }) });
+  assert.equal((await put("  ")).status, 400);
+  assert.equal((await put("Trip plans")).status, 200);
+  const list = (await (await fetch(`${base}/api/sessions`)).json()) as { title: string }[];
+  assert.equal(list[0]?.title, "Trip plans");
   server.close();
 });

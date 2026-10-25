@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { after, before, test } from "node:test";
 import { basicCatalog, SurfaceStore, type AgentEvent } from "@vak/core";
-import { anthropic, gemini, ollama, openai, runAgent, type Message, type Provider, type ProviderEvent } from "../src/index.ts";
+import { anthropic, COMPATIBLE_PRESETS, gemini, ollama, openai, PROVIDER_SETTINGS, providersFromEnv, runAgent, type Message, type Provider, type ProviderEvent } from "../src/index.ts";
 
 // A local server that replays canned provider streams and records requests.
 let server: Server;
@@ -298,4 +298,40 @@ test("history: default sends everything; a retry within the turn sees its own ne
   assert.equal(requests[0]!.length, 1);
   assert.deepEqual(requests[1]!.map((m) => m.role), ["user", "assistant", "tool"]);
   assert.equal(requests[1]![2]!.isError, true);
+});
+
+test("compatible servers: the output-limit name and stream_options follow the declaration", async () => {
+  routes["/c1/chat/completions"] = sse([{ choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] }]) + "data: [DONE]\n\n";
+  const p = openai({ id: "x", baseUrl: `${base}/c1`, maxTokensParam: "max_tokens", streamUsage: false });
+  for await (const _ of p.stream({ model: "m", messages: [{ role: "user", content: "hi" }], maxTokens: 50 })) void _;
+  const body = seen.findLast((r) => r.url === "/c1/chat/completions")!.body;
+  assert.equal(body.max_tokens, 50);
+  assert.equal(body.max_completion_tokens, undefined);
+  assert.equal(body.stream_options, undefined);
+  // OpenAI's own defaults stay as they were.
+  const q = openai({ id: "y", baseUrl: `${base}/c1` });
+  for await (const _ of q.stream({ model: "m", messages: [{ role: "user", content: "hi" }], maxTokens: 50 })) void _;
+  const plain = seen.findLast((r) => r.url === "/c1/chat/completions")!.body;
+  assert.equal(plain.max_completion_tokens, 50);
+  assert.deepEqual(plain.stream_options, { include_usage: true });
+});
+
+test("compatible servers: /models as {data} or as a bare list (Together)", async () => {
+  routes["/m1/models"] = JSON.stringify({ data: [{ id: "b" }, { id: "a" }] });
+  routes["/m2/models"] = JSON.stringify([{ id: "z" }, { id: "y" }]);
+  assert.deepEqual(await openai({ baseUrl: `${base}/m1` }).listModels!(), ["a", "b"]);
+  assert.deepEqual(await openai({ baseUrl: `${base}/m2` }).listModels!(), ["y", "z"]);
+});
+
+test("lab presets: a key makes the provider available; local servers need none; settings list every variable", () => {
+  const off = providersFromEnv({});
+  for (const preset of COMPATIBLE_PRESETS) {
+    const entry = off.find((e) => e.id === preset.id)!;
+    assert.equal(entry.available, Boolean(preset.local), preset.id);
+    if (preset.keyVar) assert.ok(PROVIDER_SETTINGS.some((s) => s.name === preset.keyVar && s.secret), preset.keyVar);
+  }
+  const on = providersFromEnv({ MISTRAL_API_KEY: "k", GROQ_API_KEY: "k" });
+  assert.ok(on.find((e) => e.id === "mistral")!.available);
+  assert.ok(on.find((e) => e.id === "groq")!.available);
+  assert.equal(new Set(PROVIDER_SETTINGS.map((s) => s.name)).size, PROVIDER_SETTINGS.length);
 });

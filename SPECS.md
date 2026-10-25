@@ -124,20 +124,26 @@ Shared chat logic lives in `core/chat.ts`: form fields, reading typed answers, t
 ## 8. Host (`@vak/host`)
 
 The HTTP + SSE API that runs the agent loop for a UI, on Node built-ins only, so any app can mount it (`createHost(options).handle(req, res)` returns false for paths that are not its own).
-- Routes: providers, models, profile, chat (SSE), calibrate (SSE), project / actions / events (outside agents), sessions (list, view, delete), reset.
-- Options: `providers` (a function, re-read per request so key changes apply live), `profiles`, `instructions`, `transcripts` dir, `sessionsDir` (conversations saved as JSON and reloaded after a restart), `token` (bearer required on every route), `origins` (CORS allowlist), `routes` (app-specific routes after auth).
-- A saved session holds the messages, the final surfaces and a **timeline** (user text, actions, assistant replies with their surface ids, engine notes, status) so a UI redraws a reopened chat the way it was shown.
-- The playground mounts it open on loopback; the desktop sidecar mounts it behind a token.
+- Routes: providers, models, profile, chat (SSE), calibrate (SSE), project / actions / events (outside agents), sessions (list, view, rename, delete), reset.
+- Options: `providers` (a function, re-read per request so key changes apply live), `profiles`, `instructions`, `transcripts` dir, `sessionsDir` (conversations saved as JSON and reloaded after a restart), `token` (bearer required on every route), `origins` (CORS allowlist), `hosts` (Host names accepted), `routes` (app routes after auth).
+- **Admission**, for every caller: the Host header must name loopback (or `hosts`), against DNS rebinding; a browser Origin must be the server itself or listed; POST/PUT bodies must be JSON, which forces a preflight unlisted origins fail. Without these, any web page could POST a text/plain body to a loopback port and spend the user's keys.
+- A saved session holds the messages, the final surfaces and a **timeline** (user text, actions, replies with their surface ids, engine notes, status) so a UI redraws a reopened chat as it was shown. The list comes from an index read once and kept current; at most 24 sessions stay in memory (idle ones reload from disk).
 
-## 9. Desktop app (`apps/desktop`)
+## 9. Providers registry
+
+`providersFromEnv` builds Ollama, Anthropic, OpenAI (Responses), Gemini, a generic OpenAI-compatible entry, and every lab in `COMPATIBLE_PRESETS`: Mistral, xAI, DeepSeek, Groq, Cerebras, OpenRouter, Together, Fireworks, Moonshot, Qwen (DashScope), LM Studio. A preset declares its base URL, key variable, a default model only where the lab has a stable alias, and the server's differences (`maxTokensParam`, `streamUsage`); `/models` is read as `{data}` or a bare list. `PROVIDER_SETTINGS` lists every variable the registry reads, with the provider it belongs to, so settings screens are generated, not hand-kept.
+
+## 10. Desktop app (`apps/desktop`)
 
 A separate product built on the framework (AGENTS.md rule 1 exception): Tauri 2 shell, Vite + plain TypeScript UI, the engine as a Node sidecar.
-- **Sidecar** (`sidecar/main.ts`): `@vak/host` on an ephemeral loopback port with a random bearer token and a settings route (API keys and endpoints, written 0600 to `settings.env` in the data folder; secrets are never sent back). Prints `VAK_READY {port, token}`; exits when its stdin closes.
-- **Shell** (`src-tauri`): starts the sidecar, gives the webview its address and token over IPC (`backend` command), kills it on quit. Links open in the system browser (opener plugin). CSP allows connections only to `127.0.0.1`.
-- **UI**: chats in a sidebar (grouped by date), the thread, a composer with a model picker. Provider/model, the capability plan, calibration, keys and generation options live in Settings. Shortcuts: ⌘N new chat, ⌘, settings, ⌘\ sidebar, Esc stops a reply.
-- **Release**: `scripts/bundle-sidecar.ts` bundles the sidecar into one module and copies the running Node binary as `externalBin`; `tauri.release.conf.json` adds both to the bundle.
+- **Sidecar** (`sidecar/`): `@vak/host` on an ephemeral loopback port with a random token. Keys in the macOS Keychain via `/usr/bin/security` (writes through stdin, never argv; older file-stored keys move over on start); elsewhere a 0600 file. Logs to `logs/engine.log` in the data folder. Routes: settings, channels, info.
+- **Channels** (`sidecar/channels.ts`): chat platforms answered while the app runs in the background, each declaring its secrets and a run-until-aborted function. Telegram runs `runTelegram` from `@vak/telegram` (shared with `npm run telegram`; a second poller on the same bot is reported, not crashed on). Off by default; each has its own model. Slack and Discord are listed as coming.
+- **Shell** (`src-tauri`): starts the sidecar and hands the webview its address and token; menu-bar tray (Open, New chat, Quit); closing the window hides it while "keep running" is on; Dock click reopens; one instance only; launch at login; on quit the sidecar gets 4 s to stop channels. Links open in the system browser.
+- **UI**: chats sidebar (date groups, rename, delete), the thread, a composer with a model picker (recent models plus installed local ones). Settings is a full page: Models (the provider's own model list from its key, plan, calibration), Providers (one card per provider: key, endpoint, status, model count), Channels (a page per channel), Appearance (System/Light/Dark, six themes, text size; surfaces follow), Chats (context window, engine notes, delete all), General (tray, login, model behaviour), About (version, data folder, log, shortcuts).
+- **Right-click**: the webview's menu never shows. Text fields keep the native editing menu; selected text gets Copy. Chats: Open, Rename, Delete. Your message: Copy, Edit as new message. A reply: Copy. An interface: Copy as text. Links and images: Open in browser, Copy address. Elsewhere nothing. Option-right-click keeps the inspector in dev builds.
+- **Release**: `npm run desktop:build` bundles the sidecar and the Node binary (`tauri.release.conf.json`); a build without them tells you so at start.
 
-## 10. Benchmark
+## 11. Benchmark
 
 - `@vak/bench`: 30 single- and multi-turn scenarios, a rubric DSL, a simulated user, Wilson intervals.
 - Baselines and cassettes live in `packages/bench/data/`.

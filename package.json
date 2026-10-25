@@ -10,14 +10,14 @@
     "node": ">=24"
   },
   "scripts": {
-    "test": "node --test \"packages/*/test/**/*.test.ts\"",
+    "test": "node --test \"packages/*/test/**/*.test.ts\" \"apps/*/test/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json",
     "playground": "node --disable-warning=ExperimentalWarning apps/playground/server.ts",
     "bench": "node --disable-warning=ExperimentalWarning scripts/bench.ts",
     "bench:gate": "node --disable-warning=ExperimentalWarning scripts/bench.ts gate ollama:qwen3.5:4b-mlx --runs 2",
     "telegram": "node --disable-warning=ExperimentalWarning packages/telegram/src/main.ts",
     "desktop": "npm run tauri --workspace @vak/desktop -- dev",
-    "desktop:build": "npm run tauri --workspace @vak/desktop -- build --config src-tauri/tauri.release.conf.json"
+    "desktop:build": "npm run build:app --workspace @vak/desktop --"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

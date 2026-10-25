@@ -50,7 +50,9 @@ VAK_CASES=1 node scripts/eval.ts openai:<model> 1 tools   # small paid check
 
 ## Desktop app
 
-`apps/desktop` is an everyday chat app built on the framework: saved chats, a model picker in the composer, keys and model details in Settings. It is a separate product (Tauri 2 + Vite); the framework packages stay dependency-free.
+`apps/desktop` is an everyday chat app built on the framework: saved chats, a model picker in the composer, a Settings page (models, providers with their own model lists, channels, themes), keys in the macOS Keychain, and a menu-bar mode that keeps Telegram answering while the window is closed. It is a separate product (Tauri 2 + Vite); the framework packages stay dependency-free.
+
+Providers: Ollama, LM Studio, Anthropic, OpenAI, Gemini, Mistral, xAI, DeepSeek, Groq, Cerebras, OpenRouter, Together, Fireworks, Moonshot, Qwen, and any OpenAI-compatible server.
 
 ```bash
 npm run desktop         # dev window (needs Rust and Node 24+)

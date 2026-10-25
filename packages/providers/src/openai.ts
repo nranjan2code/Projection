@@ -11,6 +11,13 @@ export interface OpenAIOptions {
   /** Provider id reported in events, e.g. "openai" or "openrouter". */
   id?: string;
   headers?: Record<string, string>;
+  /**
+   * Name of the output limit. OpenAI's own API wants max_completion_tokens;
+   * most compatible servers only know the older max_tokens.
+   */
+  maxTokensParam?: "max_completion_tokens" | "max_tokens";
+  /** Ask for usage in the stream (stream_options). Some servers reject the field. */
+  streamUsage?: boolean;
 }
 
 const STOP: Record<string, StopReason> = { stop: "end", tool_calls: "tool_use", function_call: "tool_use", length: "max_tokens", content_filter: "refusal" };
@@ -41,8 +48,9 @@ export function openai(opts: OpenAIOptions = {}): Provider {
     id,
 
     async listModels(signal) {
-      const body = (await getJson(id, `${base}/models`, headers, signal)) as { data?: { id: string }[] };
-      return (body.data ?? []).map((m) => m.id).sort();
+      // `{data: [...]}` per OpenAI; some servers (Together) answer with the bare list.
+      const body = (await getJson(id, `${base}/models`, headers, signal)) as { data?: { id: string }[] } | { id: string }[];
+      return (Array.isArray(body) ? body : (body.data ?? [])).map((m) => m.id).sort();
     },
 
     async describeModel(model): Promise<ModelFacts> {
@@ -54,12 +62,12 @@ export function openai(opts: OpenAIOptions = {}): Provider {
       const body: Record<string, unknown> = {
         model: req.model,
         stream: true,
-        stream_options: { include_usage: true },
+        ...(opts.streamUsage === false ? {} : { stream_options: { include_usage: true } }),
         messages: openaiMessages(req.system, req.messages),
         ...(req.tools?.length
           ? { tools: req.tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.inputSchema } })) }
           : {}),
-        ...(req.maxTokens ? { max_completion_tokens: req.maxTokens } : {}),
+        ...(req.maxTokens ? { [opts.maxTokensParam ?? "max_completion_tokens"]: req.maxTokens } : {}),
         ...(req.effort ? { reasoning_effort: req.effort } : {}),
         ...req.extra,
       };

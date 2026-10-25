@@ -7,7 +7,7 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 ```
 Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection.
 
-First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 146 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
+First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 161 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
 
 Focus: the core system. That means the engine (parser, normalizer, lint, resolve), the catalog, and the projectors (web, text, Telegram, Slack, Discord as renderers, tested offline), and the bench. Telegram live testing is parked: don't start the bot unless I ask.
 
@@ -23,7 +23,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
-- **Tests:** 146 passing, typecheck clean. All work below is committed and pushed (see `git log`).
+- **Tests:** 161 passing, typecheck clean. All work below is committed and pushed (see `git log`).
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios), re-recorded 2026-10-25 after the bench-category fixes:
 
   | | Now | Previous | Old flat baseline |
@@ -39,6 +39,14 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 - **The playground may be running** (started from the session; stop it if not needed). The Telegram bot is stopped. One button press (Save Details on the booking confirmation) is saved in the chat's inbox and replays the next time the bot starts. The old long chat is archived in `.vak/telegram/archive/`.
 
 ## Done in this stretch
+
+- **Desktop app, everyday-driver round (user's review, 2026-10-25):**
+  - Host hardening: JSON-only bodies, Origin and Host checks (CSRF and DNS rebinding against the open playground), constant-time token check; session index (no full re-read per list), idle eviction (24 loaded), rename route.
+  - Desktop: context window (last 10 turns by default), "Ollama isn't running" hint, Keychain for keys, engine log file, single instance, tray with close-to-background, Dock reopen, launch at login, graceful sidecar stop, a guard for builds without the engine.
+  - Providers: 11 labs as declared OpenAI-compatible presets; Settings generated from the registry. The model list in Settings is the provider's own, fetched with its key (Ollama: installed models); nothing is pre-selected from an alphabetical list.
+  - Channels: Telegram runs inside the app (`runTelegram`, shared with the script), off by default, own model; Slack/Discord slots listed as coming.
+  - Settings is a full page with sections; themes (6, light-dark pairs) and text size, applied to surfaces too; desktop-style right-click everywhere.
+  - Verified in the browser pane with a live sidecar and the 4B model (chat, Keychain round-trip with a dummy key, themes, menus, rename); release `.app` built; single instance and quit checked. Not checked live: the tray, close-to-background and launch at login (need the real window), and the Telegram channel turned on (it would poll the real bot).
 
 - **Desktop app (user's request, 2026-10-25): `apps/desktop`**, a separate product on the framework, for everyday use.
   - Stack, chosen for late October 2026: Tauri 2.12 (stable; 3.0 is still alpha), Vite 8, plain TypeScript UI (the content is already the `<vak-surface>` Web Component, so no UI framework), the engine as a Node 24 sidecar (the providers need `node:fs`/`node:net`, so the engine stays on Node unchanged).
@@ -139,7 +147,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
    - near-miss id pairing
    - a security review of the projectors
    - packaging for npm
-   - desktop: OS keychain for keys (now a 0600 file), code signing/notarization, auto-update, MCP into the desktop app (the sidecar requires a token), Windows/Linux builds
+   - desktop: code signing/notarization, auto-update, MCP into the desktop app (the sidecar requires a token), Windows/Linux builds, Slack (Socket Mode) and Discord (Gateway) listeners as channels
    - live Slack/Discord bots, only if the user gets tokens
 
 ## Useful paths

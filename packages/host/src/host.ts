@@ -15,6 +15,7 @@
 //   GET  /api/sessions/<id>              one conversation: timeline + surfaces
 //   DELETE /api/sessions/<id>, POST /api/reset
 
+import { timingSafeEqual } from "node:crypto";
 import { appendFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
@@ -63,6 +64,8 @@ export interface HostOptions {
   sessionsDir?: string;
   /** Bearer token every /api request must carry; none: open (loopback-only servers). */
   token?: string;
+  /** Host header names accepted (default: loopback names only). */
+  hosts?: string[];
   /** Origins allowed to call from another origin (a desktop webview). */
   origins?: string[];
   /** Viewer link returned to outside agents by /api/project. */
@@ -129,6 +132,26 @@ export function json(res: ServerResponse, status: number, body: unknown): void {
   res.end(JSON.stringify(body));
 }
 
+/** Host names a loopback server answers to; anything else is a rebinding DNS name. */
+const LOOPBACK = ["127.0.0.1", "localhost", "[::1]"];
+
+function sameOrigin(origin: string, host: string): boolean {
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false;
+  }
+}
+
+function sameSecret(given: string, expected: string): boolean {
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+/** Saved sessions kept in memory at once; the rest reload from disk when opened. */
+const MAX_LOADED = 24;
+
 const safeId = (id: string) => id.replace(/[^\w-]/g, "_").slice(0, 120) || "default";
 const now = () => new Date().toISOString();
 const titleOf = (text: string) => (text.length > 60 ? `${text.slice(0, 57).trimEnd()}…` : text);
@@ -145,7 +168,12 @@ export function createHost(opts: HostOptions): VakHost {
 
   async function session(id: string): Promise<Session> {
     let s = sessions.get(id);
-    if (s) return s;
+    if (s) {
+      // Most recently used last, so eviction takes the stalest.
+      sessions.delete(id);
+      sessions.set(id, s);
+      return s;
+    }
     const at = now();
     s = { id, title: "New chat", created: at, updated: at, messages: [], timeline: [], store: new SurfaceStore(catalog), viewers: new Set(), external: new Set(), inbox: [], waiters: new Set() };
     if (opts.sessionsDir) {
@@ -161,7 +189,20 @@ export function createHost(opts: HostOptions): VakHost {
     const raced = sessions.get(id);
     if (raced) return raced;
     sessions.set(id, s);
+    evict();
     return s;
+  }
+
+  /**
+   * Saved sessions reload from disk, so only the most recent stay in memory.
+   * One with a turn running, a viewer, a waiting agent or queued actions stays.
+   */
+  function evict(): void {
+    if (!opts.sessionsDir) return;
+    for (const [id, s] of sessions) {
+      if (sessions.size <= MAX_LOADED) break;
+      if (!s.busy && !s.viewers.size && !s.waiters.size && !s.inbox.length) sessions.delete(id);
+    }
   }
 
   async function save(s: Session): Promise<void> {
@@ -182,14 +223,21 @@ export function createHost(opts: HostOptions): VakHost {
       const file = sessionFile(s.id);
       await writeFile(`${file}.tmp`, JSON.stringify(saved));
       await rename(`${file}.tmp`, file);
+      (await summaries()).set(s.id, { id: s.id, title: s.title, updated: s.updated });
     } catch (err) {
       log(`session not saved: ${(err as Error).message}`);
     }
   }
 
-  async function listSessions(): Promise<SessionSummary[]> {
-    const out = new Map<string, SessionSummary>();
-    if (opts.sessionsDir) {
+  /**
+   * Summaries of saved sessions, read from disk once and then kept current by
+   * save and delete, so the list is not re-read (messages and all) per request.
+   */
+  let index: Promise<Map<string, SessionSummary>> | undefined;
+  function summaries(): Promise<Map<string, SessionSummary>> {
+    index ??= (async () => {
+      const out = new Map<string, SessionSummary>();
+      if (!opts.sessionsDir) return out;
       let files: string[] = [];
       try {
         files = (await readdir(opts.sessionsDir)).filter((f) => f.endsWith(".json"));
@@ -204,7 +252,13 @@ export function createHost(opts: HostOptions): VakHost {
           /* unreadable file: skip it */
         }
       }
-    }
+      return out;
+    })();
+    return index;
+  }
+
+  async function listSessions(): Promise<SessionSummary[]> {
+    const out = new Map(await summaries());
     for (const s of sessions.values()) if (s.timeline.length) out.set(s.id, { id: s.id, title: s.title, updated: s.updated });
     return [...out.values()].sort((a, b) => b.updated.localeCompare(a.updated));
   }
@@ -212,6 +266,7 @@ export function createHost(opts: HostOptions): VakHost {
   async function dropSession(id: string): Promise<void> {
     sessions.get(id)?.busy?.abort();
     sessions.delete(id);
+    (await summaries()).delete(id);
     if (opts.sessionsDir) await rm(sessionFile(id), { force: true });
   }
 
@@ -431,11 +486,28 @@ export function createHost(opts: HostOptions): VakHost {
   }
 
   // --- access -----------------------------------------------------------------
-  /** CORS for allowed origins; false when the request must be refused. */
+  /**
+   * Who may call. A loopback server is still reachable from every web page the
+   * user has open: a page can POST to 127.0.0.1 with a text/plain body (no
+   * preflight) and spend the user's keys, and a rebinding DNS name can make a
+   * page same-origin with it. So the Host header must name an allowed host, a
+   * browser's Origin must be this server or a listed one, and request bodies
+   * must be JSON, which forces a preflight that unlisted origins fail.
+   */
   function admit(req: IncomingMessage, res: ServerResponse): boolean {
+    const host = req.headers.host ?? "";
+    if (!(opts.hosts ?? LOOPBACK).includes(host.replace(/:\d+$/, ""))) {
+      json(res, 403, { error: "host not allowed" });
+      return false;
+    }
     const origin = req.headers.origin;
-    if (origin && opts.origins?.includes(origin)) {
-      res.setHeader("access-control-allow-origin", origin);
+    const listed = origin !== undefined && Boolean(opts.origins?.includes(origin));
+    if (origin && !listed && !sameOrigin(origin, host)) {
+      json(res, 403, { error: "origin not allowed" });
+      return false;
+    }
+    if (listed) {
+      res.setHeader("access-control-allow-origin", origin!);
       res.setHeader("access-control-allow-headers", "authorization, content-type");
       res.setHeader("access-control-allow-methods", "GET, POST, PUT, DELETE");
       res.setHeader("vary", "origin");
@@ -444,7 +516,11 @@ export function createHost(opts: HostOptions): VakHost {
       res.writeHead(204).end();
       return false;
     }
-    if (opts.token && req.headers.authorization !== `Bearer ${opts.token}`) {
+    if ((req.method === "POST" || req.method === "PUT") && !/^application\/json\b/i.test(req.headers["content-type"] ?? "")) {
+      json(res, 415, { error: "send JSON (content-type: application/json)" });
+      return false;
+    }
+    if (opts.token && !sameSecret(req.headers.authorization ?? "", `Bearer ${opts.token}`)) {
       json(res, 401, { error: "unauthorized" });
       return false;
     }
@@ -461,7 +537,7 @@ export function createHost(opts: HostOptions): VakHost {
       try {
         if (opts.routes && (await opts.routes(req, res, url))) return true;
         if (m === "GET" && p === "/api/providers") {
-          json(res, 200, opts.providers().map(({ id, label, available, reason, defaultModel }) => ({ id, label, available, reason: available ? undefined : reason, defaultModel })));
+          json(res, 200, opts.providers().map(({ id, label, available, reason, defaultModel, local, keyVar }) => ({ id, label, available, reason: available ? undefined : reason, defaultModel, local, keyVar })));
         } else if (m === "GET" && p === "/api/models") {
           const entry = provider(url.searchParams.get("provider"));
           if (!entry?.available) json(res, 400, { error: "provider unavailable" });
@@ -470,7 +546,7 @@ export function createHost(opts: HostOptions): VakHost {
               const models = (await entry.make({}).listModels?.(AbortSignal.timeout(8000))) ?? [];
               // A declared default is suggested; a local one only when it is installed,
               // else the first listed model.
-              const local = entry.id === "ollama";
+              const local = Boolean(entry.local);
               const declared = local && entry.defaultModel && models.length && !models.includes(entry.defaultModel) ? undefined : entry.defaultModel;
               json(res, 200, { models, default: declared ?? (local ? models[0] : undefined) });
             } catch (err) {
@@ -493,6 +569,17 @@ export function createHost(opts: HostOptions): VakHost {
           if (m === "DELETE") {
             await dropSession(id);
             json(res, 200, { ok: true });
+          } else if (m === "PUT") {
+            // Rename: the only field a client may change.
+            const body = await readJson(req);
+            const s = await session(id);
+            const title = typeof body.title === "string" ? body.title.trim().slice(0, 120) : "";
+            if (!title) json(res, 400, { error: "title required" });
+            else {
+              s.title = title;
+              await save(s);
+              json(res, 200, { id: s.id, title: s.title, updated: s.updated });
+            }
           } else if (m === "GET") {
             const s = await session(id);
             const view: SessionView = { id: s.id, title: s.title, updated: s.updated, timeline: s.timeline, surfaces: s.store.list().map((st) => s.store.snapshot(st.id)!) };

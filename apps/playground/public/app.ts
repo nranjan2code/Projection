@@ -149,7 +149,7 @@ calibrateBtn.addEventListener("click", async () => {
   const turn = newTurn(`Calibrating ${model}…`);
   let done = 0;
   try {
-    const res = await fetch("/api/calibrate", { method: "POST", body: JSON.stringify({ provider, model }) });
+    const res = await fetch("/api/calibrate", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ provider, model }) });
     for await (const msg of readSse(res.body!)) {
       const data = JSON.parse(msg.data);
       if (msg.event === "start") setStatus(turn, `Calibrating ${model}: 0/${data.calls} runs`);
@@ -227,7 +227,7 @@ settingsToggle.addEventListener("click", () => {
 });
 $<HTMLButtonElement>("reset").addEventListener("click", async () => {
   running?.abort();
-  await fetch("/api/reset", { method: "POST", body: JSON.stringify({ session }) });
+  await fetch("/api/reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session }) });
   session = crypto.randomUUID();
   $<HTMLElement>("session-label").textContent = `session ${session}`;
   mounted.clear();
