@@ -322,6 +322,18 @@ class Parser {
         return `{${key}}`;
       }
       if (next === "," || next === "}") {
+        // `"features":"Quiet courtyard","Tatami rooms","Tea ceremony"],"ratings":[4.1]`
+        // (4B, Vakyartha Kyoto hotels): strings running up to a "]" this
+        // object never opened, with the object going on after it, are a list
+        // whose "[" was left out. Read as prose continuing the value, the "]"
+        // ended the object and the next members became made-up keys.
+        const list = lastKey !== undefined && typeof obj[lastKey] === "string" ? /^((?:\s*,\s*"(?:[^"\\]|\\.)*")*)\s*\](?=\s*(?:,\s*"(?:[^"\\]|\\.)*"\s*:|\}))/.exec(this.s.slice(this.i, this.i + 4000)) : null;
+        if (list) {
+          const rest = [...list[1]!.matchAll(/"(?:[^"\\]|\\.)*"/g)].map((m) => JSON.parse(m[0]) as string);
+          obj[lastKey!] = [obj[lastKey!] as string, key as string, ...rest];
+          this.i += list[0].length;
+          continue;
+        }
         // A value with no key: it continues the previous member.
         if (lastKey !== undefined) {
           const prev = obj[lastKey];

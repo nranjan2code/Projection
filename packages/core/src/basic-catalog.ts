@@ -10,7 +10,7 @@
 // - `defaults`: props derivable from other props (an input's label from its bind)
 // - `normalize`: shape fixes for component-specific data (chart series)
 
-import { defineCatalog } from "./catalog.ts";
+import { defineCatalog, type ItemField } from "./catalog.ts";
 import { cell, type Row, totalsRow } from "./interact.ts";
 import type { JSONSchema } from "./schema.ts";
 
@@ -149,6 +149,28 @@ function normalizeChart(p: Record<string, unknown>): Record<string, unknown> {
   const plottable = (x: unknown) => !values(x) || values(x)!.some(numeric);
   if (s.some(plottable) && !s.every(plottable)) return { ...p, series: s.filter(plottable) };
   return p;
+}
+
+/**
+ * An item of a list whose template the model never sent: a card titled by its
+ * name-like field, the other text fields as labelled lines, and its lists as
+ * bullet lists, so every field the model sent is shown.
+ */
+function itemTemplate(fields: ItemField[]): Record<string, unknown> {
+  if (fields.length === 1 && fields[0]!.name === ".") return { type: "text", props: { content: "{.}" } };
+  const texts = fields.filter((f) => f.kind === "text");
+  const title = texts.find((f) => /^(name|title|label|heading)$/i.test(f.name)) ?? texts[0];
+  const lines = texts.filter((f) => f !== title).map((f) => `**${f.label}:** {${f.name}}`);
+  // An item without the list shows neither the list nor its label.
+  const lists = fields.filter((f) => f.kind === "list").flatMap((f) => [
+    { type: "text", props: { content: f.label, variant: "caption", visibleIf: `{${f.name}}` } },
+    { type: "list", props: { items: `{${f.name}}`, visibleIf: `{${f.name}}` } },
+  ]);
+  return {
+    type: "card",
+    props: { ...(title ? { title: `{${title.name}}` } : {}), ...(lines.length ? { body: lines.join("\n\n") } : {}) },
+    ...(lists.length ? { children: lists } : {}),
+  };
 }
 
 export const basicCatalog = defineCatalog(
@@ -538,6 +560,7 @@ export const basicCatalog = defineCatalog(
   },
   {
     container: "stack",
+    itemTemplate,
     examples: [
       {
         request: "Show this month's sales KPIs, a weekly revenue chart and the top products",

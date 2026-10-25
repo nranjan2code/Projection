@@ -8,6 +8,7 @@ export * from "./checks.ts";
 export * from "./partial-json.ts";
 export * from "./surface.ts";
 export * from "./stream.ts";
+export * from "./publish.ts";
 export * from "./projector.ts";
 export * from "./events.ts";
 export * from "./sse.ts";

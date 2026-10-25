@@ -2,6 +2,16 @@
 
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
+## 2026-10-25, late night: shown surfaces only get better
+
+From a Vakyartha run on the 4B model ("compare three hotels in Kyoto"): four renders, each retry lost more, and the last, near-empty one replaced the rest, leaving placeholders that never resolved.
+
+- **The user's view only moves forward:** `SurfacePublisher` (`@vak/core`), used by `runAgent`. A finished call is shown only if it `improves` on what is shown: a clean version always does, a broken one never replaces a clean one, and replaces a broken one only with at least as much content. A rewrite of a shown surface no longer streams over it. Whatever ends the run (done, step limit, error, abort) puts held surfaces back, so the store, saved sessions and every client agree. The model is told when its version was held.
+- **No endless placeholders:** a child the model names but never sends shows as `$pending` only while its render streams (`SurfaceState.partial`, `SurfaceSnapshot.partial`); afterwards it is left out. Lint still reports it to the model. Projectors that drew `$pending` for a finished surface no longer receive one.
+- **Missing list templates:** children `{each, template}` naming a template that was never sent shows each item from its data with the catalog's new `itemTemplate` (basic catalog: a card of the item's fields), as a warning instead of an error. A template can also be written in place: `{each, template: {type, ...}}`.
+- **Parser:** strings running up to a `]` the object never opened (`"features":"a","b","c"],`) are a list whose `[` was left out, not made-up keys.
+- `SurfaceStore.assess(id)`: errors left and content shown.
+
 ## 2026-10-25, night: the app moves out
 
 - **Split:** the desktop app and its browser entry point (`apps/desktop`, `apps/playground`) moved, with their history, to their own repository, [Vakyartha](https://github.com/nranjan2code/vakyartha). This repository is now the framework only. Vakyartha pins it as a git submodule; nothing here depends on the app.

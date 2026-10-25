@@ -16,6 +16,7 @@ import {
   projectionResponseSchema,
   projectText,
   type SurfaceStore,
+  SurfacePublisher,
   type Usage,
   systemPrompt,
   TOOL_REMOVE,
@@ -173,6 +174,20 @@ function historyView(opts: RunOptions): () => Message[] {
 
 let runCounter = 0;
 
+/**
+ * Show a finished call's surface if it improves on what the user sees. When
+ * it is held back, the model is told, so it fixes the errors in place rather
+ * than writing the surface again (each rewrite risks losing more).
+ */
+function show(publisher: SurfacePublisher, id: string, emit: RunOptions["emit"]): string {
+  const r = publisher.settle(id);
+  if (r.snapshot) emit({ type: "surface", snapshot: r.snapshot });
+  else if (r.removed) emit({ type: "surface_removed", id });
+  return r.held
+    ? `\nNot shown: this version still has errors and shows less than the version the user sees, which stays on screen. Fix only the errors above with vak_update; everything else in "${id}" is kept.`
+    : "";
+}
+
 /** Upper bound on one constrained answer, so a looping decode always ends. */
 const CONSTRAINED_MAX_TOKENS = 6000;
 
@@ -187,11 +202,26 @@ export function generationMode(opts: Pick<RunOptions, "generation" | "provider" 
   return "tools";
 }
 
+/**
+ * Clients see surfaces through a publisher (see publish.ts): a retry that
+ * would make a shown surface worse is held back, and whatever ends the run
+ * (done, step limit, error, abort) first puts held surfaces back to what the
+ * user sees, so the store, the saved session and every client agree.
+ */
 export async function runAgent(opts: RunOptions): Promise<{ stop: string }> {
+  const publisher = new SurfacePublisher(opts.store);
+  const emit = opts.emit;
+  opts = {
+    ...opts,
+    emit: (event) => {
+      if (event.type === "run_end") for (const snapshot of publisher.finish()) emit({ type: "surface", snapshot });
+      emit(event);
+    },
+  };
   try {
     const run = resolveRun(opts);
     const view = historyView(opts);
-    return run.generation === "constrained" ? await constrainedLoop(opts, run, view) : await toolsLoop(opts, run, view);
+    return run.generation === "constrained" ? await constrainedLoop(opts, run, view, publisher) : await toolsLoop(opts, run, view, publisher);
   } catch (err) {
     if (opts.signal?.aborted) {
       opts.emit({ type: "run_end", stop: "aborted" });
@@ -209,7 +239,7 @@ export async function runAgent(opts: RunOptions): Promise<{ stop: string }> {
  * arrives; the reply streams as text. Remaining diagnostics (structure the
  * grammar cannot express, like dangling child ids) go back for another step.
  */
-async function constrainedLoop(opts: RunOptions, run: ResolvedRun, view: () => Message[]): Promise<{ stop: string }> {
+async function constrainedLoop(opts: RunOptions, run: ResolvedRun, view: () => Message[], publisher: SurfacePublisher): Promise<{ stop: string }> {
   const responseSchema = projectionResponseSchema(run.catalog);
   const system = `${buildSystem(opts, run)}\n\n${CONSTRAINED_INSTRUCTIONS}`;
   const { emit, store } = opts;
@@ -247,7 +277,7 @@ async function constrainedLoop(opts: RunOptions, run: ResolvedRun, view: () => M
         emit({ type: "tool_start", id: callId, name: TOOL_RENDER });
       }
       if (tick.changed && tick.surface) {
-        const snap = store.snapshot(tick.surface);
+        const snap = publisher.streaming(tick.surface);
         if (snap) emit({ type: "surface", snapshot: snap });
       }
       // The reply only grows, so emit the new suffix.
@@ -265,12 +295,8 @@ async function constrainedLoop(opts: RunOptions, run: ResolvedRun, view: () => M
       return { stop };
     }
     const end = stream.end();
-    const result = formatDiagnostics(end.diagnostics);
     const isError = end.diagnostics.some((d) => d.severity === "error");
-    if (end.surface) {
-      const snap = store.snapshot(end.surface);
-      emit(snap ? { type: "surface", snapshot: snap } : { type: "surface_removed", id: end.surface });
-    }
+    const result = formatDiagnostics(end.diagnostics) + (end.surface ? show(publisher, end.surface, emit) : "");
     emit({ type: "tool_end", id: callId, name: TOOL_RENDER, result, ...(isError ? { isError } : {}) });
     if (!isError) {
       emit({ type: "run_end", stop: "projected", usage });
@@ -282,7 +308,7 @@ async function constrainedLoop(opts: RunOptions, run: ResolvedRun, view: () => M
   return { stop: "max_steps" };
 }
 
-async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message[]): Promise<{ stop: string }> {
+async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message[], publisher: SurfacePublisher): Promise<{ stop: string }> {
   const catalog = run.catalog;
   const vakSpecs: ToolSpec[] = toolDefinitions(catalog, { mode: opts.schemaMode ?? "compact", authoring: run.authoring }).map((t) => ({
     name: t.name,
@@ -334,7 +360,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
           call.arguments += ev.delta;
           const tick = call.stream?.push(ev.delta);
           if (tick?.changed && tick.surface) {
-            const snap = store.snapshot(tick.surface);
+            const snap = publisher.streaming(tick.surface);
             if (snap) emit({ type: "surface", snapshot: snap });
           }
           break;
@@ -365,12 +391,8 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
       let isError = false;
       if (call.stream) {
         const end = call.stream.end();
-        result = formatDiagnostics(end.diagnostics);
         isError = end.diagnostics.some((d) => d.severity === "error");
-        if (end.surface) {
-          const snap = store.snapshot(end.surface);
-          emit(snap ? { type: "surface", snapshot: snap } : { type: "surface_removed", id: end.surface });
-        }
+        result = formatDiagnostics(end.diagnostics) + (end.surface ? show(publisher, end.surface, emit) : "");
       } else {
         const tool = userTools.get(call.name);
         if (!tool) {

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { createServer, type Server } from "node:http";
 import { after, before, test } from "node:test";
-import { basicCatalog, SurfaceStore, type AgentEvent } from "@vak/core";
+import { readFileSync } from "node:fs";
+import { basicCatalog, projectText, SurfaceStore, type AgentEvent } from "@vak/core";
 import { anthropic, COMPATIBLE_PRESETS, gemini, ollama, openai, PROVIDER_SETTINGS, providersFromEnv, runAgent, type Message, type Provider, type ProviderEvent } from "../src/index.ts";
 
 // A local server that replays canned provider streams and records requests.
@@ -157,6 +158,48 @@ test("agent loop projects a streamed render and stops on a clean projection", as
   assert.deepEqual(messages.map((m) => m.role), ["user", "assistant", "tool"]);
   assert.equal(messages[2]!.content, "ok");
   assert.equal(store.resolve("s")!.root!.children[0]!.props.content, "hi");
+});
+
+/** A provider that makes one vak_render call per step, from a script. */
+function scripted(calls: string[]): Provider {
+  let step = 0;
+  return {
+    id: "scripted",
+    async *stream() {
+      const args = calls[step++];
+      if (args === undefined) return void (yield { type: "done", stop: "end" });
+      yield { type: "tool_start", id: `c${step}`, name: "vak_render" };
+      for (let i = 0; i < args.length; i += 40) yield { type: "tool_args", id: `c${step}`, delta: args.slice(i, i + 40) };
+      yield { type: "tool_end", id: `c${step}` };
+      yield { type: "done", stop: "tool_use" };
+    },
+  };
+}
+
+test("the Kyoto hotels run (real 4B calls) ends on its second render, with every hotel and the form shown", async () => {
+  const { calls } = JSON.parse(readFileSync(new URL("../../core/test/fixtures/vakyartha-kyoto-4b-2026-10-25.json", import.meta.url), "utf8")) as { calls: { args: string }[] };
+  const store = new SurfaceStore(basicCatalog);
+  const r = await runAgent({ provider: scripted(calls.map((c) => c.args)), model: "m", store, messages: [{ role: "user", content: "hotels" }], maxSteps: 4, emit: () => {} });
+  assert.equal(r.stop, "projected");
+  const text = projectText(store.resolve("kyoto_hotels")!);
+  assert.equal(text.match(/\[Card\]/g)?.length, 3);
+  assert.ok(text.includes("[Form → book_hotel]") && text.includes("[Input (email)] Email*"));
+});
+
+test("a worse retry is never shown, and the step limit leaves the better version in the store", async () => {
+  const node = (n: number, extra: string[] = []) => JSON.stringify({ surface: "s", nodes: [{ id: "root", type: "stack", children: [...Array.from({ length: n }, (_, i) => `t${i}`), ...extra] }, ...Array.from({ length: n }, (_, i) => ({ id: `t${i}`, type: "text", props: { content: `line ${i}` } }))] });
+  const store = new SurfaceStore(basicCatalog);
+  const events: AgentEvent[] = [];
+  const messages: Message[] = [{ role: "user", content: "show" }];
+  const r = await runAgent({ provider: scripted([node(3, ["gone"]), node(1, ["gone"])]), model: "m", store, messages, maxSteps: 2, emit: (e) => events.push(e) });
+  assert.equal(r.stop, "max_steps");
+  const shown = events.filter((e): e is Extract<AgentEvent, { type: "surface" }> => e.type === "surface");
+  for (const e of shown) assert.ok(!e.snapshot.nodes.length || e.snapshot.nodes.length >= 4 || e.snapshot.partial, "the one-line retry never reaches the client");
+  const last = shown.at(-1)!.snapshot;
+  assert.equal(last.nodes.length, 4);
+  assert.equal(store.assess("s")!.content, 3);
+  assert.equal(events.at(-1)!.type, "run_end");
+  assert.match(messages.at(-1)!.content, /Not shown: .*vak_update/);
 });
 
 test("constrained generation: render streams from the JSON answer, reply streams as text", async () => {

@@ -66,6 +66,20 @@ export interface Catalog {
    */
   container: string;
   examples: CatalogExample[];
+  /**
+   * How one list item is shown when a model repeats a template it never sent
+   * (children {each, template} naming no node). Gets the items' fields and
+   * returns one node, written inline. Without it, that is an error.
+   */
+  itemTemplate?: (fields: ItemField[]) => Record<string, unknown> | undefined;
+}
+
+/** A field of the items in a data list; name "." is a list of plain values. */
+export interface ItemField {
+  name: string;
+  /** For people: "price_per_night" is "Price per night". */
+  label: string;
+  kind: "text" | "list";
 }
 
 export type Support = "native" | "degraded" | "none";
@@ -89,13 +103,13 @@ export function defineCatalog(
   id: string,
   components: Record<string, ComponentDef>,
   common: Record<string, JSONSchema> = {},
-  opts: { container?: string; examples?: CatalogExample[] } = {},
+  opts: { container?: string; examples?: CatalogExample[]; itemTemplate?: Catalog["itemTemplate"] } = {},
 ): Catalog {
   const container = opts.container ?? Object.keys(components).find((n) => components[n]!.children);
   if (!container || !components[container]?.children) {
     throw new Error(`catalog ${id}: needs a container component (one with children: true)`);
   }
-  return { id, components, common, container, examples: opts.examples ?? [] };
+  return { id, components, common, container, examples: opts.examples ?? [], ...(opts.itemTemplate ? { itemTemplate: opts.itemTemplate } : {}) };
 }
 
 /** Only the components of a tier ("core" drops "extended" ones); examples using dropped components go too. */

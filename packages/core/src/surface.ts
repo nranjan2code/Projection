@@ -3,7 +3,7 @@
 // projectors render, and turns user interactions into VpsAction results.
 
 import { isBinding, resolveValue, type Scope } from "./bindings.ts";
-import { type Catalog, propsSchema } from "./catalog.ts";
+import { type Catalog, type ItemField, propsSchema } from "./catalog.ts";
 import { runChecks } from "./checks.ts";
 import { isMetaKey, Normalizer, repairStructure, type TypeMatch } from "./normalize.ts";
 import { parseLenient } from "./partial-json.ts";
@@ -40,13 +40,26 @@ export interface SurfaceState {
   nodes: Map<string, VpsNode>;
   data: Record<string, unknown>;
   version: number;
+  /**
+   * The model is still writing this surface (a streamed render): a child it
+   * names but hasn't sent yet is on its way. Otherwise such a child never
+   * comes, and the user would wait on a placeholder forever.
+   */
+  partial?: boolean;
+}
+
+/** How much a surface shows, and what is still wrong with it (see SurfaceStore.assess). */
+export interface SurfaceQuality {
+  errors: number;
+  /** Rendered nodes with something of their own to show. */
+  content: number;
 }
 
 export interface ResolvedNode {
   /** Unique per instance; template copies get `tpl#index`. */
   key: string;
   id: string;
-  /** Component type, or "$pending" (child not arrived yet) / "$invalid". */
+  /** Component type, or "$pending" (child not arrived yet, streaming only) / "$invalid". */
   type: string;
   props: Record<string, unknown>;
   children: ResolvedNode[];
@@ -70,6 +83,7 @@ export interface SurfaceSnapshot {
   nodes: VpsNode[];
   data: Record<string, unknown>;
   version: number;
+  partial?: boolean;
 }
 
 export interface SubmitResult {
@@ -182,7 +196,7 @@ export class SurfaceStore {
   snapshot(id: string): SurfaceSnapshot | undefined {
     const s = this.surfaces.get(id);
     if (!s) return undefined;
-    return structuredClone({ id: s.id, title: s.title, nodes: [...s.nodes.values()], data: s.data, version: s.version });
+    return structuredClone({ id: s.id, title: s.title, nodes: [...s.nodes.values()], data: s.data, version: s.version, ...(s.partial ? { partial: true } : {}) });
   }
 
   /** Replace local state with a snapshot (client mirrors of server state). */
@@ -194,6 +208,7 @@ export class SurfaceStore {
       nodes: new Map(copy.nodes.map((n) => [n.id, n])),
       data: copy.data ?? {},
       version: copy.version,
+      ...(copy.partial ? { partial: true } : {}),
     });
   }
 
@@ -272,6 +287,7 @@ export class SurfaceStore {
         return mergeDeep(mergeDeep({}, nodeData ?? {}), isObject(d) ? d : {});
       })(),
       version: (prev?.version ?? 0) + 1,
+      ...(opts.partial ? { partial: true } : {}),
     };
     this.surfaces.set(surfaceId, state);
     if (nodeData && !opts.partial) diags.push({ severity: "warning", surface: surfaceId, message: "data written inside nodes was merged into the surface data model" });
@@ -288,6 +304,7 @@ export class SurfaceStore {
     if (!state) return [{ severity: "error", surface: surfaceId, message: `no surface "${surfaceId}"; call vak_render first` }];
     const diags: Diagnostic[] = [];
     if (typeof args.title === "string") state.title = args.title;
+    delete state.partial;
     const shownBefore = reachable(state.nodes);
     const sent = new Set<string>();
     collectIds(args.nodes, sent);
@@ -399,7 +416,75 @@ export class SurfaceStore {
   private repair(state: SurfaceState): Diagnostic[] {
     const { nodes, repairs } = repairStructure(state.nodes, this.normalizer, (t) => this.nextId(t));
     state.nodes = nodes;
-    return [...repairs.map((r) => ({ severity: "warning" as const, surface: state.id, node: r.node, message: r.message })), ...this.bindInputNames(state), ...this.dropEmptyContainers(state)];
+    return [
+      ...repairs.map((r) => ({ severity: "warning" as const, surface: state.id, node: r.node, message: r.message })),
+      ...this.fillMissingTemplates(state),
+      ...this.bindInputNames(state),
+      ...this.dropEmptyContainers(state),
+    ];
+  }
+
+  /**
+   * children {each, template} naming a template that was never sent (4B,
+   * Vakyartha "compare three hotels in Kyoto": "hotel_tpl" was missing from
+   * all four renders, and each retry dropped more of the surface trying to fix
+   * it, until only the title was left). The items are data the model did
+   * send, so they are shown with the catalog's item template instead of not
+   * at all. A warning, not an error: nothing the user sees is broken, and
+   * small models lose content on retries. The model can still send its own
+   * template with vak_update.
+   */
+  private fillMissingTemplates(state: SurfaceState): Diagnostic[] {
+    const make = this.catalog.itemTemplate;
+    if (!make) return [];
+    const diags: Diagnostic[] = [];
+    for (const node of [...state.nodes.values()]) {
+      const ch = node.children;
+      if (!ch || Array.isArray(ch) || state.nodes.has(ch.template)) continue;
+      // Lists inside another template's items differ per item; only a list in
+      // the surface data has one set of fields to lay out.
+      const list = getAt(state.data, resolvePath(ch.each.replace(/^\{|\}$/g, ""), ""));
+      const fields = Array.isArray(list) ? itemFields(list) : [];
+      const raw = fields.length ? make(fields) : undefined;
+      if (!raw) continue;
+      const made = new Map<string, VpsNode>();
+      const id = this.ingest({ ...raw, id: ch.template }, made, state.id, [], false, true);
+      // A catalog narrowed for a target may lack what the item template uses.
+      if (id !== ch.template || [...made.values()].some((n) => !(n.type in this.catalog.components))) continue;
+      for (const [k, v] of made) state.nodes.set(k, v);
+      diags.push({
+        severity: "warning",
+        surface: state.id,
+        node: ch.template,
+        message: `template "${ch.template}" was never sent; each item of ${ch.each} is shown as a ${made.get(id)!.type} of its fields (${fields.map((f) => f.name).join(", ")}). To lay out the items yourself, send a node with id "${ch.template}" with vak_update`,
+      });
+    }
+    return diags;
+  }
+
+  /**
+   * Errors left and content shown. A host compares these to decide whether a
+   * new version of a surface may replace the one the user is looking at.
+   */
+  assess(surfaceId: string): SurfaceQuality | undefined {
+    const state = this.surfaces.get(surfaceId);
+    if (!state) return undefined;
+    const errors = this.lint(state).filter((d) => d.severity === "error").length;
+    let content = 0;
+    const root = this.resolve(surfaceId)?.root;
+    if (root) {
+      walk(root, (n) => {
+        if (n.type.startsWith("$")) return;
+        if (!LAYOUT_TYPES.has(n.type) || this.showsOwnText(n.type, n.props)) content++;
+      });
+    }
+    return { errors, content };
+  }
+
+  /** A container showing text of its own (a section's title) is content, not just a frame. */
+  private showsOwnText(type: string, props: Record<string, unknown> | undefined): boolean {
+    const declared = this.catalog.components[type]?.props.properties ?? {};
+    return ["title", "description", "content"].some((k) => k in declared && typeof props?.[k] === "string" && props[k]);
   }
 
   /**
@@ -413,8 +498,7 @@ export class SurfaceStore {
     const empty = new Set<string>();
     for (const [nid, n] of state.nodes) {
       if (nid === rootId || !LAYOUT_TYPES.has(n.type) || (n.children !== undefined && (!Array.isArray(n.children) || n.children.length))) continue;
-      const declared = this.catalog.components[n.type]?.props.properties ?? {};
-      if (["title", "description", "content"].some((k) => k in declared && typeof n.props?.[k] === "string" && n.props[k])) continue;
+      if (this.showsOwnText(n.type, n.props)) continue;
       empty.add(nid);
     }
     if (!empty.size) return [];
@@ -476,7 +560,12 @@ export class SurfaceStore {
     const spec = Array.isArray(raw) && raw.length === 1 ? raw[0] : raw;
     if (isObject(spec) && spec.each !== undefined && spec.template !== undefined) {
       const each = coerce({ type: "string" }, spec.each);
-      const template = coerce({ type: "string" }, spec.template);
+      // The template written in place, as inline authoring writes every other
+      // child: it is ingested like one, so it cannot be left undefined. Only
+      // a node (it has a type); `{template: "h"}` is a wrapped id, which
+      // coerce unwraps.
+      const inline = isObject(spec.template) && NODE_TYPE_KEYS.some((k) => typeof (spec.template as Record<string, unknown>)[k] === "string");
+      const template = inline ? this.ingest(spec.template, into, surface, diags, merge, true) : coerce({ type: "string" }, spec.template);
       if (typeof each === "string" && typeof template === "string") return { each, template };
     }
     const list = Array.isArray(raw) ? raw : [raw];
@@ -760,13 +849,9 @@ export class SurfaceStore {
     // showing text of its own (a section's title). Five "tabs" nodes with titles
     // but no panels in a grid (0.8B, playground 2026-10-25) drew only divider
     // lines and passed as clean, so the model never fixed it.
-    const showsText = (n: VpsNode) => {
-      const declared = this.catalog.components[n.type]?.props.properties ?? {};
-      return ["title", "description", "content"].some((k) => k in declared && typeof n.props?.[k] === "string" && n.props[k]);
-    };
     for (const nid of reachable(state.nodes)) {
       const n = state.nodes.get(nid)!;
-      if (!LAYOUT_TYPES.has(n.type) || showsText(n)) return [];
+      if (!LAYOUT_TYPES.has(n.type) || this.showsOwnText(n.type, n.props)) return [];
     }
     return [{ severity: "error", surface: state.id, node: root.id, message: "the surface is empty: add the content as children of the root, or remove the surface and answer in text" }];
   }
@@ -866,7 +951,7 @@ export class SurfaceStore {
           if (!state.nodes.has(c)) diags.push({ severity: "error", surface: state.id, node: node.id, message: `child "${c}" was never sent: send that node with vak_update, or remove it from children` });
         }
       } else if (ch && !state.nodes.has(ch.template)) {
-        diags.push({ severity: "error", surface: state.id, node: node.id, message: `template "${ch.template}" does not exist` });
+        diags.push({ severity: "error", surface: state.id, node: node.id, message: `template "${ch.template}" was never sent: send one node with id "${ch.template}" (one item's layout, with {field} for the item's fields) using vak_update; the rest of the surface stays` });
       }
     }
     return diags;
@@ -885,7 +970,10 @@ export class SurfaceStore {
 
   private resolveNode(state: SurfaceState, id: string, scope: Scope, key: string, path: Set<string>): ResolvedNode | null {
     const node = state.nodes.get(id);
-    if (!node) return { key, id, type: "$pending", props: {}, children: [] };
+    // Once the model has finished writing, a child it never sent is left
+    // out: lint has told the model, and the user is not shown a placeholder
+    // for content that is not coming.
+    if (!node) return state.partial ? { key, id, type: "$pending", props: {}, children: [] } : null;
     if (path.has(id)) return { key, id, type: "$invalid", props: {}, children: [], error: "cycle" };
     let resolved = textProps(propsSchema(this.catalog, node.type), resolveValue(node.props ?? {}, scope, propsSchema(this.catalog, node.type)) as Record<string, unknown>);
     const variant = this.normalizer.semanticType(node.type, resolved, { id, hasChildren: node.children !== undefined });
@@ -1021,6 +1109,33 @@ function findTrail(node: ResolvedNode, key: string): ResolvedNode[] | null {
 }
 
 /** Render diagnostics as a compact tool-result message so the model can self-correct. */
+/**
+ * The fields of a data list's items, in first-seen order. Values that are
+ * text for some items and lists for others (malformed model JSON) count as
+ * text. Names a binding cannot address are skipped.
+ */
+function itemFields(list: unknown[]): ItemField[] {
+  if (list.length && list.every((v) => v === null || typeof v !== "object")) return [{ name: ".", label: "", kind: "text" }];
+  const kinds = new Map<string, Set<ItemField["kind"]>>();
+  for (const item of list) {
+    if (!isObject(item)) continue;
+    for (const [k, v] of Object.entries(item)) {
+      if (!/^[A-Za-z_][\w-]*$/.test(k) || v === null || v === undefined) continue;
+      const kind = Array.isArray(v) ? (v.every((x) => x === null || typeof x !== "object") ? "list" : undefined) : typeof v === "object" ? undefined : "text";
+      if (!kind) continue;
+      if (!kinds.has(k)) kinds.set(k, new Set());
+      kinds.get(k)!.add(kind);
+    }
+  }
+  return [...kinds].map(([name, k]) => ({ name, label: humanize(name), kind: k.has("text") ? "text" : "list" }));
+}
+
+/** "price_per_night", "pricePerNight" -> "Price per night". */
+function humanize(key: string): string {
+  const words = key.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").trim().toLowerCase();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 export function formatDiagnostics(diags: Diagnostic[]): string {
   if (diags.length === 0) return "ok";
   const errors = diags.filter((d) => d.severity === "error");
