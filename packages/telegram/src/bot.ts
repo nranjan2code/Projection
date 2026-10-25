@@ -78,6 +78,8 @@ interface Chat {
   pending: number;
   /** Received, not yet finished (saved, so a restart picks them up). */
   inbox: TgUpdate[];
+  /** Surfaces to send as new messages when this turn changes them (see turn). */
+  moving?: Set<string>;
   nextToken: number;
 }
 
@@ -221,7 +223,7 @@ export class TelegramBot {
     }
     if (chat.flow) return this.flowAnswer(chat, { text });
     chat.messages.push({ role: "user", content: text });
-    return this.turn(chat);
+    return this.turn(chat, { fresh: true });
   }
 
   /** A button or form was pressed: ask for its inputs first, if it has any. */
@@ -286,7 +288,15 @@ export class TelegramBot {
   }
 
   /** Run the model on the conversation; project surfaces as they change. */
-  private async turn(chat: Chat): Promise<void> {
+  /**
+   * `fresh`: the user typed a message, so they are looking at the bottom of
+   * the chat. A surface shown earlier and changed by this turn moves there
+   * as a new message (the old one keeps its content, without buttons);
+   * editing it far up the chat would look like no reply. After a button or
+   * form, surfaces are edited in place, where the user is looking.
+   */
+  private async turn(chat: Chat, opts: { fresh?: boolean } = {}): Promise<void> {
+    chat.moving = opts.fresh ? new Set(chat.posted.keys()) : undefined;
     const { api } = this.opts;
     let reply = "";
     const dirty = new Set<string>();
@@ -340,6 +350,16 @@ export class TelegramBot {
     }
   }
 
+  /** Leave a surface's current message as history, without buttons; it will be sent anew. */
+  private async retire(chat: Chat, surfaceId: string): Promise<void> {
+    const messageId = chat.posted.get(surfaceId);
+    const html = chat.shown.get(surfaceId);
+    chat.posted.delete(surfaceId);
+    chat.shown.delete(surfaceId);
+    if (messageId === undefined || !html) return;
+    await this.opts.api.editRichMessage(chat.id, messageId, html.replace(/<tg-button-row>[\s\S]*?<\/tg-button-row>/g, "")).catch(() => undefined);
+  }
+
   /** A removed surface: its message stays as history, without live buttons. */
   private async close(chat: Chat, surfaceId: string): Promise<void> {
     for (const [token, t] of chat.tokens) if (t.surface === surfaceId) chat.tokens.delete(token);
@@ -374,6 +394,7 @@ export class TelegramBot {
   private async publish(chat: Chat, surfaceId: string): Promise<void> {
     const resolved = chat.store.resolve(surfaceId);
     if (!resolved) return;
+    if (chat.moving?.delete(surfaceId)) await this.retire(chat, surfaceId);
     const tokenFor = (key: string, kind: Control["kind"]) => {
       // Reuse a token for the same control so already-sent buttons keep working.
       for (const [token, t] of chat.tokens) if (t.surface === surfaceId && t.key === key && t.kind === kind) return token;

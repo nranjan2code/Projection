@@ -280,3 +280,15 @@ test("bot: a surface whose message the user deleted is sent again as a new messa
   assert.match(sends.at(-1)!.params.rich_message.html, /Trips, updated/);
   deleted.clear();
 });
+
+test("bot: a surface changed in reply to a typed message moves to the bottom as a new message", async () => {
+  const trips = basicCatalog.examples.find((e) => e.render.surface === "trips")!.render;
+  const bot = new TelegramBot({ api: new TelegramApi("TEST", base), provider: scripted([{ name: "vak_render", args: trips }, { name: "vak_render", args: { ...trips, title: "Trips again" } }]), model: "m", editIntervalMs: 0 });
+  await bot.handle({ update_id: 1, message: { message_id: 1, chat: { id: 88 }, text: "trips" } });
+  const before = calls.length;
+  await bot.handle({ update_id: 2, message: { message_id: 2, chat: { id: 88 }, text: "hi" } });
+  const mine = calls.slice(before).filter((c) => c.params.chat_id === 88);
+  const retired = mine.find((c) => c.method === "editMessageText")!;
+  assert.doesNotMatch(retired.params.rich_message.html, /<tg-button/, "the old message keeps no buttons");
+  assert.match(mine.find((c) => c.method === "sendRichMessage")!.params.rich_message.html, /Trips again/, "the new view is a new message");
+});
