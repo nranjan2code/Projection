@@ -43,6 +43,7 @@ In MCP there is also `vak_wait_action`.
    - A keyless value, or a value after a stray colon, continues the previous member.
    - JSON written inside a string without escaping is read as a structure.
    - A `"key":` inside an array ends the array.
+   - A `{` where an object key belongs, inside an array, ends the object: its `}` was omitted and the array's next element begins.
 2. **Call recovery** (`SurfaceStore.apply`): members written inside the nodes string after the list (`"[...], \"data\": {...}"`) belong to the call.
 3. **Normalizer** (`normalize.ts`).
    - Type resolution: name → alias → schema-scored inference.
@@ -52,6 +53,7 @@ In MCP there is also `vak_wait_action`.
      - a missing root is synthesized; orphans are attached to it
      - a list template listed as a plain child is removed
      - a node with two parents keeps the first
+     - an object of node settings only (`{"priority": "secondary"}`) in a children list applies to the node before it
 4. **Update semantics:** nodes a patch cuts out of the tree are removed, and the model gets a warning naming them.
 5. **Lint** (diagnostics go back to the model as the tool result). Errors are:
    - invalid props
@@ -69,6 +71,7 @@ In MCP there is also `vak_wait_action`.
   - `constrained`: grammar-decoded `{reply, render}`.
 
   A clean projection ends the turn.
+- **History window** (`history: N`): the model sees the last N turns (a turn starts at a typed message or a `[ui action]`, so a tool call never loses its result). The window's first message carries a note with each surface still shown: id, title, text view and data. The full history stays saved. Default: everything (bench and replay gate unchanged).
 - **Plan** (`policy.ts`) is `{ generation, tier, examples, authoring, maxSteps }`, each choice with a reason.
   - Declared facts set the default; for tool calling that's `authoring: "inline"`.
   - Calibration (`.vak/models.json`) replaces it only when clearly better: its 95% Wilson interval sits above the declared configuration's.
@@ -94,6 +97,8 @@ Shared chat logic lives in `core/chat.ts`: form fields, reading typed answers, t
 - Button taps are answered immediately, with a "still working" note while a reply runs.
 - Answered choice buttons are replaced by the answer. A removed surface keeps its message, without buttons. A deleted message is re-sent.
 - Fallback chain: rich → rich without media → text with an inline keyboard.
+- The model sees the last 6 turns (`history` option). `/start` clears the chat's conversation, surfaces and buttons; old buttons answer "That button has expired."
+- Text the model writes after the engine reports an error is addressed to the engine and is not sent to the user.
 
 ## 7. MCP server
 

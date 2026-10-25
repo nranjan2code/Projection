@@ -100,3 +100,12 @@ test("a key inside an array means the array's closer was omitted", () => {
   assert.deepEqual(parseLenient('{"hotels":[{"n":1},{"n":2}, "bookings":{}}'), { hotels: [{ n: 1 }, { n: 2 }], bookings: {} });
   assert.deepEqual(parseLenient('{"tags":["a", "b"], "n": 1}'), { tags: ["a", "b"], n: 1 });
 });
+
+test("an object where a key belongs, inside an array, starts the next element", () => {
+  // Telegram hotel booking, 2026-10-25: the 4B model left out each field's "}"
+  // after its props. Read as keys, the next field's members overwrote this
+  // one's, and the form lost two of its three fields.
+  const text = '[{"id":"details","type":"form","children":[{"id":"date","type":"input","props":{"bind":"/details/date","label":"Check-in Date"},{"id":"guests","type":"select","props":{"bind":"/details/guests","options":["1","2"]},{"id":"notes","type":"textarea","props":{"label":"Special Requests"}}}]}]';
+  const [form] = parseLenient(text) as { children: { id: string }[] }[];
+  assert.deepEqual(form!.children.map((c) => c.id), ["date", "guests", "notes"]);
+});

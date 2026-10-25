@@ -7,23 +7,23 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 ```
 Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection.
 
-First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 109 tests should pass. Nothing is running: start the playground (.claude/launch.json "playground") and the Telegram bot (`npm run telegram`) when needed, and tell me when you do.
+First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 116 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
+
+Focus: the core system. That means the engine (parser, normalizer, lint, resolve), the catalog, and the projectors (web, text, Telegram, Slack, Discord as renderers, tested offline), and the bench. Telegram live testing is parked: don't start the bot unless I ask.
 
 Rules that matter most:
 - No third-party SDKs: everything is built on Node 24 built-ins and fetch.
 - No shortcuts or hard-coded fixes: every repair is a catalog declaration or a general engine rule, with a test built from the real model output.
-- Never blame the small model: local Ollama `qwen3.5:4b-mlx` is the primary target.
+- Never blame the small model: local Ollama `qwen3.5:4b-mlx` is the primary target. Local bench runs are free; ask before any paid model run (OpenAI).
 - Secrets live only in .env. Never print them, and run the secret scan on the staged diff before every push. The repo is public: github.com/nranjan2code/Projection. Git identity: Nisheeth Ranjan <nisheethranjan@icloud.com>.
-- Ask before any paid model run (OpenAI).
-- Only Telegram is available for live chat testing (no Slack or Discord bots). Don't restart the Telegram bot while I'm testing; restart only when it's idle, and tell me first.
-- To diagnose a bad reply, read the raw tool calls in .vak/telegram/<chat>.jsonl or .vak/playground/<session>.jsonl, replay them through SurfaceStore.apply, and fix the general cause.
+- To diagnose bad output, read the raw tool calls (bench results, .vak/playground/<session>.jsonl, .vak/telegram/<chat>.jsonl), replay them through SurfaceStore.apply, and fix the general cause.
 
 Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 ```
 
 ## Where things stand
 
-- **Main:** `0c75d41` (pushed, working tree clean). **Tests:** 109 passing, typecheck clean.
+- **Tests:** 116 passing, typecheck clean. The 2026-10-25 afternoon work (below) is in the working tree; check `git log` to see whether it was committed.
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios):
 
   | | Now | Old flat baseline |
@@ -33,13 +33,24 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
   | Follow-up turns (interaction) | 75% | 38% |
   | Median per scenario | 26s | — |
 
-  Weakest categories: planning (40% fully passing) and dashboard (60%).
-- **Nothing is running.** The Telegram bot, the playground and every background task are stopped. Telegram chat state is saved in `.vak/telegram/`, so the bot resumes the chat when started. Ollama is a separate app.
-- **Where we stopped:** live Telegram testing with "Compare three hotels in Kyoto and let me book one".
-  - The last fix (`0c75d41`) means a button never reaches Telegram without text. One empty label used to make Telegram refuse the whole message, sending the user the plain-text fallback.
-  - Neither that fix nor `40246a2` (one Book button per card, a single "/night") has been seen live yet.
+  Weakest categories: planning (40% fully passing) and dashboard (60%). The engine fixes below have not been measured on a live gate run yet.
+- **Nothing is running.** The Telegram bot is stopped. One button press (Save Details on the booking confirmation) is saved in the chat's inbox and replays the next time the bot starts. The old long chat is archived in `.vak/telegram/archive/`.
 
 ## Done in this stretch
+
+- **Long chats (was Next #2):** `runAgent` takes `history: N` (last N turns plus a note describing the shown surfaces); Telegram uses 6. `/start` resets the chat. Tests are built from the real 50-message chat.
+- **Engine, from the live hotel test:**
+  - A `{` where a key belongs, inside an array, is the next element. The parser used to read it as junk, the next fields' members overwrote the current one's, and a form lost two of three fields.
+  - `{"priority": "secondary"}` alone in a children list applies to the node before it instead of being a typeless node (an error and a retry).
+- **Telegram:** text the model writes after an engine error ("I see the issue...") is no longer sent to the user.
+- **Live hotel flow on a fresh chat:** it was confirmed live:
+  - one Book button per card, each carrying its hotel
+  - a rich message, with no plain-text fallback
+  - real values in the booking and confirmation cards
+
+  The "/night" fix is still unseen, because the model didn't give prices.
+
+## Done earlier
 
 - **Inline authoring A/B:**
   - Inline won (+14 points check score, paired CI [+3, +26]) and is now the default for tool calling.
@@ -85,29 +96,24 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Next (in order)
 
-1. **Confirm the live Telegram hotel flow:** start the bot, have the user send the hotel request and tap a Book button. Expect:
-   - one Book button per card
-   - a single "/night"
-   - no plain-text fallback
-   - a booking confirmation with real values (no `{placeholders}`)
-2. **Make long chats fast.** Each Telegram chat sends its whole saved history to the model on every turn, so even "hi" takes about a minute on the 4B model.
-   - Make `/start` begin a fresh conversation: clear messages, surfaces and tokens for that chat.
-   - Send only the recent turns plus the current surfaces' state to the model.
-
-   This is a general mechanism in `runAgent` or the bot, not a per-chat hack.
-3. **Finish the web tests** (interrupted by the usage limit):
-   - live dashboard prompt (charts)
-   - workout tabs prompt
+1. **Input `kind: "date"` is an error, but the catalog has a `date` component.** The 4B model wrote `{"type":"input","props":{"kind":"date"}}` and retried (Telegram transcript, 2026-10-25). Find a general mechanism: a catalog declaration saying a prop value names another component (input kind date → `date`; maybe checkbox/select kinds too), applied by the normalizer. No per-value hack. Build the test from the real call in `.vak/telegram/archive/` or the current `.vak/telegram/8846301562.jsonl`.
+2. **Finish the web tests** in the browser pane (interrupted earlier):
+   - a live dashboard prompt (charts)
+   - a workout tabs prompt
    - tablet and phone viewports
 
-   Check the header wrapping at narrow widths: at 800px, the playground's controls wrap into 3 rows.
-4. **Model-design issue still open:** a form says "choose your hotel" but has no hotel field. Consider a lint warning, or rely on the action data already carrying the chosen item.
-5. **Weak bench categories:** planning (tabs/sections, itinerary text) and dashboard (charts).
+   Check the header wrapping: at 800px the playground's controls wrap into 3 rows.
+3. **Weak bench categories:** planning (tabs/sections, itinerary text) and dashboard (charts).
    - Analyze failures in `packages/bench/data/results/2026-10-25T01-01-37-105Z_run_*.jsonl` and fix root causes.
-   - Prove it with replay plus a live gate run (`npm run bench -- gate ollama:qwen3.5:4b-mlx --runs 1`, ~25 min local).
-   - Re-record the baseline after engine changes that move scores.
-6. **The MCP server still teaches flat authoring.** Its instructions say "nodes is a FLAT list" (`packages/mcp`, via `systemPrompt` without a plan). Decide whether MCP clients (often strong models) should get the inline rule too, and pass `authoring` through if so.
-7. **Re-record the form slice baseline** on inline (`--category form --slice form --save`); it is still flat v2.
+   - Prove it with replay plus a live gate run (`npm run bench -- gate ollama:qwen3.5:4b-mlx --runs 1`, ~25 min local), which also measures the parser and settings fixes above.
+   - Re-record the baseline when engine changes move scores.
+4. **Form design:** a form says "choose your hotel" but has no hotel field. Consider a lint warning, or rely on the action data already carrying the chosen item.
+5. **The MCP server still teaches flat authoring.** Its instructions say "nodes is a FLAT list" (`packages/mcp`, via `systemPrompt` without a plan). Decide whether MCP clients (often strong models) should get the inline rule too, and pass `authoring` through if so.
+6. **Re-record the form slice baseline** on inline (`--category form --slice form --save`); it is still flat v2.
+7. **Parked until the user asks: Telegram live.**
+   - Start the bot; the saved Save Details press replays.
+   - Check the booking confirmation flow end to end and "/night" with prices.
+   - The transcript doesn't record the user message that started a turn, only what follows it; consider recording it for diagnosis.
 8. **Optional, ask first:**
    - prompt caching
    - near-miss id pairing

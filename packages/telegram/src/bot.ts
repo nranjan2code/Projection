@@ -39,6 +39,12 @@ export interface BotOptions {
   log?: (line: string) => void;
   /** Directory for per-chat transcripts of each turn's raw tool calls (for diagnosing model output). */
   transcriptDir?: string;
+  /**
+   * Recent turns the model sees on each reply (default 6). A long chat sent
+   * whole made even "hi" take a minute on a local 4B model, and the model
+   * copied its old answers; the full history is still saved.
+   */
+  history?: number;
   /** Directory where each chat's state is saved after every update, so a restart keeps chats and buttons working. */
   stateDir?: string;
 }
@@ -218,12 +224,29 @@ export class TelegramBot {
     const text = update.message?.text?.trim();
     if (!text) return;
     if (/^\/start(@\w+)?$/.test(text)) {
-      chat.flow = undefined;
+      this.reset(chat);
+      this.record(chat, [{ role: "user", content: text }]);
       return void (await api.sendMessage(chat.id, START_TEXT));
     }
     if (chat.flow) return this.flowAnswer(chat, { text });
     chat.messages.push({ role: "user", content: text });
     return this.turn(chat, { fresh: true });
+  }
+
+  /**
+   * /start begins a fresh conversation. Old messages stay in the chat, but
+   * their buttons answer "That button has expired." nextToken keeps counting,
+   * so a new button never reuses an old button's token.
+   */
+  private reset(chat: Chat): void {
+    for (const s of chat.store.list()) chat.store.remove({ surface: s.id });
+    chat.messages = [];
+    chat.posted.clear();
+    chat.shown.clear();
+    chat.tokens.clear();
+    chat.choiceTokens.clear();
+    chat.choicePrompt = undefined;
+    chat.flow = undefined;
   }
 
   /** A button or form was pressed: ask for its inputs first, if it has any. */
@@ -299,6 +322,10 @@ export class TelegramBot {
     chat.moving = opts.fresh ? new Set(chat.posted.keys()) : undefined;
     const { api } = this.opts;
     let reply = "";
+    // Text written after the engine reported an error answers the engine
+    // ("I see the issue - duplicate node references... Let me fix it"), not
+    // the user, so it is not sent (Telegram hotel booking, 2026-10-25).
+    let fixing = false;
     const dirty = new Set<string>();
     const touched = new Set<string>();
     let lastEdit = 0;
@@ -320,9 +347,11 @@ export class TelegramBot {
       catalog: this.opts.catalog,
       profile: telegramProfile,
       plan: this.opts.plan,
+      history: this.opts.history ?? 6,
       instructions: this.opts.instructions,
       emit: (e) => {
-        if (e.type === "text_delta") reply += e.delta;
+        if (e.type === "tool_end" && e.isError) fixing = true;
+        if (e.type === "text_delta" && !fixing) reply += e.delta;
         if (e.type === "surface") {
           dirty.add(e.snapshot.id);
           touched.add(e.snapshot.id);

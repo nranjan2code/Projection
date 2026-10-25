@@ -193,3 +193,109 @@ test("generation mode: auto means tools; constrained only on request and when gu
   assert.throws(() => generationMode({ provider: plain, generation: "constrained" }), /cannot guarantee/);
   assert.throws(() => generationMode({ provider: able, generation: "constrained", tools: [tool] }), /user tools/);
 });
+
+// A long Telegram chat (.vak/telegram, 2026-10-25), condensed: the hotel
+// request asked again and again, a booking tap with retries, then "hi" three
+// times. Sent whole, every reply took about a minute on the 4B model and the
+// model copied its earlier hotel cards.
+const hotelsRender = {
+  surface: "kyoto_hotels",
+  title: "Kyoto Hotels: Compare & Book",
+  nodes: [
+    { id: "root", type: "stack", children: [{ id: "intro", type: "text", props: { content: "Three Kyoto hotels compared below. Review and select to book." } }, { id: "grid", type: "grid", children: [{ each: "/hotels", template: "hotel_card" }] }] },
+    { id: "hotel_card", type: "card", props: { title: "{name}", subtitle: "{price}" } },
+  ],
+  data: { hotels: [{ name: "Kyoto Ryokan Zen", price: "$800/night" }, { name: "Northern Hills Villa", price: "$1,200/night" }] },
+};
+const call = (id: string, name: string): Message => ({ role: "assistant", content: "", toolCalls: [{ id, name, arguments: "{}" }] });
+const result = (id: string, content: string): Message => ({ role: "tool", content, toolCallId: id, toolName: "vak_render" });
+const longChat = (): Message[] => [
+  { role: "user", content: "Compare three hotels in Kyoto and let me book one" },
+  call("c1", "vak_render"),
+  result("c1", "rendered"),
+  { role: "user", content: '[ui action] {"action":"book_hotel","surface":"kyoto_hotels","source":"btn2","target":"telegram"}' },
+  call("c2", "vak_render"),
+  result("c2", "rendered with 1 error(s); fix with vak_update"),
+  call("c3", "vak_update"),
+  result("c3", "rendered"),
+  { role: "user", content: "hi" },
+  call("c4", "vak_render"),
+  result("c4", "rendered"),
+  { role: "user", content: "hi" },
+  { role: "assistant", content: "Hello! How can I help you?" },
+  { role: "user", content: "hi" },
+  { role: "assistant", content: "Hi there! How can I assist you today?" },
+  { role: "user", content: "Compare three hotels in Kyoto and let me book one" },
+];
+function recorder(): Provider & { requests: Message[][] } {
+  const requests: Message[][] = [];
+  return {
+    id: "rec",
+    requests,
+    async *stream(req) {
+      requests.push(structuredClone(req.messages));
+      yield { type: "done", stop: "end" };
+    },
+  };
+}
+
+test("history: the model sees the recent turns, starting at a user message, with the shown surfaces described", async () => {
+  const store = new SurfaceStore(basicCatalog);
+  store.apply("vak_render", structuredClone(hotelsRender)); // apply: the real call was inline-authored
+  const messages = longChat();
+  const provider = recorder();
+  await runAgent({ provider, model: "m", store, messages, history: 3, emit: () => {} });
+  const sent = provider.requests[0]!;
+  assert.equal(sent.length, 5, "the last three turns: hi, hi, hotels");
+  assert.equal(sent[0]!.role, "user");
+  assert.match(sent[0]!.content, /^\[earlier conversation omitted\]/);
+  assert.match(sent[0]!.content, /Surface "kyoto_hotels" \(Kyoto Hotels: Compare & Book\) shows:/);
+  assert.match(sent[0]!.content, /\[Card\] Kyoto Ryokan Zen — \$800\/night/, "the text view, not flat nodes");
+  assert.doesNotMatch(sent[0]!.content, /"template"/);
+  assert.match(sent[0]!.content, /Its data: \{"hotels":\[\{"name":"Kyoto Ryokan Zen"/);
+  assert.match(sent[0]!.content, /\n\nhi$/, "the note goes into the first message, not a second user message");
+  assert.equal(sent.at(-1)!.content, "Compare three hotels in Kyoto and let me book one");
+  assert.equal(messages[11]!.content, "hi", "the saved history is unchanged");
+  assert.equal(messages.length, 17, "and still gets the new reply");
+});
+
+test("history: a window never splits a tool call from its result", async () => {
+  const store = new SurfaceStore(basicCatalog);
+  const provider = recorder();
+  await runAgent({ provider, model: "m", store, messages: longChat(), history: 4, emit: () => {} });
+  const sent = provider.requests[0]!;
+  assert.equal(sent[0]!.content, "hi", "no surfaces shown, so no note");
+  for (const [i, m] of sent.entries()) {
+    if (m.role === "tool") assert.ok(sent.slice(0, i).some((a) => a.toolCalls?.some((c) => c.id === m.toolCallId)), `result ${m.toolCallId} has its call`);
+  }
+  const fromAction = recorder();
+  await runAgent({ provider: fromAction, model: "m", store, messages: longChat(), history: 5, emit: () => {} });
+  assert.match(fromAction.requests[0]![0]!.content, /^\[ui action\]/, "a [ui action] starts a turn too");
+});
+
+test("history: default sends everything; a retry within the turn sees its own new messages", async () => {
+  const everything = recorder();
+  await runAgent({ provider: everything, model: "m", store: new SurfaceStore(basicCatalog), messages: longChat(), emit: () => {} });
+  assert.equal(everything.requests[0]!.length, 16);
+
+  // First step: a render with a missing child (an error), so the loop runs a second step.
+  const broken = JSON.stringify({ surface: "s", nodes: [{ id: "root", type: "stack", children: ["missing"] }] });
+  const requests: Message[][] = [];
+  let step = 0;
+  const retrying: Provider = {
+    id: "retry",
+    async *stream(req) {
+      requests.push(structuredClone(req.messages));
+      if (step++ > 0) return void (yield { type: "done", stop: "end" });
+      yield { type: "tool_start", id: "r1", name: "vak_render" };
+      yield { type: "tool_args", id: "r1", delta: broken };
+      yield { type: "tool_end", id: "r1" };
+      yield { type: "done", stop: "tool_use" };
+    },
+  };
+  await runAgent({ provider: retrying, model: "m", store: new SurfaceStore(basicCatalog), messages: longChat(), history: 1, emit: () => {} });
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0]!.length, 1);
+  assert.deepEqual(requests[1]!.map((m) => m.role), ["user", "assistant", "tool"]);
+  assert.equal(requests[1]![2]!.isError, true);
+});

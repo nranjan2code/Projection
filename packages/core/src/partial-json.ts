@@ -5,7 +5,8 @@
 // - Repairs what models commonly emit: code fences and prose around the JSON,
 //   comments, trailing commas, single quotes, unquoted keys, raw newlines in
 //   strings, Python-style True/False/None, and keyless values inside an object
-//   ({"body": "a", "b"} — the stray value continues the previous member), and
+//   ({"body": "a", "b"} — the stray value continues the previous member),
+//   objects whose "}" was omitted before the next array element, and
 //   values after a closed top-level array ("[a], b, c" — they continue the array).
 // - Reports which containers are unfinished and which object keys hold a
 //   string that was cut off, so callers never act on a half-written id.
@@ -223,6 +224,11 @@ class Parser {
         }
         continue;
       }
+      // `[{"id":"a","props":{...},{"id":"b",...}`: an object where a key
+      // belongs, inside an array, means this object's "}" was omitted and
+      // the array's next element begins. Leave it to the array (read as a
+      // key, its members overwrote this object's and lost the field).
+      if (c === "{" && this.enclosedBy("[")) return obj;
       const key = this.key();
       if (key === MISSING) {
         this.incomplete.add(obj);

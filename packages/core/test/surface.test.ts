@@ -487,3 +487,30 @@ test("one fixed button per item stays with its own item; repeated endings after 
   store.render(structuredClone(trips));
   assert.equal((projectText(store.resolve("trips")!).match(/\[Button: Choose/g) ?? []).length, 3);
 });
+
+test("node settings written as an object of their own in a children list apply to the node before them", () => {
+  // Telegram, 2026-10-25, the 4B model after a "Book" tap: the trailing
+  // {"priority":"secondary"} was read as a node with no type (an error, and a retry).
+  const call = {
+    surface: "booking_details",
+    title: "Your Booking Details",
+    nodes:
+      '[{"children":[{"children":[{"id":"info","type":"text","props":{"content":"You have selected: **Kyoto City Hotel**\\n\\nThis is a modern business hotel located in the city center, perfect for your temple visits and dining at local restaurants. Free breakfast is included."},"variant":"body"},{"children":[{"id":"pay-btn","type":"button","props":{"action":"confirm_booking","label":"Confirm Booking","payload":{},"style":"primary"}}]}]},{"priority":"secondary"}]',
+    data: { guests: 1, hotel: "Kyoto City Hotel" },
+  };
+  const store = new SurfaceStore(basicCatalog);
+  const diags = store.apply("vak_render", call);
+  assert.deepEqual(diags.filter((d) => d.severity === "error"), []);
+  assert.ok(diags.some((d) => /\{"priority":"secondary"\} in a children list is not a node; applied to/.test(d.message)));
+  const text = projectText(store.resolve("booking_details")!);
+  assert.match(text, /You have selected: \*\*Kyoto City Hotel\*\*/);
+  assert.match(text, /\[Button: Confirm Booking → confirm_booking\]/);
+  const settled = [...store.get("booking_details")!.nodes.values()].find((n) => n.props?.priority === "secondary");
+  assert.ok(settled && settled.type !== "$invalid", "the setting landed on a real node");
+
+  // With no node before it, it is dropped, still without an error.
+  const alone = new SurfaceStore(basicCatalog);
+  const d2 = alone.apply("vak_render", { surface: "s", nodes: [{ id: "root", type: "stack", children: [{ span: "full" }, { id: "t", type: "text", props: { content: "hi" } }] }] });
+  assert.deepEqual(d2.filter((d) => d.severity === "error"), []);
+  assert.deepEqual(alone.get("s")!.nodes.get("root")!.children, ["t"]);
+});

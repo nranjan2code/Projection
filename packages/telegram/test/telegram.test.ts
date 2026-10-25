@@ -301,3 +301,62 @@ test("projection: a button whose label resolves empty still has text", () => {
   assert.doesNotMatch(html, /<tg-button[^>]*><\/tg-button>/);
   assert.match(html, />Book hotel<\/tg-button>/);
 });
+
+test("bot: /start begins a fresh conversation; old buttons expire and the model sees only the new chat", async () => {
+  const trips = basicCatalog.examples.find((e) => e.render.surface === "trips")!.render;
+  const seen: number[] = [];
+  let i = 0;
+  const provider: Provider = {
+    id: "rec",
+    async *stream(req) {
+      seen.push(req.messages.length);
+      if (i++ > 0) return void (yield { type: "done", stop: "end" });
+      yield { type: "tool_start", id: "c1", name: "vak_render" };
+      yield { type: "tool_args", id: "c1", delta: JSON.stringify(trips) };
+      yield { type: "tool_end", id: "c1" };
+      yield { type: "done", stop: "tool_use" };
+    },
+  };
+  const bot = new TelegramBot({ api: new TelegramApi("TEST", base), provider, model: "m", editIntervalMs: 0 });
+  const chat = { id: 123 };
+  const before = calls.length;
+  await bot.handle({ update_id: 1, message: { message_id: 1, chat, text: "trips" } });
+  const html = calls.slice(before).find((c) => c.method === "sendRichMessage" && c.params.chat_id === 123)!.params.rich_message.html as string;
+  const token = /data="([^"]+)" style="primary">Choose/.exec(html)![1]!;
+
+  await bot.handle({ update_id: 2, message: { message_id: 2, chat, text: "/start" } });
+  await bot.handle({ update_id: 3, callback_query: { id: "cb", data: token, from: { id: 7 }, message: { message_id: 100, chat } } });
+  const mine = calls.slice(before).filter((c) => c.params.chat_id === 123 && c.method === "sendMessage");
+  assert.equal(mine.at(-1)!.params.text, "That button has expired.");
+
+  await bot.handle({ update_id: 4, message: { message_id: 4, chat, text: "hi" } });
+  assert.deepEqual(seen, [1, 1], "after /start the model sees just the new message");
+});
+
+test("bot: what the model tells the engine while fixing an error is not sent to the user", async () => {
+  // Telegram hotel booking, 2026-10-25: "I see the issue - duplicate node
+  // references in my structure. Let me fix it properly." reached the chat.
+  const steps: ProviderEvent[][] = [
+    [
+      { type: "text", delta: "Here is your booking." },
+      { type: "tool_start", id: "a", name: "vak_render" },
+      { type: "tool_args", id: "a", delta: JSON.stringify({ surface: "b", nodes: [{ id: "root", type: "stack", children: ["missing"] }] }) },
+      { type: "tool_end", id: "a" },
+      { type: "done", stop: "tool_use" },
+    ],
+    [
+      { type: "text", delta: "I see the issue - duplicate node references in my structure. Let me fix it properly." },
+      { type: "tool_start", id: "b", name: "vak_render" },
+      { type: "tool_args", id: "b", delta: JSON.stringify({ surface: "b", nodes: [{ id: "root", type: "text", props: { content: "Booked" } }] }) },
+      { type: "tool_end", id: "b" },
+      { type: "done", stop: "tool_use" },
+    ],
+  ];
+  let i = 0;
+  const provider: Provider = { id: "fixing", async *stream() { yield* steps[i++] ?? [{ type: "done", stop: "end" }]; } };
+  const bot = new TelegramBot({ api: new TelegramApi("TEST", base), provider, model: "m", editIntervalMs: 0 });
+  const before = calls.length;
+  await bot.handle({ update_id: 1, message: { message_id: 1, chat: { id: 321 }, text: "book it" } });
+  const texts = calls.slice(before).filter((c) => c.params.chat_id === 321 && c.method === "sendMessage").map((c) => c.params.text);
+  assert.deepEqual(texts, ["Here is your booking."]);
+});

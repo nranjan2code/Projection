@@ -353,6 +353,7 @@ export class SurfaceStore {
     const ids: string[] = [];
     for (const c of list) {
       if (typeof c === "string") ids.push(c);
+      else if (isObject(c) && this.onlyNodeSettings(c)) this.applyToPrevious(c, ids, into, surface, diags);
       else if (isObject(c)) {
         // Nested node instead of an id: flatten it.
         const id = this.ingest(c, into, surface, diags, merge);
@@ -360,6 +361,38 @@ export class SurfaceStore {
       }
     }
     return ids;
+  }
+
+  /** Names (and aliases) of the props every node accepts: span, priority, visibleIf. */
+  private get commonKeys(): Set<string> {
+    return (this.commonKeyCache ??= new Set(Object.entries(this.catalog.common).flatMap(([k, s]) => [k, ...(((s as { aliases?: string[] }).aliases) ?? [])])));
+  }
+  private commonKeyCache: Set<string> | undefined;
+
+  /** An object of node-level settings only ({"priority": "secondary"}), with no id, type, props or children. */
+  private onlyNodeSettings(raw: Record<string, unknown>): boolean {
+    const keys = Object.keys(raw).filter((k) => !isMetaKey(k));
+    return keys.length > 0 && keys.every((k) => this.commonKeys.has(k));
+  }
+
+  /**
+   * `[{...node}, {"priority": "secondary"}]`: the 4B model closed a node
+   * early and wrote its remaining members as an object of their own (Telegram
+   * hotel booking, 2026-10-25). That object is not a node; as one, it had no
+   * type, was an error, and cost a retry. Its settings belong to the node
+   * before it; with none before it, they are dropped.
+   */
+  private applyToPrevious(raw: Record<string, unknown>, ids: string[], into: Map<string, VpsNode>, surface: string, diags: Diagnostic[]): void {
+    const prev = ids.length ? into.get(ids[ids.length - 1]!) : undefined;
+    const written = JSON.stringify(raw);
+    if (!prev || prev.type === "$invalid") {
+      diags.push({ severity: "warning", surface, message: `${written} in a children list is not a node; ignored` });
+      return;
+    }
+    const props = { ...prev.props };
+    for (const [k, v] of Object.entries(raw)) if (!(k in props)) props[k] = v;
+    prev.props = this.normalizer.prepareProps(prev.type, props, prev.id);
+    diags.push({ severity: "warning", surface, node: prev.id, message: `${written} in a children list is not a node; applied to "${prev.id}", the node before it` });
   }
 
   /** Normalize one raw node into `into`; returns its id. With `merge`, an existing id is patched. */

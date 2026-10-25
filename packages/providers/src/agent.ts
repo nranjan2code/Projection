@@ -14,6 +14,7 @@ import {
   parseLenient,
   parsePartial,
   projectionResponseSchema,
+  projectText,
   type SurfaceStore,
   type Usage,
   systemPrompt,
@@ -62,6 +63,13 @@ export interface RunOptions {
    * tier, worked examples and step/token bounds; explicit options still win.
    */
   plan?: ProjectionPlan;
+  /**
+   * How many recent turns the model sees on each step (a turn starts at a
+   * user message: typed text or a [ui action]). Older messages stay in
+   * `messages`; the surfaces still shown are described at the start of the
+   * window so the model can keep updating them. Default: everything.
+   */
+  history?: number;
   maxSteps?: number;
   maxTokens?: number;
   effort?: ChatRequest["effort"];
@@ -108,6 +116,48 @@ export function actionMessage(action: VpsAction): Message {
   return { role: "user", content: `[ui action] ${JSON.stringify(action)}` };
 }
 
+/** A turn starts at a user message; engine feedback ([engine] ...) continues the current turn. */
+const startsTurn = (m: Message) => m.role === "user" && !m.content.startsWith("[engine]");
+
+/** Index of the first message in a window of the last `turns` turns (0: everything). */
+export function historyStart(messages: Message[], turns?: number): number {
+  if (turns === undefined || turns < 1) return 0;
+  let seen = 0;
+  for (let i = messages.length - 1; i > 0; i--) if (startsTurn(messages[i]!) && ++seen === turns) return i;
+  return 0;
+}
+
+/**
+ * What the model needs from the dropped turns: each surface still shown, as
+ * its text view plus its data, so it can vak_update one by id. The text view,
+ * not the stored flat nodes: replaying flat nodes to a small model pulls it
+ * back toward flat authoring.
+ */
+export function shownSurfacesNote(store: SurfaceStore): string | undefined {
+  const parts: string[] = [];
+  for (const s of store.list()) {
+    const resolved = store.resolve(s.id);
+    if (!resolved) continue;
+    parts.push(`Surface "${s.id}"${s.title ? ` (${s.title})` : ""} shows:\n${projectText(resolved)}\nIts data: ${JSON.stringify(s.data)}`);
+  }
+  if (!parts.length) return undefined;
+  return `[earlier conversation omitted] These surfaces are still shown to the user; change one with vak_update and its surface id, or render a new one.\n\n${parts.join("\n\n")}`;
+}
+
+/**
+ * The messages sent on each step: everything, or the recent window. The note
+ * goes into the window's first message rather than a message of its own, so
+ * the conversation never has two user messages in a row.
+ */
+function historyView(opts: RunOptions): () => Message[] {
+  const start = historyStart(opts.messages, opts.history);
+  if (start === 0) return () => opts.messages;
+  const first = opts.messages[start]!;
+  const note = shownSurfacesNote(opts.store);
+  const head = note ? { ...first, content: `${note}\n\n${first.content}` } : first;
+  return () => [head, ...opts.messages.slice(start + 1)];
+}
+
 let runCounter = 0;
 
 /** Upper bound on one constrained answer, so a looping decode always ends. */
@@ -127,7 +177,8 @@ export function generationMode(opts: Pick<RunOptions, "generation" | "provider" 
 export async function runAgent(opts: RunOptions): Promise<{ stop: string }> {
   try {
     const run = resolveRun(opts);
-    return run.generation === "constrained" ? await constrainedLoop(opts, run) : await toolsLoop(opts, run);
+    const view = historyView(opts);
+    return run.generation === "constrained" ? await constrainedLoop(opts, run, view) : await toolsLoop(opts, run, view);
   } catch (err) {
     if (opts.signal?.aborted) {
       opts.emit({ type: "run_end", stop: "aborted" });
@@ -145,7 +196,7 @@ export async function runAgent(opts: RunOptions): Promise<{ stop: string }> {
  * arrives; the reply streams as text. Remaining diagnostics (structure the
  * grammar cannot express, like dangling child ids) go back for another step.
  */
-async function constrainedLoop(opts: RunOptions, run: ResolvedRun): Promise<{ stop: string }> {
+async function constrainedLoop(opts: RunOptions, run: ResolvedRun, view: () => Message[]): Promise<{ stop: string }> {
   const responseSchema = projectionResponseSchema(run.catalog);
   const system = `${buildSystem(opts, run)}\n\n${CONSTRAINED_INSTRUCTIONS}`;
   const { emit, store } = opts;
@@ -163,7 +214,7 @@ async function constrainedLoop(opts: RunOptions, run: ResolvedRun): Promise<{ st
     for await (const ev of opts.provider.stream({
       model: opts.model,
       system,
-      messages: opts.messages,
+      messages: view(),
       responseSchema,
       // A grammar admits endless arrays; bound every constrained answer.
       maxTokens: run.maxTokens ?? CONSTRAINED_MAX_TOKENS,
@@ -218,7 +269,7 @@ async function constrainedLoop(opts: RunOptions, run: ResolvedRun): Promise<{ st
   return { stop: "max_steps" };
 }
 
-async function toolsLoop(opts: RunOptions, run: ResolvedRun): Promise<{ stop: string }> {
+async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message[]): Promise<{ stop: string }> {
   const catalog = run.catalog;
   const vakSpecs: ToolSpec[] = toolDefinitions(catalog, { mode: opts.schemaMode ?? "compact", authoring: run.authoring }).map((t) => ({
     name: t.name,
@@ -245,7 +296,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun): Promise<{ stop: st
     for await (const ev of opts.provider.stream({
       model: opts.model,
       system,
-      messages: opts.messages,
+      messages: view(),
       tools,
       maxTokens: run.maxTokens,
       effort: opts.effort,
