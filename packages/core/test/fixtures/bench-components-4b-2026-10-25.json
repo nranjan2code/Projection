@@ -1,0 +1,26 @@
+{
+  "map-sequence": {
+    "tool": "vak_render",
+    "args": "{\"surface\":\"map\",\"title\":\"London Museums Map\",\"nodes\":[{\"id\":\"root\",\"props\":{\"places\":\"{\\\"name\\\":\\\"British Museum\\\",\\\"address\\\":\\\"Great Russell Street, London\\\"},{\\\"name\\\":\\\"Tate Modern\\\",\\\"address\\\":\\\"Bankside, London\\\"}\"},\"type\":\"map\"}]}"
+  },
+  "step-children": {
+    "tool": "vak_render",
+    "args": "{\"surface\":\"delivery_status\",\"title\":\"Delivery Progress\",\"nodes\":[{\"children\":[{\"status\":\"done\",\"title\":\"Payment made\"},{\"description\":\"Your item is being carefully packed\",\"status\":\"current\",\"title\":\"Packing order\"},{\"description\":\"Ready to ship\",\"status\":\"todo\",\"title\":\"Shipping dispatched\"}],\"id\":\"root\",\"type\":\"steps\"},{\"children\":[{\"children\":[],\"id\":\"p1\",\"props\":{\"description\":\"Your payment has been processed\",\"title\":\"Payment made\"},\"type\":\"section\"},{\"children\":[],\"id\":\"p2\",\"props\":{\"description\":\"Your item is being carefully packed\",\"status\":\"current\",\"title\":\"Packing order\"},\"type\":\"section\"},{\"children\":[],\"id\":\"p3\",\"props\":{\"description\":\"Ready to ship\",\"status\":\"todo\",\"title\":\"Shipping dispatched\"},\"type\":\"section\"}],\"id\":\"root\",\"type\":\"steps\"},{\"children\":[{\"children\":[],\"id\":\"s1\",\"props\":{\"status\":\"done\",\"title\":\"Payment made\"},\"type\":\"section\"},{\"children\":[],\"id\":\"s2\",\"props\":{\"status\":\"current\",\"title\":\"Packing order\"},\"type\":\"section\"},{\"children\":[],\"id\":\"s3\",\"props\":{\"status\":\"todo\",\"title\":\"Shipping dispatched\"},\"type\":\"section\"}],\"id\":\"root\",\"type\":\"steps\"},{\"children\":[{\"children\":[],\"id\":\"step1\",\"props\":{\"description\":\"Your payment has been processed\",\"status\":\"done\",\"title\":\"Payment made\"},\"type\":\"section\"},{\"children\":[],\"id\":\"step2\",\"props\":{\"description\":\"Your item is being carefully packed\",\"status\":\"current\",\"title\":\"Packing order\"},\"type\":\"section\"},{\"children\":[],\"id\":\"step3\",\"props\":{\"description\":\"Ready to ship\",\"status\":\"todo\",\"title\":\"Shipping dispatched\"},\"type\":\"section\"}],\"id\":\"root\",\"type\":\"steps\"},{\"children\":[{\"children\":[],\"id\":\"s1\",\"props\":{\"content\":\"Payment made. Your item is ready for packing.\"},\"type\":\"text\"}],\"id\":\"root\",\"type\":\"steps\"}],\"data\":{\"delivery\":{\"steps\":[{\"status\":\"done\",\"title\":\"Payment made\"},{\"status\":\"current\",\"title\":\"Packing order\"}]}}}"
+  },
+  "state-timeline": {
+    "tool": "vak_render",
+    "args": "{\"surface\":\"delivery_progress\",\"title\":\"Delivery Progress\",\"nodes\":[{\"children\":[{\"data\":{},\"id\":\"timeline\",\"props\":{\"items\":[{\"date\":\"2024-01-15\",\"description\":\"Payment processed successfully\",\"status\":\"done\",\"title\":\"Payment\"},{\"date\":\"2024-01-16\",\"description\":\"Item packed and quality checked\",\"status\":\"current\",\"title\":\"Packing\"},{\"date\":\"2024-01-18\",\"description\":\"Ready for departure\",\"status\":\"todo\",\"title\":\"Shipping\"}]},\"type\":\"timeline\"}],\"id\":\"root\",\"props\":{\"description\":\"Track your delivery journey\",\"title\":\"Your Package in Transit\"},\"type\":\"section\"}]}"
+  },
+  "formatted-totals": {
+    "tool": "vak_render",
+    "args": "{\"surface\":\"invoice\",\"title\":\"Invoice Table\",\"nodes\":[{\"id\":\"root\",\"props\":{\"columns\":[{\"align\":\"start\",\"key\":\"item\",\"label\":\"Item\"},{\"align\":\"center\",\"key\":\"units\",\"label\":\"Units\"},{\"align\":\"right\",\"key\":\"revenue\",\"label\":\"Revenue\"},{\"align\":\"center\",\"key\":\"margin\",\"label\":\"Margin\"}],\"rows\":\"[{\\\"item\\\": \\\"Pens\\\", \\\"units\\\": 3, \\\"revenue\\\": \\\"$15\\\", \\\"margin\\\": \\\"10%\\\"}, {\\\"item\\\": \\\"Notebooks\\\", \\\"units\\\": 2, \\\"revenue\\\": \\\"$30\\\", \\\"margin\\\": \\\"20%\\\"}, {\\\"item\\\": \\\"Folders\\\", \\\"units\\\": 4, \\\"revenue\\\": \\\"$20\\\", \\\"margin\\\": \\\"15%\\\"}]\",\"searchable\":true,\"sortable\":true,\"totals\":true},\"type\":\"table\"}]}"
+  },
+  "literal-code": {
+    "tool": "vak_render",
+    "args": "{\"surface\":\"code\",\"title\":\"greet.js\",\"nodes\":[{\"id\":\"root\",\"props\":{\"code\":\"const name = \\\"Ada\\\";\\nconsole.log(`Hello, ${name}!`);\",\"language\":\"javascript\",\"title\":\"greet.js\"},\"type\":\"code\"}]}"
+  },
+  "quoted-rows": {
+    "tool": "vak_render",
+    "args": "{\"surface\":\"invoice\",\"title\":\"Invoice Items\",\"nodes\":[{\"data\":{\"invoice_rows\":[{\"item\":\"Pens\",\"margin\":\"10%\",\"revenue\":\"$15\",\"units\":3},{\"item\":\"Notebooks\",\"margin\":\"20%\",\"revenue\":\"$30\",\"units\":2},{\"item\":\"Folders\",\"margin\":\"15%\",\"revenue\":\"$20\",\"units\":4}]},\"id\":\"root\",\"props\":{\"columns\":[{\"align\":\"start\",\"key\":\"item\",\"label\":\"Item\"},{\"align\":\"center\",\"key\":\"units\",\"label\":\"Units\"},{\"align\":\"end\",\"key\":\"revenue\",\"label\":\"Revenue\"},{\"align\":\"end\",\"key\":\"margin\",\"label\":\"Margin\"}],\"rows\":\"{\\\"/data/invoice_rows}\\\"\",\"searchable\":true,\"sortable\":true,\"totals\":true},\"type\":\"table\"}]}"
+  }
+}

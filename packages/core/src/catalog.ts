@@ -22,6 +22,8 @@ export interface ComponentDef {
    * as a bare number list). Runs after alias renaming and type coercion.
    */
   normalize?: (props: Record<string, unknown>) => Record<string, unknown>;
+  /** Schema-declared semantic variants; only used when the target validates. */
+  retype?: readonly { when: JSONSchema; type: string }[];
   /**
    * Values for props the model omitted that can be derived from the props it
    * did send (an input's label from its bind path). Only missing keys are used;
@@ -211,7 +213,9 @@ export function toolDefinitions(catalog: Catalog, opts: ToolOptions = {}): ToolD
     {
       name: TOOL_RENDER,
       description:
-        "Show rich UI to the user. Creates or replaces a surface. Nodes are a flat list, root first; parents list child ids.",
+        opts.authoring === "inline"
+          ? "Show rich UI. Creates or replaces a surface. Start with root; write child node objects directly in children. Arrays and objects are JSON values, never JSON-encoded strings."
+          : "Show rich UI to the user. Creates or replaces a surface. Nodes are a flat list, root first; parents list child ids.",
       inputSchema: {
         type: "object",
         properties: {
@@ -297,12 +301,10 @@ function describeType(s: JSONSchema): string {
   if (s.anyOf) return s.anyOf.map(describeType).join(" or ");
   const t = Array.isArray(s.type) ? s.type.join("|") : (s.type ?? "any");
   if (t === "array" && s.items) {
-    const item = s.items.properties
-      ? `{${Object.keys(s.items.properties).join(",")}}`
-      : describeType(s.items);
-    return `${item}[]`;
+    return `(${describeType(s.items)})[]`;
   }
-  return t;
+  if (t === "object" && s.properties) return `{${describeProps(s)}}`;
+  return s.literal ? `${t} (literal source, copy exactly; no ANSI, fences or extra escaping)` : t;
 }
 
 function describeProps(schema: JSONSchema): string {
@@ -348,6 +350,10 @@ export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts
     opts.authoring === "inline"
       ? "- nodes starts with the node with id \"root\". Write each child node directly inside its parent's \"children\" array, so every node is defined where it is used. A template node (see each/template below) is its own entry in nodes."
       : "- nodes is a FLAT list. Put the node with id \"root\" first. Parents reference children by id in \"children\".",
+    "- If the user names a listed component, use that exact type. Preserve all user-supplied items, labels, order and values exactly. Do not invent dates or rewrite supplied source code.",
+    "- Supplied captions and code are source material: copy verbatim, including punctuation and whitespace. Do not paraphrase, embellish or omit parts.",
+    "- Write arrays and objects directly as JSON, not strings containing JSON. A leaf component stores its items in props, never in children.",
+    "- Keep currency and percentage values as display strings, including their symbols. Do not turn a percentage into a plain number.",
     "- Put values in data and bind them: \"{/path}\" inside any string. A string that is only \"{/path}\" keeps the raw value.",
     "- Repeat a node per list item with children: {\"each\": \"/items\", \"template\": \"tplId\"}; inside the template use relative paths like \"{name}\"; for a list of plain values, \"{.}\" is the item.",
     "- Inputs use bind: \"/form/field\". A form's submit is an action name.",

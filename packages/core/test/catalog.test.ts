@@ -72,3 +72,18 @@ test("toInline nests every non-template child and renders the same surface as fl
     assert.deepEqual(b.snapshot(ex.render.surface), a.snapshot(ex.render.surface), ex.request);
   }
 });
+
+// The 4B component recordings put step states in children, omitted places,
+// double-escaped source and dropped table units. The compact tool path relies
+// on this prompt: nested field names alone hid the actual item contract.
+test("compact prompt exposes rich item contracts and literal source fidelity", () => {
+  const prompt = systemPrompt(basicCatalog, undefined, { authoring: "inline" });
+  const steps = prompt.split("\n").find((s) => s.startsWith("- steps:"))!;
+  assert.match(steps, /title\*: string/);
+  assert.match(steps, /status: done\|current\|todo\|skipped\|failed/);
+  assert.match(prompt, /Keep currency and percentage values as display strings/);
+  assert.match(prompt, /literal source, copy exactly; no ANSI, fences or extra escaping/);
+  assert.match(prompt, /Preserve all user-supplied items, labels, order and values exactly/);
+  assert.match(toolDefinitions(basicCatalog, { mode: "compact", authoring: "inline" })[0]!.description, /child node objects directly/);
+  assert.doesNotMatch(toolDefinitions(basicCatalog, { authoring: "inline" })[0]!.description, /flat list/);
+});

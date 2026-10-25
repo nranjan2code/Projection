@@ -22,6 +22,7 @@ import {
   TOOL_RENDER,
   TOOL_UPDATE,
   toolDefinitions,
+  toWireSchema,
   ToolCallStream,
   type VpsAction,
 } from "@vak/core";
@@ -109,6 +110,17 @@ export function resolveRun(opts: RunOptions): ResolvedRun {
 
 export function buildSystem(opts: RunOptions, run: ResolvedRun = resolveRun(opts)): string {
   const parts = [opts.instructions, systemPrompt(run.catalog, opts.profile, { examples: run.examples, authoring: run.authoring })].filter(Boolean);
+  // 4B rich-component runs substituted familiar layouts and lost fields even
+  // with the full catalog present. When the user explicitly requests a catalog
+  // component, put its actual contract last; no benchmark names or facts enter it.
+  const request = opts.messages.findLast((m) => m.role === "user" && !m.content.startsWith("[engine]"))?.content ?? "";
+  const requested = Object.entries(run.catalog.components).filter(([name]) => {
+    const token = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return new RegExp(`\\b${token}\\s+component\\b|\\bcomponent\\s+(?:named\\s+)?${token}\\b|\\b(?:a|an|the)\\s+(?:[\\w-]+\\s+){0,3}${token}\\b`, "i").test(request);
+  });
+  if (requested.length) {
+    parts.push("Requested components: use these exact types, with every supplied item and verbatim labels, captions and source. Do not replace them with other components.\n" + requested.map(([name, def]) => `type: ${name}. ${def.hint ?? ""} Props schema (supply values): ${JSON.stringify(toWireSchema(def.props))}`).join("\n"));
+  }
   return parts.join("\n\n");
 }
 

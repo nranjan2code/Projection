@@ -49,6 +49,13 @@ const POINTER = /^\/[A-Za-z0-9_~.\-]+(?:\/[A-Za-z0-9_~.\-]+)*$/;
  */
 function singleBraces(v: unknown, schema?: JSONSchema): unknown {
   if (schema?.literal) return v;
+  // 4B reliability invoice: rows was '{"/data/invoice_rows}"'. Quotes
+  // inside binding braces (including a quote after the closer) name a pointer,
+  // not a literal JSON row. Literal source props are deliberately excluded.
+  if (typeof v === "string") {
+    const quoted = /^\{\s*["']\s*(\/[A-Za-z0-9_~.\-/]+)\s*(?:["']\s*\}|\}\s*["'])\s*$/.exec(v);
+    if (quoted) return `{${quoted[1]}}`;
+  }
   if (typeof v === "string") return v.includes("{{") ? v.replace(/\{\{\s*(\/?[A-Za-z0-9_~.\-][A-Za-z0-9_~.\-/]*)\s*\}\}/g, "{$1}") : v;
   if (Array.isArray(v)) return v.map((x) => singleBraces(x, schema?.items));
   if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, singleBraces(x, schema?.properties?.[k] ?? Object.values(schema?.properties ?? {}).find((sub) => sub.aliases?.includes(k)))]));
@@ -177,7 +184,7 @@ export class Normalizer {
    * The declared `type` fails validation with the props sent. If another
    * component validates cleanly and explains the sent props better (declared
    * names weigh more than aliases), return the best one. Alias presets are not
-   * evidence. A valid declared type is never second-guessed.
+   * evidence. A valid declared type only yields to a catalog-declared semantic variant.
    */
   reinterpret(
     match: TypeMatch,
@@ -187,6 +194,8 @@ export class Normalizer {
     const skip = (v: unknown) => isBinding(v);
     const invalid = (t: string, presets?: Record<string, unknown>) =>
       validate(propsSchema(this.catalog, t)!, this.prepareProps(t, sentProps, ctx.id, presets), { skip }).length > 0;
+    const variant = this.semanticType(match.type, this.prepareProps(match.type, sentProps, ctx.id, match.presets), ctx);
+    if (variant) return variant;
     if (!invalid(match.type, match.presets)) return undefined;
     const common = new Set(Object.keys(this.catalog.common));
     const sent = Object.keys(sentProps).filter((k) => !common.has(k) && !isMetaKey(k));
@@ -200,6 +209,18 @@ export class Normalizer {
       if (!invalid(name)) best = { type: name, score };
     }
     return best ? { type: best.type } : undefined;
+  }
+
+  /** Catalog-declared meaning of a shape, also checked after data bindings resolve. */
+  semanticType(type: string, props: Record<string, unknown>, ctx: { id: string; hasChildren: boolean }): TypeMatch | undefined {
+    for (const rule of this.catalog.components[type]?.retype ?? []) {
+      const target = this.catalog.components[rule.type];
+      if (!target || rule.type === type || (ctx.hasChildren && !target.children)) continue;
+      if (validate(rule.when, props).length) continue;
+      const prepared = this.prepareProps(rule.type, props, ctx.id);
+      if (validate(propsSchema(this.catalog, rule.type)!, prepared, { skip: isBinding }).length === 0) return { type: rule.type };
+    }
+    return undefined;
   }
 
   /**

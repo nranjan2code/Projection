@@ -189,6 +189,21 @@ function applyAliases(schema: JSONSchema, obj: Record<string, unknown>, skip?: (
 export function coerce(schema: JSONSchema, value: unknown, skip?: (v: unknown) => boolean): unknown {
   if (skip?.(value)) return value;
   if (schema.anyOf) {
+    // A JSON-looking list value can also match a permissive binding-string
+    // branch. Prefer a fully validated record array (4B map: "{...},{...}").
+    // Do not force ambiguous strings into a different, lossy interpretation.
+    if (typeof value === "string" && /^\s*[[{]/.test(value)) {
+      for (const branch of schema.anyOf) {
+        if (branch.type !== "array" || !branch.items?.properties) continue;
+        try {
+          const parsed = parseLenient(value.trimStart().startsWith("{") ? `[${value}]` : value);
+          if (Array.isArray(parsed)) {
+            const repaired = coerce(branch, parsed, skip);
+            if (validate(branch, repaired).length === 0) return repaired;
+          }
+        } catch { /* ordinary coercion below handles incomplete structures */ }
+      }
+    }
     for (const b of schema.anyOf) if (validate(b, value).length === 0) return value;
     // Repair within a branch of the value's own type before converting across
     // types, so {key, align: "Right"} is fixed as an object, not flattened to "key".
@@ -232,6 +247,15 @@ export function coerce(schema: JSONSchema, value: unknown, skip?: (v: unknown) =
       return value === "true";
     } else if ((t === "object" || t === "array") && typeof value === "string" && /^\s*[[{]/.test(value)) {
       try {
+        // 4B map recording: places was "{...},{...}" without array
+        // brackets. Parse the whole sequence, not just its first object.
+        if (t === "array" && schema.items && value.trimStart().startsWith("{")) {
+          const sequence = parseLenient(`[${value}]`);
+          if (Array.isArray(sequence)) {
+            const repaired = coerce(schema, sequence, skip);
+            if (validate(schema, repaired).length === 0) return repaired;
+          }
+        }
         const parsed = parseLenient(value);
         if (matchesType(parsed, t)) return coerce(schema, parsed, skip);
       } catch {

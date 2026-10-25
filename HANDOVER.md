@@ -7,7 +7,7 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 ```
 Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection.
 
-First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 189 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
+First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 207 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
 
 Focus: the core system (engine, catalog, projectors: web, text, Markdown, terminal, email, Telegram, Slack, Discord) and the bench, plus the desktop app (apps/desktop, also served as the playground) and its integrations. Telegram live testing is parked: don't start the bot unless I ask. No Slack/Discord bots.
 
@@ -25,7 +25,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 - **Desktop FinOps:** Settings → FinOps now has duration, context composition, repeated context, output shape, token/cache and estimated-cost charts, per-turn details, a chat filter, editable model rates and CSV export. This is app-only (`apps/desktop`); keep accounting and prices out of the projection framework. Provider requests are observed by an app wrapper; telemetry is numeric and local. Old sessions are reconstructed with unknown usage/spend. See [apps/desktop/FINOPS.md](apps/desktop/FINOPS.md). Verified against a copy of the installed app's 22 turns (555s); WebKit rendered six charts with no horizontal overflow and turn selection worked. Five accounting tests include an authenticated HTTP chat against a local fake provider (no paid model call). Full suite: 194 passing, typecheck and UI build clean. The installed release needs a new build to include this feature.
 
-- **Tests:** 194 passing, typecheck clean, including five desktop FinOps tests. Latest framework round: component benchmark coverage and literal code bindings.
+- **Tests:** 207 passing, typecheck clean, including five desktop FinOps tests. Latest framework round: rich-component contracts, list/step recovery and quoted table bindings.
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios), re-recorded 2026-10-25 after the bench-category fixes:
 
   | | Now | Previous | Old flat baseline |
@@ -41,6 +41,16 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 - **The app is installed** at `/Applications/vak.app` (data in `~/Library/Application Support/com.vakprojection.desktop`). **The playground may be running** (started from the session; stop it if not needed). The Telegram bot is stopped. One button press (Save Details on the booking confirmation) is saved in the chat's inbox and replays the next time the bot starts. The old long chat is archived in `.vak/telegram/archive/`.
 
 ## Done in this stretch
+
+- **Rich-component reliability fixes (2026-10-25, current round):**
+  - Fixed general engine causes from real calls: JSON object sequences in list props retain every validated record; leaf child records become the one matching required object-list prop; quoted pointers such as `{"/data/invoice_rows}"` bind normally, with literal source excluded.
+  - Catalog `retype` predicates identify validated semantic variants: a timeline carrying process states becomes steps, including when its items come from a data binding. No states or item labels are inferred from prose; the original fields are retained.
+  - The compact prompt now exposes nested item schemas, required fields and enums. Render tool instructions agree with inline authoring. Source/caption/units/order fidelity is explicit. When the request names an available catalog component, its exact contract is repeated after the examples. This is driven by the catalog and request, not by benchmark scenario names.
+  - Latest slice: `components-contract`, 2 runs × 6 scenarios on free local 4B, same checks as v3: **11/12 fully passing live (92%), 94% mean check score**, median 4.2s. The remaining output had correct rows and formats but a malformed quoted pointer; after its engine fix **12/12 replay fully**. This replay result is distinct from the recorded live baseline. The original starting slice was 2/6 live, 66% check score; sample sizes remain small.
+  - Four 12-run component iterations are retained (including failures) under `components-reliability`, `components-reliability-final`, `components-reliability-verified`, `components-contract`. Intermediate baselines measure their own prompt revisions; `components-contract` is the latest. Earlier recordings remain protected, with only improvements locked via replay updates.
+  - Broader core smoke (`reliability-core-smoke`, four scenarios, one run each): 2/4 fully passing, 91% mean check score. Dashboard and newsletter passed. Recipe rendered both lists but omitted an Ingredients heading; pizza submitted a valid form but its follow-up made no projection call, leaving the view unchanged. These content/interaction misses are retained as follow-up work, not hidden by the component result.
+  - Fresh fixtures and tests cover the raw map sequence, step children, state-bearing timeline, exact code, formatted totals and malformed quoted pointer, plus guards for genuine timelines, missing target capabilities, explicit items, nested subtrees, bound process data and literal source.
+  - Re-record with the component-only command below, changing `--slice components-v3` to `--slice components-contract` and `--runs 1` to `--runs 2`. No paid model runs; Telegram stayed stopped. Verification: 207 tests pass, typecheck clean, zero replay regressions.
 
 - **Component benchmark coverage (2026-10-25):**
   - Bench v3 adds six supplied-data scenarios (36 total): `release-timeline`, `delivery-steps`, `javascript-snippet`, `london-places`, `photo-gallery`, `invoice-totals`. They inspect actual resolved component payloads, not just mentions in prose. Totals checks separately protect 9 units, 65 revenue, currency formatting and an unsummed percentage column.
@@ -163,11 +173,12 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 ## Next (in order)
 
 1. **Ask the user to retry Appearance in the installed app**; if it still fails, read `~/Library/Application Support/com.vakprojection.desktop/logs/engine.log` (`[ui error]` lines).
-2. **Bench A/B for compact output** (4B): the interface JSON is ~1.3k tokens per answer; a shorter authoring (data-first rows, fewer repeated props) could halve decode time. Measure with `npm run bench -- gate ... --plan`, never change blindly.
-3. **Before publishing:** confirm whether the `@vak` npm scope is available. The user chose MIT licensing and no external contributions; see `LICENSE` and `CONTRIBUTING.md`.
-4. **Integrations, next:** OAuth for remote servers (Linear, Notion remote), an update check against newer pinned versions, macOS sandbox profiles for local servers.
-5. **Parked until the user asks: Telegram live** (start the bot; the saved Save Details press replays).
-6. **Optional, ask first:** code signing/notarization and auto-update; Windows/Linux builds; near-miss id pairing.
+2. **Core-smoke follow-up:** inspect the saved recipe missing its Ingredients heading and pizza action with no changed view (`reliability-core-smoke`), then choose general contract/engine fixes.
+3. **Bench A/B for compact output** (4B): the interface JSON is ~1.3k tokens per answer; a shorter authoring (data-first rows, fewer repeated props) could halve decode time. Measure with `npm run bench -- gate ... --plan`, never change blindly.
+4. **Before publishing:** confirm whether the `@vak` npm scope is available. The user chose MIT licensing and no external contributions; see `LICENSE` and `CONTRIBUTING.md`.
+5. **Integrations, next:** OAuth for remote servers (Linear, Notion remote), an update check against newer pinned versions, macOS sandbox profiles for local servers.
+6. **Parked until the user asks: Telegram live** (start the bot; the saved Save Details press replays).
+7. **Optional, ask first:** code signing/notarization and auto-update; Windows/Linux builds; near-miss id pairing.
 
 ## Useful paths
 

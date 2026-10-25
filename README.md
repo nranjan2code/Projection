@@ -158,7 +158,7 @@ npm run bench -- run ollama:qwen3.5:4b-mlx --runs 1 --plan tools/extended/exampl
 npm run bench -- gate ollama:qwen3.5:4b-mlx --runs 1 --plan tools/extended/examples/inline
 ```
 
-The saved v3 component baseline is the `components-v3` slice (2/6 completely passing, 66% mean check score in its final run). Earlier v2 full-suite and form baselines remain historical; re-record a baseline before comparing live v3 runs. `npm test` continues to replay both versions. See [HANDOVER.md](HANDOVER.md) for the component-only recording command and the known failures.
+The latest v3 component baseline is `components-contract`: 11/12 live runs completely passing, 94% mean check score. The final failure exposed a quoted-pointer issue; after that engine fix all 12 recorded outputs replay completely. The original `components-v3` slice (2/6 completely passing) and intermediate recordings remain available. Earlier v2 full-suite and form baselines remain historical; re-record a baseline before comparing live v3 runs. `npm test` continues to replay both versions. See [HANDOVER.md](HANDOVER.md) for the component-only recording command and the known failures.
 
 Hosted benchmark runs and optional semantic judges may incur charges. See [AGENTS.md](AGENTS.md) for the maintenance workflow and [HANDOVER.md](HANDOVER.md) for current measurements and known gaps.
 

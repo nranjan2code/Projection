@@ -179,3 +179,109 @@ test("javascript-snippet (component bench): code braces are literal and whole-va
   assert.equal(children[0]!.props.code, '{{name}} ${name} {name} \\{name}');
   assert.equal(children[1]!.props.code, expected);
 });
+
+const componentCalls = JSON.parse(readFileSync(new URL("./fixtures/bench-components-4b-2026-10-25.json", import.meta.url), "utf8")) as Record<string, { tool: string; args: string }>;
+
+test("map (component bench): JSON object sequences retain every place", () => {
+  const store = new SurfaceStore(basicCatalog);
+  const call = componentCalls["map-sequence"]!;
+  const args = parseLenient(call.args) as Record<string, unknown>;
+  assert.deepEqual(store.apply(call.tool, args).filter((d) => d.severity === "error"), []);
+  assert.deepEqual(store.resolve(String(args.surface))!.root!.props.places, [
+    { name: "British Museum", address: "Great Russell Street, London" },
+    { name: "Tate Modern", address: "Bankside, London" },
+  ]);
+  // A single encoded object is a one-item list, not a fake binding. A real
+  // binding remains a binding and resolves normally.
+  for (const places of ['{"name":"Single place","address":"Side Street"}', '{/places}']) {
+    store.render({ surface: "single", nodes: [{ id: "root", type: "map", props: { places } }], data: { places: [{ name: "Single place", address: "Side Street" }] } });
+    assert.deepEqual(store.resolve("single")!.root!.props.places, [{ name: "Single place", address: "Side Street" }]);
+  }
+});
+
+test("steps (component bench): leaf item records in children become its declared array prop", () => {
+  const store = new SurfaceStore(basicCatalog);
+  const call = componentCalls["step-children"]!;
+  // The first node of the real call has the complete, unambiguous records.
+  // Later copies in that same call are distinct output errors, not permission
+  // to invent fields or rename the user's labels during recovery.
+  const args = parseLenient(call.args) as Record<string, unknown>;
+  args.nodes = [(args.nodes as unknown[])[0]];
+  assert.deepEqual(store.apply(call.tool, args).filter((d) => d.severity === "error"), []);
+  const root = store.resolve(String(args.surface))!.root!;
+  assert.equal(root.type, "steps");
+  assert.deepEqual(root.props.items, [
+    { status: "done", title: "Payment made" },
+    { description: "Your item is being carefully packed", status: "current", title: "Packing order" },
+    { description: "Ready to ship", status: "todo", title: "Shipping dispatched" },
+  ]);
+  assert.deepEqual(root.children, []);
+});
+
+test("leaf child recovery keeps explicit items and never swallows a nested subtree", () => {
+  const store = new SurfaceStore(basicCatalog);
+  store.render({ surface: "explicit", nodes: [{ id: "root", type: "steps", props: { items: [{ title: "Keep", status: "done" }] }, children: [{ title: "Other", status: "todo" }] }] } as never);
+  assert.match(projectText(store.resolve("explicit")!), /Keep/);
+  store.render({ surface: "nested", nodes: [{ id: "root", type: "steps", children: [{ id: "section", type: "section", props: { title: "Parent" }, children: [{ id: "text", type: "text", props: { content: "Do not lose this" } }] }] }] } as never);
+  assert.match(projectText(store.resolve("nested")!), /Do not lose this/);
+});
+
+// Both live 4B runs chose timeline despite supplying all three process
+// states. Catalog-declared semantic variants preserve those states as steps.
+test("state-bearing timeline (4B reliability run) becomes steps without losing fields", () => {
+  const store = new SurfaceStore(basicCatalog);
+  const call = componentCalls["state-timeline"]!;
+  const args = parseLenient(call.args) as Record<string, unknown>;
+  assert.deepEqual(store.apply(call.tool, args).filter((d) => d.severity === "error"), []);
+  const step = store.resolve(String(args.surface))!.root!.children[0]!;
+  assert.equal(step.type, "steps");
+  assert.deepEqual(step.props.items, [
+    { date: "2024-01-15", description: "Payment processed successfully", status: "done", title: "Payment" },
+    { date: "2024-01-16", description: "Item packed and quality checked", status: "current", title: "Packing" },
+    { date: "2024-01-18", description: "Ready for departure", status: "todo", title: "Shipping" },
+  ]);
+  store.render({ surface: "bound-process", nodes: [{ id: "root", type: "timeline", props: { items: "{/process}" } }], data: { process: [{ title: "Review", status: "active" }] } });
+  assert.equal(store.resolve("bound-process")!.root!.type, "steps");
+  assert.deepEqual(store.resolve("bound-process")!.root!.props.items, [{ title: "Review", status: "current" }]);
+  // A genuine history has dates and titles, but no process states to recover.
+  store.render({ surface: "history", nodes: [{ id: "root", type: "timeline", props: { items: [{ date: "2025", title: "Founded" }] } }] });
+  assert.equal(store.resolve("history")!.root!.type, "timeline");
+  // Never retarget to a component removed by a target's capability profile.
+  const { steps: _steps, ...components } = basicCatalog.components;
+  const limited = new SurfaceStore({ ...basicCatalog, components });
+  limited.apply(call.tool, args);
+  assert.equal(limited.resolve(String(args.surface))!.root!.children[0]!.type, "timeline");
+});
+
+test("formatted totals and literal source from the live reliability run survive projection", () => {
+  const store = new SurfaceStore(basicCatalog);
+  for (const name of ["formatted-totals", "literal-code"]) {
+    const call = componentCalls[name]!;
+    const args = parseLenient(call.args) as Record<string, unknown>;
+    assert.deepEqual(store.apply(call.tool, args).filter((d) => d.severity === "error"), []);
+    const root = store.resolve(String(args.surface))!.root!;
+    if (name === "formatted-totals") {
+      const rows = root.props.rows as Record<string, unknown>[];
+      assert.deepEqual(rows.at(-1), { item: "Total", units: 9, revenue: "$65" });
+      assert.deepEqual(rows.slice(0, -1).map((r) => r.margin), ["10%", "20%", "15%"]);
+    } else {
+      assert.equal(String(root.props.code).trimEnd(), 'const name = "Ada";\nconsole.log(`Hello, ${name}!`);');
+    }
+  }
+});
+
+// The last failing contract run supplied correct display strings and totals,
+// but quoted its binding across the closing brace: {"/data/invoice_rows}".
+test("quoted table pointer (4B contract run) binds rows and computes formatted totals", () => {
+  const store = new SurfaceStore(basicCatalog);
+  const call = componentCalls["quoted-rows"]!;
+  const args = parseLenient(call.args) as Record<string, unknown>;
+  assert.deepEqual(store.apply(call.tool, args).filter((d) => d.severity === "error"), []);
+  assert.deepEqual((store.resolve(String(args.surface))!.root!.props.rows as unknown[]).at(-1), { item: "Total", units: 9, revenue: "$65" });
+  // Matching quotes inside the braces are the same mistake; source code is
+  // literal, so a snippet that happens to show that syntax stays unchanged.
+  store.render({ surface: "quoted", nodes: [{ id: "root", type: "stack", children: ["list", "code"] }, { id: "list", type: "list", props: { items: '{"/items"}' } }, { id: "code", type: "code", props: { code: '{"/items"}' } }], data: { items: ["a", "b"] } });
+  const children = store.resolve("quoted")!.root!.children;
+  assert.deepEqual(children[0]!.props.items, ["a", "b"]);
+  assert.equal(children[1]!.props.code, '{"/items"}');
+});

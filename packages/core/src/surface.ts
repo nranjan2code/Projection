@@ -597,6 +597,32 @@ export class SurfaceStore {
         rawChildren = undefined;
       }
     }
+    // 4B component bench put step records (sometimes section-wrapped props)
+    // in children. A leaf with one unambiguous required object-list prop can
+    // own those records; validate every item and never invent or drop fields.
+    if (match && !this.normalizer.canHoldChildren(match.type) && Array.isArray(rawChildren) && rawChildren.length) {
+      const schema = propsSchema(this.catalog, match.type)!;
+      const sentItems = rawChildren;
+      const candidates = (schema.required ?? []).flatMap((name) => {
+        const sub = schema.properties?.[name];
+        if (!sub || [name, ...(sub.aliases ?? [])].some((k) => props[k] !== undefined)) return [];
+        const array = sub.type === "array" ? sub : sub.anyOf?.find((b) => b.type === "array");
+        if (!array?.items?.properties) return [];
+        const items = sentItems.map((child) => {
+          if (!isObject(child) || (Array.isArray(child.children) && child.children.length) || (child.children && !Array.isArray(child.children))) return undefined;
+          const fields = { ...propsOf(child) };
+          for (const [k, v] of Object.entries(child)) if (!NODE_KEYS.has(k)) fields[k] = v;
+          return Object.keys(fields).length ? coerce(array.items!, fields) : undefined;
+        });
+        return validate(array, items).length ? [] : [{ name, items }];
+      });
+      if (candidates.length === 1) {
+        const { name, items } = candidates[0]!;
+        props[name] = items;
+        rawChildren = undefined;
+        diags.push({ severity: "warning", surface, node: givenId, message: `item records in children read as props.${name}` });
+      }
+    }
     this.takeNodeData(props, match?.type);
     const id = givenId ?? this.nextId(match?.type ?? "node");
     if (existing) diags.push({ severity: "warning", surface, node: id, message: "duplicate id; later node replaced earlier one" });
@@ -626,7 +652,7 @@ export class SurfaceStore {
     delete props.data;
   }
 
-  /** A declared type that its props contradict yields to the type they describe (see Normalizer.reinterpret). */
+  /** Props can contradict the declared type or select a catalog-declared semantic variant. */
   private checkDeclared(
     match: TypeMatch,
     rawType: unknown,
@@ -638,7 +664,7 @@ export class SurfaceStore {
   ): TypeMatch {
     const better = this.normalizer.reinterpret(match, props, { id, hasChildren });
     if (!better) return match;
-    diags.push({ severity: "warning", surface, node: id, message: `type "${String(rawType)}" does not fit its props; they describe "${better.type}", used that` });
+    diags.push({ severity: "warning", surface, node: id, message: `props on type "${String(rawType)}" describe "${better.type}", used that` });
     return better;
   }
 
@@ -861,13 +887,16 @@ export class SurfaceStore {
     const node = state.nodes.get(id);
     if (!node) return { key, id, type: "$pending", props: {}, children: [] };
     if (path.has(id)) return { key, id, type: "$invalid", props: {}, children: [], error: "cycle" };
-    const resolved = textProps(propsSchema(this.catalog, node.type), resolveValue(node.props ?? {}, scope, propsSchema(this.catalog, node.type)) as Record<string, unknown>);
-    const finalize = this.catalog.components[node.type]?.finalize;
+    let resolved = textProps(propsSchema(this.catalog, node.type), resolveValue(node.props ?? {}, scope, propsSchema(this.catalog, node.type)) as Record<string, unknown>);
+    const variant = this.normalizer.semanticType(node.type, resolved, { id, hasChildren: node.children !== undefined });
+    const type = variant?.type ?? node.type;
+    if (variant) resolved = this.normalizer.prepareProps(type, resolved, id);
+    const finalize = this.catalog.components[type]?.finalize;
     const props = finalize ? finalize(resolved) : resolved;
 
     if ("visibleIf" in props && !props.visibleIf) return null;
 
-    const out: ResolvedNode = { key, id, type: node.type, props, children: [] };
+    const out: ResolvedNode = { key, id, type, props, children: [] };
     if (typeof props.$error === "string") out.error = props.$error;
     const rawBind = node.props?.bind;
     if (typeof rawBind === "string" && rawBind) {

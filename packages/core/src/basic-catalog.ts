@@ -294,7 +294,7 @@ export const basicCatalog = defineCatalog(
         },
         ["columns", "rows"],
       ),
-      hint: "totals: true adds a computed totals row (never write a total yourself); users can sort and filter on their own",
+      hint: "rows is an array of objects keyed by columns; retain currency and percent symbols in string cells; when totals are requested set props.totals: true (the engine computes the total)",
       finalize: finalizeTable,
       aliases: ["datatable", "grid_table", "spreadsheet", "datagrid"],
     },
@@ -367,7 +367,10 @@ export const basicCatalog = defineCatalog(
     timeline: {
       tier: "extended",
       description: "Events in time order.",
-      hint: "for histories, itineraries by time and changelogs",
+      hint: "for histories, itineraries by time and changelogs; process states belong in steps",
+      // 4B component runs repeatedly emitted timeline items with done/current/
+      // todo states. Those states are meaningful steps, not dates to discard.
+      retype: [{ type: "steps", when: props({ items: { type: "array", minItems: 1, items: props({ status: str() }, ["status"]) } }, ["items"]) }],
       props: props(
         {
           items: listOr(
@@ -383,7 +386,7 @@ export const basicCatalog = defineCatalog(
     steps: {
       tier: "extended",
       description: "Steps of a process with their state.",
-      hint: "status: done, current or todo for each step",
+      hint: "use steps for process state, timeline for dates; props.items is an array of {title, status}; keep every supplied step and its state in order",
       props: props(
         {
           items: listOr(
@@ -399,6 +402,7 @@ export const basicCatalog = defineCatalog(
     code: {
       tier: "extended",
       description: "A block of code or terminal commands, with copy.",
+      hint: "copy supplied source verbatim, including punctuation; backticks, dollar signs and braces need no JSON escaping; do not add ANSI or markdown fences",
       // The 4B component bench emitted JS `${name}` and retried on an
       // unbound-placeholder error. Code braces are source, not UI bindings.
       props: props({ code: str({ literal: true, description: "literal source code; braces are preserved", aliases: ["content", "text", "source", "value", "snippet"] }), language: str({ aliases: ["lang", "syntax"] }), title: str({ aliases: ["filename", "file", "label", "caption"] }) }, ["code"]),
@@ -407,7 +411,7 @@ export const basicCatalog = defineCatalog(
     map: {
       tier: "extended",
       description: "Places with addresses; each opens in a map.",
-      hint: "places with name and address (lat/lon when known)",
+      hint: "props.places is an array of {name, address}; include every supplied place in order; lat/lon only when known",
       props: props(
         {
           places: listOr(
@@ -423,6 +427,7 @@ export const basicCatalog = defineCatalog(
     gallery: {
       tier: "extended",
       description: "A grid of images with captions.",
+      hint: "put every image in props.images; copy supplied captions verbatim into alt, without embellishment",
       props: props(
         { images: listOr({ type: "array", items: props({ src: str({ aliases: ["url", "image", "href"] }), alt: str({ aliases: ["caption", "title", "description"] }) }, ["src"]) }, { aliases: ["photos", "pictures", "items"] }) },
         ["images"],

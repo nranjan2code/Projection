@@ -1,0 +1,116 @@
+{
+  "benchVersion": 3,
+  "slice": "components-reliability-verified",
+  "planned": 12,
+  "finished": 12,
+  "provider": "ollama",
+  "model": "qwen3.5:4b-mlx",
+  "fingerprint": "61aa3858e9d3022e8fca725550089addd9289c4446f33bd09dfd12f95f2a6792",
+  "config": {
+    "generation": "tools",
+    "tier": "extended",
+    "examples": true,
+    "authoring": "inline"
+  },
+  "commit": "4392762-dirty",
+  "at": "2026-10-25T15:45:14.362Z",
+  "summary": {
+    "runs": 12,
+    "complete": {
+      "value": 0.6666666666666666,
+      "lo": 0.3906220869404939,
+      "hi": 0.86187990987514,
+      "n": 12
+    },
+    "score": {
+      "value": 0.7939814814814814,
+      "lo": 0.5902222486831518,
+      "hi": 0.997740714279811,
+      "n": 12
+    },
+    "byCategory": {
+      "information": {
+        "runs": 6,
+        "complete": {
+          "value": 0.8333333333333334,
+          "lo": 0.4364971749742326,
+          "hi": 0.969946630588185,
+          "n": 6
+        },
+        "score": {
+          "value": 0.8888888888888888,
+          "lo": 0.671115111111111,
+          "hi": 1,
+          "n": 6
+        }
+      },
+      "planning": {
+        "runs": 4,
+        "complete": {
+          "value": 0.75,
+          "lo": 0.3006418400969081,
+          "hi": 0.954412739704631,
+          "n": 4
+        },
+        "score": {
+          "value": 0.7777777777777778,
+          "lo": 0.3422302222222222,
+          "hi": 1,
+          "n": 4
+        }
+      },
+      "dashboard": {
+        "runs": 2,
+        "complete": {
+          "value": 0,
+          "lo": 0,
+          "hi": 0.6576197760453506,
+          "n": 2
+        },
+        "score": {
+          "value": 0.5416666666666666,
+          "lo": 0,
+          "hi": 1,
+          "n": 2
+        }
+      }
+    },
+    "byScenario": {
+      "release-timeline": {
+        "runs": 2,
+        "complete": 2,
+        "score": 1
+      },
+      "delivery-steps": {
+        "runs": 2,
+        "complete": 1,
+        "score": 0.5555555555555556
+      },
+      "javascript-snippet": {
+        "runs": 2,
+        "complete": 2,
+        "score": 1
+      },
+      "london-places": {
+        "runs": 2,
+        "complete": 2,
+        "score": 1
+      },
+      "photo-gallery": {
+        "runs": 2,
+        "complete": 1,
+        "score": 0.6666666666666666
+      },
+      "invoice-totals": {
+        "runs": 2,
+        "complete": 0,
+        "score": 0.5416666666666666
+      }
+    },
+    "medianMs": 4924,
+    "usage": {
+      "input": 47048,
+      "output": 2250
+    }
+  }
+}

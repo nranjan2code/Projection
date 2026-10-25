@@ -1,0 +1,116 @@
+{
+  "benchVersion": 3,
+  "slice": "components-contract",
+  "planned": 12,
+  "finished": 12,
+  "provider": "ollama",
+  "model": "qwen3.5:4b-mlx",
+  "fingerprint": "61aa3858e9d3022e8fca725550089addd9289c4446f33bd09dfd12f95f2a6792",
+  "config": {
+    "generation": "tools",
+    "tier": "extended",
+    "examples": true,
+    "authoring": "inline"
+  },
+  "commit": "4392762-dirty",
+  "at": "2026-10-25T15:47:35.846Z",
+  "summary": {
+    "runs": 12,
+    "complete": {
+      "value": 0.9166666666666666,
+      "lo": 0.6461200862787544,
+      "hi": 0.9851349057603305,
+      "n": 12
+    },
+    "score": {
+      "value": 0.9375,
+      "lo": 0.81500225,
+      "hi": 1,
+      "n": 12
+    },
+    "byCategory": {
+      "information": {
+        "runs": 6,
+        "complete": {
+          "value": 1,
+          "lo": 0.6096657083436265,
+          "hi": 1,
+          "n": 6
+        },
+        "score": {
+          "value": 1,
+          "lo": 1,
+          "hi": 1,
+          "n": 6
+        }
+      },
+      "planning": {
+        "runs": 4,
+        "complete": {
+          "value": 1,
+          "lo": 0.5101091596030786,
+          "hi": 0.9999999999999999,
+          "n": 4
+        },
+        "score": {
+          "value": 1,
+          "lo": 1,
+          "hi": 1,
+          "n": 4
+        }
+      },
+      "dashboard": {
+        "runs": 2,
+        "complete": {
+          "value": 0.5,
+          "lo": 0.09453120463920084,
+          "hi": 0.9054687953607992,
+          "n": 2
+        },
+        "score": {
+          "value": 0.625,
+          "lo": 0,
+          "hi": 1,
+          "n": 2
+        }
+      }
+    },
+    "byScenario": {
+      "release-timeline": {
+        "runs": 2,
+        "complete": 2,
+        "score": 1
+      },
+      "delivery-steps": {
+        "runs": 2,
+        "complete": 2,
+        "score": 1
+      },
+      "javascript-snippet": {
+        "runs": 2,
+        "complete": 2,
+        "score": 1
+      },
+      "london-places": {
+        "runs": 2,
+        "complete": 2,
+        "score": 1
+      },
+      "photo-gallery": {
+        "runs": 2,
+        "complete": 2,
+        "score": 1
+      },
+      "invoice-totals": {
+        "runs": 2,
+        "complete": 1,
+        "score": 0.625
+      }
+    },
+    "medianMs": 4186,
+    "usage": {
+      "input": 48853,
+      "output": 1843
+    }
+  }
+}

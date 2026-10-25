@@ -31,6 +31,7 @@ In MCP there is also `vak_wait_action`.
 - `aliases`, `enumAliases`, `default`, `format: "markdown"`, `pattern`
 - `literal` on a prop preserves embedded source braces through normalization, lint and resolution; a whole-value binding still loads source from data (used by `code.code`)
 - `namesComponent` on a prop: a value outside its enum that names another component retypes the node (input `kind: "date"` → `date`)
+- component-level `retype` rules use schema predicates to select a validated semantic variant (state-bearing timeline items become steps, including after data bindings resolve)
 - component-level `normalize`, `defaults`, `finalize` (e.g. the chart's `normalize` reads bare number lists as a series and drops a series with no numbers beside real ones)
 - `role` (`form`/`action`) and `tier` (`core`/`extended`)
 - worked `examples`, which must render with zero diagnostics
@@ -58,8 +59,9 @@ In MCP there is also `vak_wait_action`.
    - An unknown argument holding node-shaped objects (`"chart": "{...}, {...}]"`), or a second node-list key (`"children": [...]` after `"nodes"`), joins the nodes list; an unknown argument's name types a node that has none.
 3. **Normalizer** (`normalize.ts`).
    - Type resolution: name → alias → schema-scored inference. A `namesComponent` prop whose value names another component (by name or alias, with its presets) makes the node that component when the result validates; the prop is dropped.
-   - Node keys: `prop`, `properties`, `attributes`, `attrs` mean `props`. `null` props are omitted. A typeless `{"data": {...}}` in a nodes list is surface data, and so is an id-less, typeless object whose keys describe no component (a form's starting values written as a child). A leaf component whose only child is a bare `{props}` object owns those props.
-   - Prop preparation: `{{path}}` → `{path}`, presets, bare pointers (`"/items"`) where a string isn't valid, at any depth, become `{/items}`, coercion, defaults, HTML → markdown, double-escaped `\n` repair.
+   - Node keys: `prop`, `properties`, `attributes`, `attrs` mean `props`. `null` props are omitted. A typeless `{"data": {...}}` in a nodes list is surface data, and so is an id-less, typeless object whose keys describe no component (a form's starting values written as a child). A leaf component whose only child is a bare `{props}` object owns those props. Child records can fill a single matching required record-array prop when every record validates; explicit props and nested subtrees are retained.
+   - Prop preparation: quoted pointers such as `{"/data/rows}"` → `{/data/rows}` (literal source excluded), `{{path}}` → `{path}`, presets, bare pointers (`"/items"`) where a string isn't valid, at any depth, become `{/items}`, coercion, defaults, HTML → markdown, double-escaped `\n` repair.
+   - Coercion reads a JSON-encoded sequence `{...},{...}` as a record array when every item validates, preserving every record; ambiguous strings retain the existing reading.
    - An inline node reusing an id already written in the same call gets its own id (`actions_2`) instead of replacing the first.
    - Structure repair:
      - prose children become text
@@ -90,7 +92,7 @@ In MCP there is also `vak_wait_action`.
   - `tools`: the projection tools.
   - `constrained`: grammar-decoded `{reply, render}`.
 
-  A clean projection ends the turn.
+  A clean projection ends the turn. Compact prompts include nested field schemas and enums. Explicitly requested catalog components have their exact props contract repeated after the examples, using only types available to the model; source, captions, units and ordering must be preserved.
 - **History window** (`history: N`): the model sees the last N turns (a turn starts at a typed message or a `[ui action]`, so a tool call never loses its result). The window's first message carries a note with each surface still shown: id, title, text view and data. The full history stays saved. Default: everything (bench and replay gate unchanged).
 - **Plan** (`policy.ts`) is `{ generation, tier, examples, authoring, maxSteps }`, each choice with a reason.
   - Declared facts set the default; for tool calling that's `authoring: "inline"`.
@@ -178,4 +180,4 @@ A separate product built on the framework (AGENTS.md rule 1 exception): Tauri 2 
 - Baselines and cassettes live in `packages/bench/data/`.
 - The replay gate (part of `npm test`) re-scores recorded outputs through the current engine and fails on any drop.
 - Current version: `BENCH_VERSION = 3` (six additive scenarios: timeline, steps, code, map, gallery and table totals). Property checks inspect resolved payloads, alongside the text the user sees; totals arithmetic, currency retention and percentage exclusion are separate checks.
-- The component slice uses `tools/extended/examples/inline` to expose all five new components to the 4B model. Current saved baseline: `components-v3`; earlier recordings are also retained. The replay gate still protects the unchanged v2 scenarios; v2 live baselines remain historical and need re-recording before a v3 live comparison.
+- The component slice uses `tools/extended/examples/inline` to expose all five new components to the 4B model. Latest reliability baseline: `components-contract` (11/12 live runs fully passing, 94% mean check score; all 12 replay fully after fixing the final quoted-pointer failure). The initial `components-v3` baseline and all intermediate recordings are retained. The replay gate still protects the unchanged v2 scenarios; v2 live baselines remain historical and need re-recording before a v3 live comparison.

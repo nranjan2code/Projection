@@ -338,3 +338,27 @@ test("lab presets: a key makes the provider available; local servers need none; 
   assert.ok(on.find((e) => e.id === "groq")!.available);
   assert.equal(new Set(PROVIDER_SETTINGS.map((s) => s.name)).size, PROVIDER_SETTINGS.length);
 });
+
+// Rich component runs ignored requested types when all catalog contracts were
+// equally distant in the system prompt. Focus only explicit requests using the
+// available catalog, and never treat tool results/engine feedback as requests.
+test("explicit component requests focus their catalog contract after the examples", async () => {
+  const { buildSystem } = await import("../src/agent.ts");
+  const provider: Provider = { id: "stub", async *stream() {} };
+  const options = {
+    provider, model: "m", store: new SurfaceStore(basicCatalog), emit: () => {},
+    plan: { generation: "tools" as const, tier: "extended" as const, examples: true, authoring: "inline" as const, maxSteps: 3, reasons: [] },
+    messages: [{ role: "user" as const, content: "Use the steps component to show the process" }, { role: "user" as const, content: "[engine] table component had an error" }],
+  };
+  const focused = buildSystem(options).split("Requested components:")[1]!;
+  assert.match(focused, /type: steps/);
+  assert.match(focused, /"status"/);
+  assert.doesNotMatch(focused, /type: table/);
+  const table = buildSystem({ ...options, messages: [{ role: "user", content: "Show an expense table with totals" }] }).split("Requested components:")[1]!;
+  assert.match(table, /type: table/);
+  assert.match(table, /props.totals: true/);
+  const core = buildSystem({ ...options, plan: { ...options.plan, tier: "core" }, messages: [{ role: "user", content: "Use the steps component" }] });
+  assert.doesNotMatch(core, /Requested components:/);
+  const plain = buildSystem({ ...options, messages: [{ role: "user", content: "Hello" }] });
+  assert.doesNotMatch(plain, /Requested components:/);
+});
