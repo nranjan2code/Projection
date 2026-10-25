@@ -418,10 +418,29 @@ export class SurfaceStore {
     state.nodes = nodes;
     return [
       ...repairs.map((r) => ({ severity: "warning" as const, surface: state.id, node: r.node, message: r.message })),
+      ...this.dropSelfTemplates(state),
       ...this.fillMissingTemplates(state),
       ...this.bindInputNames(state),
       ...this.dropEmptyContainers(state),
     ];
+  }
+
+  /**
+   * A template whose children repeat itself: `{"id":"tpl","type":"card",
+   * "children":[{"each":"/hotels","template":"tpl"}]}` (4B, Vakyartha Kyoto
+   * hotels) copied the grid's list spec into the item layout. It can only
+   * render as a cycle (three "invalid: cycle" boxes in every card), and no
+   * error told the model; the item's own props are the layout it meant.
+   */
+  private dropSelfTemplates(state: SurfaceState): Diagnostic[] {
+    const diags: Diagnostic[] = [];
+    for (const node of state.nodes.values()) {
+      const ch = node.children;
+      if (!ch || Array.isArray(ch) || ch.template !== node.id) continue;
+      delete node.children;
+      diags.push({ severity: "warning", surface: state.id, node: node.id, message: `children repeated ${ch.each} with this node as its own template; removed (a template lays out one item)` });
+    }
+    return diags;
   }
 
   /**
@@ -661,6 +680,22 @@ export class SurfaceStore {
       return undefined;
     }
     let match = this.normalizer.resolveType(rawType);
+    // `{"id":"hotels","type":"data","value":[...]}` (4B, Vakyartha Kyoto
+    // hotels): the data a list's `each: "/hotels"` reads, written as a node
+    // named after its path. Reported as an unknown component, the data never
+    // reached the model and the grid was empty.
+    if (!match && typeof rawType === "string" && rawType.toLowerCase() === "data" && rawChildren === undefined) {
+      const value = unwrapJson(props.value ?? props.data);
+      if (givenId && value !== undefined) {
+        this.nodeData = mergeDeep(this.nodeData ?? {}, { [givenId]: value });
+        this.callIds.delete(givenId);
+        return undefined;
+      }
+      if (!givenId && isObject(value)) {
+        this.nodeData = mergeDeep(this.nodeData ?? {}, value);
+        return undefined;
+      }
+    }
     if (!match && rawType === undefined) {
       match = this.normalizer.inferType(props, { id: givenId, hasChildren: rawChildren !== undefined });
       if (match) diags.push({ severity: "warning", surface, node: givenId, message: `no type given; inferred "${match.type}" from its props` });

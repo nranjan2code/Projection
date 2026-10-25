@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { basicCatalog } from "../src/basic-catalog.ts";
 import { formatDiagnostics, SurfaceStore } from "../src/surface.ts";
@@ -685,4 +686,38 @@ test("an input bound under a list in the data is an error naming the conflict", 
   const errors = diags.filter((d) => d.severity === "error");
   assert.equal(errors.length, 1);
   assert.match(errors[0]!.message, /bind "\/todos\/new-task" cannot hold a value: "\/todos" is a list/);
+});
+
+// Real 4B output from the installed Vakyartha 0.1.0: "Compare three hotels in
+// Kyoto for a week in November and let me book one". The first render wrote
+// the hotels as a node of type "data"; the second wrote "rating":4.3", and its
+// item template repeated the grid's list spec.
+const kyotoData = JSON.parse(readFileSync(new URL("./fixtures/vakyartha-kyoto-data-node-4b-2026-10-25.json", import.meta.url), "utf8")) as { calls: { tool: string; args: string }[] };
+const hotelNames = ["Kyoto Imperial Palace", "Arashiyama Inn", "Gion Boutique Hotel"];
+
+test("a node of type \"data\" is the surface data at its id", () => {
+  const store = new SurfaceStore(basicCatalog);
+  const diags = store.apply(kyotoData.calls[0]!.tool, kyotoData.calls[0]!.args);
+  assert.ok(!diags.some((d) => d.message.includes("unknown component")));
+  const hotels = store.get("hotels_kyoto")!.data.hotels as Record<string, unknown>[];
+  assert.deepEqual(hotels.map((h) => h.name), hotelNames);
+  const text = projectText(store.resolve("hotels_kyoto")!);
+  for (const name of hotelNames) assert.ok(text.includes(`[Card] ${name}`), name);
+  // Without an id, its object value is merged into the data at the top.
+  const plain = new SurfaceStore(basicCatalog);
+  plain.apply("vak_render", { surface: "s", nodes: [{ id: "root", type: "text", props: { content: "{/city}" } }, { type: "data", value: { city: "Kyoto" } }] });
+  assert.equal(plain.get("s")!.data.city, "Kyoto");
+});
+
+test("a template that repeats itself is one item's layout, not a cycle", () => {
+  const store = new SurfaceStore(basicCatalog);
+  const diags = store.apply(kyotoData.calls[1]!.tool, kyotoData.calls[1]!.args);
+  assert.ok(diags.some((d) => d.node === "tpl" && d.message.includes("own template")));
+  const hotels = store.get("hotels_kyoto")!.data.hotels as Record<string, unknown>[];
+  assert.deepEqual(hotels.map((h) => h.name), hotelNames);
+  assert.ok(hotels.every((h) => Object.keys(h).every((k) => /\w/.test(k))), "no keys made of punctuation");
+  const text = projectText(store.resolve("hotels_kyoto")!);
+  assert.ok(!text.includes("cycle"));
+  assert.ok(text.includes("[Card] Arashiyama Inn — $665"));
+  assert.ok(text.includes("[Button: Book This Hotel → book_hotel]"));
 });

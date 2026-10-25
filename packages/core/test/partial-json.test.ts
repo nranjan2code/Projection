@@ -142,6 +142,8 @@ test("a value missing its opening quote", () => {
   // 4B: "type":select" (bench gate job-application); "content": **"Plank" ...", (gate workout-tabs).
   assert.deepEqual(parseLenient('{"type":select","props":{"a":1}}'), { type: "select", props: { a: 1 } });
   assert.deepEqual(parseLenient('{"content": **Bold** (3 sets: hold).", "variant": "code"}'), { content: "**Bold** (3 sets: hold).", variant: "code" });
+  // 4B, Vakyartha Kyoto hotels: "rating":4.3", turned the rest into keys like "," and "},{".
+  assert.deepEqual(parseLenient('[{"rating":4.3","total":"$665"},{"rating":4.8"}]'), [{ rating: 4.3, total: "$665" }, { rating: 4.8 }]);
 });
 
 test("a spaced key: value string after an id is a member, after prose it continues the prose", () => {

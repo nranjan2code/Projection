@@ -545,6 +545,12 @@ class Parser {
       this.truncated = true;
       return MISSING;
     }
+    // `"rating":4.3","total_price":"$665"` (4B, Vakyartha Kyoto hotels): a
+    // number with a closing quote and no opening one, like the bare word in
+    // ident(). That quote opened a string that ran to the next quote, and every
+    // member after it was read one token off: keys like "," and "},{", and the
+    // rest of the nodes list became hotel data.
+    if (/^"\s*[,}\]]/.test(this.s.slice(this.i))) this.i++;
     return Number(m[0]);
   }
 

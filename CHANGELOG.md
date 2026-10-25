@@ -3,6 +3,14 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: Kyoto hotels, second round
+
+From the installed Vakyartha 0.1.0 on the 4B model ("compare three hotels in Kyoto … let me book one"): the first render showed "unknown component "data"" and an empty grid; the retry showed two hotels with garbage fields, a third card made from the Book button, and every card full of cycle boxes, all reported as "rendered" with warnings only.
+
+- **`type: "data"` nodes:** `{"id":"hotels","type":"data","value":[...]}` is the surface data at `/hotels` (without an id, an object value merges at the top), not an unknown component.
+- **Parser:** a number with a closing quote and no opening one (`"rating":4.3",`) drops the stray quote, as a bare word already did. Before, the quote opened a string and every later member was read one token off.
+- **Self-repeating templates:** a template whose children are `{each, template: <itself>}` (the list spec copied into the item layout) has those children removed, with a warning; it rendered as a cycle.
+
 ## 2026-10-26: integrations move into the framework
 
 - **`Integrations` in `@vak/mcp/client`:** installing, configuring and running the MCP servers an app offers, moved from Vakyartha's sidecar so every app gets the same safety rules. The app passes its catalog, a `SecretStore` and the host's approval hook. Same on-disk layout as before (`integrations.json`, `integrations/<id>/`, `logs/tools.jsonl`), so existing installs keep working.
