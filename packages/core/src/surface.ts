@@ -406,8 +406,8 @@ export class SurfaceStore {
       : [];
   }
 
-  /** Ids written so far in the current render/update call. */
-  private callIds = new Set<string>();
+  /** Ids written so far in the current render/update call; true when written inside a parent. */
+  private callIds = new Map<string, boolean>();
 
   private nextId(type: string): string {
     return `${type}_${++this.autoId}`;
@@ -641,14 +641,20 @@ export class SurfaceStore {
     // this call is a second node, not a replacement: the 4B model gave every
     // day's button the id "actions" in a 5-tab plan, and the last one replaced
     // the rest (Day 1 showed "Start Day 5"; days 2-5 had none).
-    if (givenId && inline && this.callIds.has(givenId)) {
+    // Only when the first was also written inside a parent: a top-level node
+    // then written in place is that node being placed, not a second one (4B,
+    // Kyoto hotels: a vak_update patched action1-3 at the top level, then sent
+    // the tree with them inside their cards; renamed "action1_2", the patched
+    // originals were left in no parent, re-attached to the root, and every
+    // Book button showed twice).
+    if (givenId && inline && this.callIds.get(givenId) === true) {
       const first = givenId;
       let n = 2;
       while (into.has(`${first}_${n}`) || this.callIds.has(`${first}_${n}`)) n++;
       givenId = `${first}_${n}`;
       diags.push({ severity: "warning", surface, node: givenId, message: `id "${first}" was already used in this call; this one is "${givenId}"` });
     }
-    if (givenId) this.callIds.add(givenId);
+    if (givenId) this.callIds.set(givenId, inline || this.callIds.get(givenId) === true);
     const existing = givenId ? into.get(givenId) : undefined;
     if (existing && merge) {
       this.mergePatch(existing, raw as unknown as NodePatch, into, surface, diags);

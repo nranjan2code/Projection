@@ -825,3 +825,21 @@ test("a bound prop is checked against its schema once the data fills it", () => 
   assert.equal(errs.length, 1);
   assert.equal(errs[0]!.node, "t");
 });
+
+// Real 4B output (local engine run, 2026-10-26, Kyoto hotels): the retry
+// patched action1-3 at the top level, then re-sent the tree with the same
+// buttons inside their cards. Read as second nodes, every Book button showed
+// twice (the patched originals re-attached to the root).
+const kyotoRetry = JSON.parse(readFileSync(new URL("./fixtures/vakyartha-kyoto-retry-4b-2026-10-26.json", import.meta.url), "utf8")) as { calls: { tool: string; args: string }[] };
+
+test("a top-level node then written inside a parent in the same call is placed, not copied", () => {
+  const store = new SurfaceStore(basicCatalog);
+  for (const c of kyotoRetry.calls) store.apply(c.tool, c.args);
+  const state = store.get("kyoto_hotels")!;
+  assert.ok(![...state.nodes.keys()].some((id) => /^action\d_\d$/.test(id)), "no renamed copies");
+  for (const i of [1, 2, 3]) assert.deepEqual(state.nodes.get(`booking${i}`)!.children, [`action${i}`]);
+  assert.equal(state.nodes.get("action1")!.props!.style, "primary");
+  const text = projectText(store.resolve("kyoto_hotels")!);
+  assert.equal(text.match(/\[Button: Book Ritz Carlton Kyoto → confirm_booking\]/g)?.length, 1);
+  assert.equal(text.match(/\[Button: /g)?.length, 6);
+});

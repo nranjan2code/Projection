@@ -3,6 +3,12 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: a retry no longer copies the nodes it patches
+
+From a local 4B run ("compare three hotels in Kyoto … let me book one"): the retry was a `vak_update` that patched three buttons at the top level, then re-sent the tree with the same buttons inside their cards. The repeated-id rule (a node written inside a parent whose id was already used in the call is a second node, from a 5-tab plan where every tab's button was called "actions") renamed them `action1_2`…; the patched originals were left in no parent, re-attached to the root, and every Book button showed twice.
+
+- **Repeated ids:** a node is renamed only when its id was already written inside a parent in the same call. A top-level node then written inside a parent is that node being placed.
+
 ## 2026-10-26: bound props are checked once filled
 
 From a local 4B run ("show my running stats … with a chart of daily distance"): the chart's series were bound to records `[{day, km}]` and drew seven empty series; the call passed as clean. The cause was general: lint skips the schema check for a binding (its value is unknown at write time), and nothing checked it after the data filled it in, for any component.
