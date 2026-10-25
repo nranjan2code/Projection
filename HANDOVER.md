@@ -7,7 +7,7 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 ```
 Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection.
 
-First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 116 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
+First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 117 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
 
 Focus: the core system. That means the engine (parser, normalizer, lint, resolve), the catalog, and the projectors (web, text, Telegram, Slack, Discord as renderers, tested offline), and the bench. Telegram live testing is parked: don't start the bot unless I ask.
 
@@ -23,7 +23,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
-- **Tests:** 116 passing, typecheck clean. The 2026-10-25 afternoon work (below) is in the working tree; check `git log` to see whether it was committed.
+- **Tests:** 117 passing, typecheck clean. The 2026-10-25 afternoon work (below) is in the working tree; check `git log` to see whether it was committed.
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios):
 
   | | Now | Old flat baseline |
@@ -38,6 +38,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Done in this stretch
 
+- **Prop values that name a component (was Next #1):** catalog extension `namesComponent` (on `input.kind`). `{"type":"input","props":{"kind":"date"}}` becomes a `date` node instead of an enum error and a retry; aliases work both ways (`inputType: "daterange"` → `date` with `range: true`, `kind: "checkbox"` → `checkbox`). Unknown values (`"password"`) are still errors. Test built from the real Telegram call.
 - **Long chats (was Next #2):** `runAgent` takes `history: N` (last N turns plus a note describing the shown surfaces); Telegram uses 6. `/start` resets the chat. Tests are built from the real 50-message chat.
 - **Engine, from the live hotel test:**
   - A `{` where a key belongs, inside an array, is the next element. The parser used to read it as junk, the next fields' members overwrote the current one's, and a form lost two of three fields.
@@ -96,25 +97,24 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Next (in order)
 
-1. **Input `kind: "date"` is an error, but the catalog has a `date` component.** The 4B model wrote `{"type":"input","props":{"kind":"date"}}` and retried (Telegram transcript, 2026-10-25). Find a general mechanism: a catalog declaration saying a prop value names another component (input kind date → `date`; maybe checkbox/select kinds too), applied by the normalizer. No per-value hack. Build the test from the real call in `.vak/telegram/archive/` or the current `.vak/telegram/8846301562.jsonl`.
-2. **Finish the web tests** in the browser pane (interrupted earlier):
+1. **Finish the web tests** in the browser pane (interrupted earlier):
    - a live dashboard prompt (charts)
    - a workout tabs prompt
    - tablet and phone viewports
 
    Check the header wrapping: at 800px the playground's controls wrap into 3 rows.
-3. **Weak bench categories:** planning (tabs/sections, itinerary text) and dashboard (charts).
+2. **Weak bench categories:** planning (tabs/sections, itinerary text) and dashboard (charts).
    - Analyze failures in `packages/bench/data/results/2026-10-25T01-01-37-105Z_run_*.jsonl` and fix root causes.
    - Prove it with replay plus a live gate run (`npm run bench -- gate ollama:qwen3.5:4b-mlx --runs 1`, ~25 min local), which also measures the parser and settings fixes above.
    - Re-record the baseline when engine changes move scores.
-4. **Form design:** a form says "choose your hotel" but has no hotel field. Consider a lint warning, or rely on the action data already carrying the chosen item.
-5. **The MCP server still teaches flat authoring.** Its instructions say "nodes is a FLAT list" (`packages/mcp`, via `systemPrompt` without a plan). Decide whether MCP clients (often strong models) should get the inline rule too, and pass `authoring` through if so.
-6. **Re-record the form slice baseline** on inline (`--category form --slice form --save`); it is still flat v2.
-7. **Parked until the user asks: Telegram live.**
+3. **Form design:** a form says "choose your hotel" but has no hotel field. Consider a lint warning, or rely on the action data already carrying the chosen item.
+4. **The MCP server still teaches flat authoring.** Its instructions say "nodes is a FLAT list" (`packages/mcp`, via `systemPrompt` without a plan). Decide whether MCP clients (often strong models) should get the inline rule too, and pass `authoring` through if so.
+5. **Re-record the form slice baseline** on inline (`--category form --slice form --save`); it is still flat v2.
+6. **Parked until the user asks: Telegram live.**
    - Start the bot; the saved Save Details press replays.
    - Check the booking confirmation flow end to end and "/night" with prices.
    - The transcript doesn't record the user message that started a turn, only what follows it; consider recording it for diagnosis.
-8. **Optional, ask first:**
+7. **Optional, ask first:**
    - prompt caching
    - near-miss id pairing
    - a security review of the projectors

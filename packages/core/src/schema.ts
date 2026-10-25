@@ -1,11 +1,13 @@
 // A JSON Schema subset: just enough to describe tool inputs portably across
 // providers and to validate what models send back.
 //
-// Two extension keywords carry repair knowledge next to the property they
+// Extension keywords carry repair knowledge next to the property they
 // describe (catalog stays the single source of truth); `toWireSchema` strips
 // them before a schema is sent to any provider:
-//   aliases:     other names a model may use for this property
-//   enumAliases: other spellings for enum values ({"left": "start"})
+//   aliases:        other names a model may use for this property
+//   enumAliases:    other spellings for enum values ({"left": "start"})
+//   namesComponent: a value outside the enum may name the component meant
+//                   (an input's kind "date" is the date component)
 
 import { parseLenient } from "./partial-json.ts";
 
@@ -36,9 +38,11 @@ export interface JSONSchema {
   aliases?: readonly string[];
   /** Extension: alternative spellings mapped to enum values. */
   enumAliases?: Readonly<Record<string, string>>;
+  /** Extension: a value outside the enum may name another component; the node is that one (see Normalizer.retypeByValue). */
+  namesComponent?: boolean;
 }
 
-const EXTENSION_KEYS = new Set(["aliases", "enumAliases"]);
+const EXTENSION_KEYS = new Set(["aliases", "enumAliases", "namesComponent"]);
 
 /** Deep copy without extension keywords, for provider tool definitions. */
 export function toWireSchema(schema: JSONSchema): JSONSchema {

@@ -431,7 +431,9 @@ export class SurfaceStore {
     this.takeNodeData(props, match?.type);
     const id = givenId ?? this.nextId(match?.type ?? "node");
     if (existing) diags.push({ severity: "warning", surface, node: id, message: "duplicate id; later node replaced earlier one" });
-    if (match && rawType !== undefined) match = this.checkDeclared(match, rawType, props, id, rawChildren !== undefined, surface, diags);
+    const retyped = match && this.retypeByValue(match, props, id, rawChildren !== undefined, surface, diags);
+    if (retyped) match = retyped;
+    else if (match && rawType !== undefined) match = this.checkDeclared(match, rawType, props, id, rawChildren !== undefined, surface, diags);
 
     const node: VpsNode = match
       ? { id, type: match.type, props: this.normalizer.prepareProps(match.type, props, id, match.presets) }
@@ -471,6 +473,22 @@ export class SurfaceStore {
     return better;
   }
 
+  /** A prop value that names another component retypes the node (see Normalizer.retypeByValue); the naming prop is removed from `props`. */
+  private retypeByValue(
+    match: TypeMatch,
+    props: Record<string, unknown>,
+    id: string,
+    hasChildren: boolean,
+    surface: string,
+    diags: Diagnostic[],
+  ): TypeMatch | undefined {
+    const hit = this.normalizer.retypeByValue(match, props, { id, hasChildren });
+    if (!hit) return undefined;
+    delete props[hit.key];
+    diags.push({ severity: "warning", surface, node: id, message: `${hit.key} "${hit.value}" names the "${hit.match.type}" component; used it` });
+    return hit.match;
+  }
+
   private mergePatch(node: VpsNode, patch: NodePatch, nodes: Map<string, VpsNode>, surface: string, diags: Diagnostic[]): void {
     const raw = patch as unknown as Record<string, unknown>;
     const props = { ...node.props };
@@ -498,7 +516,14 @@ export class SurfaceStore {
         presets = match.presets;
       }
     }
-    if (node.type !== "$invalid") delete props.$error;
+    if (node.type !== "$invalid") {
+      delete props.$error;
+      const retyped = this.retypeByValue({ type: node.type, presets }, props, node.id, patch.children !== undefined || node.children !== undefined, surface, diags);
+      if (retyped) {
+        node.type = retyped.type;
+        presets = retyped.presets;
+      }
+    }
     node.props = node.type === "$invalid" ? props : this.normalizer.prepareProps(node.type, props, node.id, presets);
     if (patch.children !== undefined) {
       const children = this.normalizeChildren(patch.children, nodes, surface, diags, true);

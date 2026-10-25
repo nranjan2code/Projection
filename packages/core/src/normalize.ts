@@ -9,6 +9,7 @@
 //   2. infer   — no type given: score props (and id tokens) against every component schema
 //      reinterpret — declared type is invalid for its props, and another component
 //      explains every prop sent and validates: the props say what was meant
+//      retype by value — a `namesComponent` prop names another component ("kind": "date")
 //   3. props   — alias presets → schema coercion → component normalize → coercion
 //                → derived defaults → schema defaults for missing required props
 //                → markdown-format prose: inline HTML converted to markdown
@@ -160,6 +161,35 @@ export class Normalizer {
       if (!invalid(name)) best = { type: name, score };
     }
     return best ? { type: best.type } : undefined;
+  }
+
+  /**
+   * A prop declared `namesComponent` holds a value outside its enum that names
+   * another component (by name or alias): the model wrote the HTML idiom
+   * `<input type="date">` as `{type: "input", kind: "date"}`. The node is that
+   * component; the prop that named it is dropped. Only when the result
+   * validates, so a mistyped value still reaches the model as an error.
+   */
+  retypeByValue(
+    match: TypeMatch,
+    sentProps: Record<string, unknown>,
+    ctx: { id: string; hasChildren: boolean },
+  ): { match: TypeMatch; key: string; value: string } | undefined {
+    const skip = (v: unknown) => isBinding(v);
+    for (const [prop, sub] of Object.entries(this.catalog.components[match.type]?.props.properties ?? {})) {
+      if (!sub.namesComponent) continue;
+      const key = [prop, ...(sub.aliases ?? [])].find((k) => typeof sentProps[k] === "string");
+      if (!key) continue;
+      const value = sentProps[key] as string;
+      if (validate(sub, coerce(sub, value)).length === 0) continue;
+      const named = this.resolveType(value);
+      if (!named || named.type === match.type || (ctx.hasChildren && !this.canHoldChildren(named.type))) continue;
+      const rest = { ...sentProps };
+      delete rest[key];
+      const prepared = this.prepareProps(named.type, rest, ctx.id, named.presets);
+      if (validate(propsSchema(this.catalog, named.type)!, prepared, { skip }).length === 0) return { match: named, key, value };
+    }
+    return undefined;
   }
 
   // --- 3. props ------------------------------------------------------------------

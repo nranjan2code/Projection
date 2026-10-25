@@ -29,6 +29,7 @@ In MCP there is also `vak_wait_action`.
 
 `packages/core/src/basic-catalog.ts` defines 21 components with JSON Schema props and vak extensions:
 - `aliases`, `enumAliases`, `default`, `format: "markdown"`, `pattern`
+- `namesComponent` on a prop: a value outside its enum that names another component retypes the node (input `kind: "date"` → `date`)
 - component-level `normalize`, `defaults`, `finalize`
 - `role` (`form`/`action`) and `tier` (`core`/`extended`)
 - worked `examples`, which must render with zero diagnostics
@@ -46,7 +47,7 @@ In MCP there is also `vak_wait_action`.
    - A `{` where an object key belongs, inside an array, ends the object: its `}` was omitted and the array's next element begins.
 2. **Call recovery** (`SurfaceStore.apply`): members written inside the nodes string after the list (`"[...], \"data\": {...}"`) belong to the call.
 3. **Normalizer** (`normalize.ts`).
-   - Type resolution: name → alias → schema-scored inference.
+   - Type resolution: name → alias → schema-scored inference. A `namesComponent` prop whose value names another component (by name or alias, with its presets) makes the node that component when the result validates; the prop is dropped.
    - Prop preparation: presets, coercion, defaults, HTML → markdown, double-escaped `\n` repair.
    - Structure repair:
      - prose children become text

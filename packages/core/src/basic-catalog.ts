@@ -5,6 +5,7 @@
 // stays generic:
 // - component `aliases`: other names models use (HTML tags, other UI kits)
 // - property `aliases` / `enumAliases`: other spellings of props and values
+// - property `namesComponent`: a value outside the enum that names another component retypes the node
 // - schema `default`: a sensible value for a required prop the model omitted
 // - `defaults`: props derivable from other props (an input's label from its bind)
 // - `normalize`: shape fixes for component-specific data (chart series)
@@ -12,7 +13,7 @@
 import { defineCatalog } from "./catalog.ts";
 import type { JSONSchema } from "./schema.ts";
 
-type Extra = Pick<JSONSchema, "aliases" | "enumAliases" | "description" | "default" | "format">;
+type Extra = Pick<JSONSchema, "aliases" | "enumAliases" | "namesComponent" | "description" | "default" | "format">;
 
 const str = (extra: Extra = {}): JSONSchema => ({ type: "string", ...extra });
 const oneOf = (values: string[], extra: Extra = {}): JSONSchema => ({ type: "string", enum: values, ...extra });
@@ -354,7 +355,13 @@ export const basicCatalog = defineCatalog(
           label: fieldLabel,
           bind: fieldBind,
           placeholder,
-          kind: oneOf(["text", "email", "number", "tel", "url"], { aliases: ["inputType", "format"], enumAliases: { phone: "tel", telephone: "tel", integer: "number", link: "url", string: "text" } }),
+          // HTML input types that are their own components here ("date", "checkbox",
+          // "textarea") retype the node instead of failing the enum.
+          kind: oneOf(["text", "email", "number", "tel", "url"], {
+            aliases: ["inputType", "format"],
+            enumAliases: { phone: "tel", telephone: "tel", integer: "number", link: "url", string: "text" },
+            namesComponent: true,
+          }),
           checks,
         },
         ["label", "bind"],

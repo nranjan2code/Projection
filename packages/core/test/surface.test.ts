@@ -514,3 +514,58 @@ test("node settings written as an object of their own in a children list apply t
   assert.deepEqual(d2.filter((d) => d.severity === "error"), []);
   assert.deepEqual(alone.get("s")!.nodes.get("root")!.children, ["t"]);
 });
+
+test("an input whose kind names another component is that component", () => {
+  // Telegram, 2026-10-25, the 4B model confirming a booking: `<input type="date">`
+  // written as {"type":"input","props":{"kind":"date"}} failed the kind enum (an
+  // error, and a retry that lost the date field).
+  const call = {
+    surface: "confirmation_success",
+    title: "Booking Confirmed! ✨",
+    nodes:
+      "[{\"children\":[{\"children\":[{\"id\":\"message\",\"type\":\"text\",\"props\":{\"content\":\"Your booking at **Kyoto City Hotel** has been confirmed!\\n\\n- Room: Deluxe city view\\n- Date: (Please fill out details)\\n- Total: ¥8,500 per night\\n\\nA confirmation will be sent to your email shortly.\\n\\nEnjoy exploring Kyoto's temples and cuisine!\"},\"variant\":\"body\"},{\"children\":[{\"id\":\"details\",\"type\":\"form\",\"props\":{\"submit\":\"save_details\",\"submitLabel\":\"Save Details\"},\"children\":[{\"id\":\"date\",\"type\":\"input\",\"props\":{\"bind\":\"/details/date\",\"label\":\"Check-in Date\",\"kind\":\"date\"}},{\"id\":\"guests\",\"type\":\"select\",\"props\":{\"bind\":\"/details/guests\",\"label\":\"Number of Guests\",\"options\":[\"1\",\"2\",\"3\",\"4\"]},{\"id\":\"notes\",\"type\":\"textarea\",\"props\":{\"bind\":\"/details/notes\",\"label\":\"Special Requests\"}}]}]},{\"priority\":\"secondary\",\"type\":\"stack\"}]",
+    data: {date: "2024-12-15",guests: 1,hotel: "Kyoto City Hotel",notes: ""},
+  };
+  const store = new SurfaceStore(basicCatalog);
+  const diags = store.apply("vak_render", call);
+  assert.deepEqual(diags.filter((d) => d.severity === "error"), []);
+  assert.ok(diags.some((d) => d.node === "date" && /kind "date" names the "date" component/.test(d.message)));
+  const date = store.get("confirmation_success")!.nodes.get("date")!;
+  assert.equal(date.type, "date");
+  assert.equal(date.props?.kind, undefined);
+  assert.equal(date.props?.bind, "/details/date");
+  assert.match(projectText(store.resolve("confirmation_success")!), /Check-in Date/);
+
+  // Aliases of the prop and of the named component work too: a range date, a checkbox.
+  const more = new SurfaceStore(basicCatalog);
+  const d2 = more.apply("vak_render", {
+    surface: "s",
+    nodes: [
+      { id: "root", type: "form", props: { submit: "go" }, children: ["stay", "agree"] },
+      { id: "stay", type: "input", props: { label: "Stay", bind: "/f/stay", inputType: "daterange" } },
+      { id: "agree", type: "input", props: { label: "I agree", bind: "/f/agree", kind: "checkbox" } },
+    ],
+  });
+  assert.deepEqual(d2.filter((d) => d.severity === "error"), []);
+  assert.equal(more.get("s")!.nodes.get("stay")!.type, "date");
+  assert.equal(more.get("s")!.nodes.get("stay")!.props?.range, true);
+  assert.equal(more.get("s")!.nodes.get("agree")!.type, "checkbox");
+
+  // A value that names nothing is still an error the model sees; a valid kind is untouched.
+  const typo = new SurfaceStore(basicCatalog);
+  const d3 = typo.apply("vak_render", {
+    surface: "s",
+    nodes: [
+      { id: "root", type: "form", props: { submit: "go" }, children: ["a", "b"] },
+      { id: "a", type: "input", props: { label: "A", bind: "/f/a", kind: "password" } },
+      { id: "b", type: "input", props: { label: "B", bind: "/f/b", kind: "email" } },
+    ],
+  });
+  assert.ok(d3.some((d) => d.severity === "error" && d.node === "a" && /props\/kind/.test(d.message)));
+  assert.equal(typo.get("s")!.nodes.get("b")!.type, "input");
+
+  // A patch that sets the kind later retypes the existing input.
+  const p = typo.apply("vak_update", { surface: "s", nodes: [{ id: "b", props: { kind: "date" } }] });
+  assert.ok(p.some((d) => d.node === "b" && /names the "date" component/.test(d.message)));
+  assert.equal(typo.get("s")!.nodes.get("b")!.type, "date");
+});
