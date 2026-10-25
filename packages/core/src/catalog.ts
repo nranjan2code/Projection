@@ -112,15 +112,44 @@ export function defineCatalog(
   return { id, components, common, container, examples: opts.examples ?? [], ...(opts.itemTemplate ? { itemTemplate: opts.itemTemplate } : {}) };
 }
 
-/** Only the components of a tier ("core" drops "extended" ones); examples using dropped components go too. */
-export function withTier(catalog: Catalog, tier: "core" | "extended"): Catalog {
+/**
+ * Only the components of a tier ("core" drops "extended" ones); examples using
+ * dropped components go too. `keep` names extended components to offer anyway:
+ * one the user asked for, or one already on screen that the model may update.
+ */
+export function withTier(catalog: Catalog, tier: "core" | "extended", keep: Iterable<string> = []): Catalog {
   if (tier === "extended") return catalog;
+  const kept = new Set(keep);
   const components: Record<string, ComponentDef> = {};
   for (const [name, def] of Object.entries(catalog.components)) {
-    if ((def.tier ?? "core") === "core" || name === catalog.container) components[name] = def;
+    if ((def.tier ?? "core") === "core" || name === catalog.container || kept.has(name)) components[name] = def;
   }
   const examples = catalog.examples.filter((ex) => ex.render.nodes.every((n) => n.type in components));
   return { ...catalog, components, examples };
+}
+
+const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Components a request names: "the timeline component", "a component named
+ * map", "a graph", "as an interactive graph view". With `aliases`, other names
+ * count too, written as one word or several ("an org chart" for orgchart).
+ */
+export function namedComponents(catalog: Catalog, request: string, opts: { aliases?: boolean } = {}): string[] {
+  const phrase = (token: string) =>
+    new RegExp(`\\b${token}\\s+component\\b|\\bcomponent\\s+(?:named\\s+)?${token}\\b|\\b(?:a|an|the)\\s+(?:[\\w-]+\\s+){0,3}${token}\\b`, "i");
+  const all = (name: string, def: ComponentDef) => [name, ...(def.aliases ?? []).map((a) => (typeof a === "string" ? a : a.name))];
+  // An alias written as one word ("orgchart") also matches its spaced or hyphenated form.
+  const loose = (n: string) => [...n].map(escape).join("[\\s-]?");
+  return Object.entries(catalog.components)
+    .filter(([name, def]) => {
+      // A longer name of another component wins: "an org chart" names graph
+      // (orgchart), not chart.
+      const longer = Object.entries(catalog.components).flatMap(([other, d]) => (other === name ? [] : all(other, d).filter((n) => n.length > name.length && n.includes(name))));
+      const text = longer.reduce((t, n) => t.replace(new RegExp(`\\b${loose(n)}\\b`, "gi"), " "), request);
+      return (opts.aliases ? all(name, def) : [name]).some((n) => phrase(opts.aliases ? loose(n) : escape(n)).test(text));
+    })
+    .map(([name]) => name);
 }
 
 export function support(profile: CapabilityProfile | undefined, type: string): Support {

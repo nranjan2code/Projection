@@ -400,8 +400,30 @@ test("explicit component requests focus their catalog contract after the example
   const table = buildSystem({ ...options, messages: [{ role: "user", content: "Show an expense table with totals" }] }).split("Requested components:")[1]!;
   assert.match(table, /type: table/);
   assert.match(table, /props.totals: true/);
-  const core = buildSystem({ ...options, plan: { ...options.plan, tier: "core" }, messages: [{ role: "user", content: "Use the steps component" }] });
-  assert.doesNotMatch(core, /Requested components:/);
   const plain = buildSystem({ ...options, messages: [{ role: "user", content: "Hello" }] });
   assert.doesNotMatch(plain, /Requested components:/);
+});
+
+// 4B in Vakyartha: "show your memory as a graph view" became cards, because the
+// core tier had dropped graph from the model's vocabulary.
+test("a core-tier run still offers an extended component the user names, or one already shown", async () => {
+  const { buildSystem, resolveRun } = await import("../src/agent.ts");
+  const provider: Provider = { id: "stub", async *stream() {} };
+  const base = {
+    provider, model: "m", store: new SurfaceStore(basicCatalog), emit: () => {},
+    plan: { generation: "tools" as const, tier: "core" as const, examples: true, authoring: "inline" as const, maxSteps: 2, reasons: [] },
+  };
+  const types = (content: string, store = base.store) => Object.keys(resolveRun({ ...base, store, messages: [{ role: "user", content }] }).catalog.components);
+  assert.ok(types("show your memory as a graph view").includes("graph"));
+  assert.ok(types("draw an org chart of my team").includes("graph"));
+  assert.ok(types("Use the steps component").includes("steps"));
+  assert.ok(!types("Hello").includes("graph"));
+  assert.ok(!types("Hello").includes("timeline"));
+  const graph = buildSystem({ ...base, messages: [{ role: "user", content: "show your memory as a graph view" }] });
+  assert.match(graph.split("Requested components:")[1]!, /type: graph/);
+  // "org chart" is graph's name, not a request for chart's contract.
+  assert.doesNotMatch(buildSystem({ ...base, messages: [{ role: "user", content: "draw an org chart" }] }), /Requested components:[\s\S]*type: chart/);
+  const shown = new SurfaceStore(basicCatalog);
+  shown.render({ surface: "m", nodes: [{ id: "root", type: "graph", props: { nodes: ["You"] } }] } as never);
+  assert.ok(types("add Pune to it", shown).includes("graph"));
 });

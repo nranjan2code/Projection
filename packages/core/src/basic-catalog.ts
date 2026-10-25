@@ -549,7 +549,17 @@ export const basicCatalog = defineCatalog(
         },
         ["places"],
       ),
-      normalize: (p) => ({ ...p, places: itemObjects(p.places, "name") }),
+      // "British Museum, Great Russell Street, London" (4B, bench london-places):
+      // a place written as text is its name, then its address.
+      normalize: (p) => ({
+        ...p,
+        places: Array.isArray(p.places)
+          ? p.places.map((pl) => {
+              const m = typeof pl === "string" ? /^\s*([^,]+?)\s*,\s*(.+?)\s*$/.exec(pl) : null;
+              return m ? { name: m[1], address: m[2] } : (itemObjects([pl], "name") as unknown[])[0];
+            })
+          : p.places,
+      }),
       aliases: ["places", "locations", "mapview"],
     },
     graph: {

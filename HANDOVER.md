@@ -48,6 +48,14 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
   One run per scenario, so category numbers swing (intervals are wide). The comparison dip in this run: phone-plans (no action), restaurants (a template it never defined), flights (no cards or table): content, not engine faults. The gate run just before it had comparison at 80%. The parser rules from pizza-order came after the recording; replay shows no change to recorded scores.
 ## Done in this stretch
 
+- **Graph component and named extended components (2026-10-26):**
+  - `graph` (extended tier): nodes and labelled edges, accepting the memory server's shape; `@vak/web` draws it with pan, pinch/Ctrl-scroll zoom, fit, keyboard, draggable nodes, selection, search and frame-fitting layered/force layouts; other targets get one line per connection. Checked in Chromium, at phone width and in WebKit.
+  - Small models on the core tier now get an extended component when the user names it (name or alias, "an org chart" → graph) or when it is already shown. Found in Vakyartha: "show your memory as a graph view" became cards because the 4B model's vocabulary had no graph.
+  - Engine: aliases apply inside an `anyOf` branch the value already satisfies. Bench: new `team-graph` scenario; slice `components-named` records the rich scenarios on the default 4B plan (slice components-named, 7 rich scenarios × 1 run on the default core plan: every requested component used; 6/7 complete, 98% of checks after the map repair (replayed); team-graph lost its edges to an escaped quote).
+  - Map places written as "Name, Address" text split into name and address (4B, london-places).
+  - Not done: an escaped quote inside a JSON-string list prop swallowed the next prop (4B team-graph: `edges` ended up inside the `nodes` string); recover sibling props from such strings in the engine.
+  - Not done: model-written template syntax (`{{#*}}…`) is shown as literal text; it should go back to the model as an error.
+
 - **Rich-component reliability fixes (2026-10-25, current round):**
   - Fixed general engine causes from real calls: JSON object sequences in list props retain every validated record; leaf child records become the one matching required object-list prop; quoted pointers such as `{"/data/invoice_rows}"` bind normally, with literal source excluded.
   - Catalog `retype` predicates identify validated semantic variants: a timeline carrying process states becomes steps, including when its items come from a data binding. No states or item labels are inferred from prose; the original fields are retained.

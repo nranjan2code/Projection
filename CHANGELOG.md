@@ -9,6 +9,7 @@ What changed, newest first. Nothing is released yet: every package is `0.1.0` an
 - `@vak/web` draws it as dependency-free SVG with a full interactive view: drag to pan, pinch (touch, trackpad, WebKit gesture events) or Ctrl/⌘-scroll to zoom, zoom and fit buttons, keyboard control, draggable nodes, selection that shows a node's note and dims what it does not touch, and search from 12 nodes. Directed acyclic graphs are layered and turn top-down or left-to-right to fit the frame; other graphs get a deterministic force layout. New export `renderGraph`/`normalizeGraph`.
 - Chat, email, markdown, ANSI and text targets get a graph lowered to one line per connection plus its unconnected nodes.
 - "graph" is no longer a `chart` alias; a `graph` node with `series` is still retyped to a chart, so recorded output is unchanged.
+- A core-tier run (small models) still offers an extended component the user names, by its name or an alias written as one word or several ("a graph", "an org chart", "the timeline component"), and any component already shown so follow-ups can update it. New `namedComponents(catalog, request, {aliases})`; `withTier` takes an optional `keep` list. A longer name wins: "an org chart" names graph, not chart. The 4B model previously never saw graph, timeline, steps, map, code or gallery unless calibrated to the extended tier.
 - Engine: a value already valid for an `anyOf` branch now has that branch's declared aliases renamed, as plain object schemas always did. Replay gate unchanged.
 
 

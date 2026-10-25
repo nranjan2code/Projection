@@ -201,6 +201,15 @@ export const SCENARIOS: Scenario[] = [
     }],
   },
   {
+    id: "team-graph",
+    category: "information",
+    intent: "A graph preserving three supplied people and their two labelled reporting relations.",
+    turns: [{
+      say: "Show how my team connects as a graph: Asha manages Ravi; Asha manages Meera.",
+      expect: [count("graph"), prop("graph", ["nodes", "length"], 3), prop("graph", ["edges", "length"], 2), text("Asha"), text("Ravi"), text("Meera"), text("manages")],
+    }],
+  },
+  {
     id: "delivery-steps",
     category: "planning",
     intent: "A delivery stepper: Payment done, Packing current, Shipping todo, in that order.",

@@ -9,7 +9,9 @@ import {
   type CapabilityProfile,
   CONSTRAINED_INSTRUCTIONS,
   formatDiagnostics,
+  namedComponents,
   narrow,
+  walk,
   withTier,
   parseLenient,
   parsePartial,
@@ -92,11 +94,27 @@ interface ResolvedRun {
   maxTokens?: number;
 }
 
+const lastRequest = (opts: RunOptions) => opts.messages.findLast((m) => m.role === "user" && !m.content.startsWith("[engine]"))?.content ?? "";
+
+/** Component types on the surfaces still shown. */
+function shownTypes(store: SurfaceStore | undefined): string[] {
+  const types = new Set<string>();
+  for (const s of store?.list() ?? []) {
+    const root = store!.resolve(s.id)?.root;
+    if (root) walk(root, (n) => types.add(n.type));
+  }
+  return [...types];
+}
+
 /** Everything a run uses, from explicit options, then the plan, then defaults. */
 export function resolveRun(opts: RunOptions): ResolvedRun {
   let catalog = opts.catalog ?? basicCatalog;
   if (opts.profile) catalog = narrow(catalog, opts.profile);
-  if (opts.plan) catalog = withTier(catalog, opts.plan.tier);
+  // A small model's core tier still offers a richer component the user asked
+  // for by name (4B, Vakyartha: "show your memory as a graph view" became
+  // cards, because graph was not in its vocabulary), and any already shown,
+  // so a follow-up can update it.
+  if (opts.plan) catalog = withTier(catalog, opts.plan.tier, [...namedComponents(catalog, lastRequest(opts), { aliases: true }), ...shownTypes(opts.store)]);
   const requested = opts.generation && opts.generation !== "auto" ? opts.generation : (opts.plan?.generation ?? opts.generation);
   const generation = generationMode({ ...opts, generation: requested });
   return {
@@ -114,11 +132,7 @@ export function buildSystem(opts: RunOptions, run: ResolvedRun = resolveRun(opts
   // 4B rich-component runs substituted familiar layouts and lost fields even
   // with the full catalog present. When the user explicitly requests a catalog
   // component, put its actual contract last; no benchmark names or facts enter it.
-  const request = opts.messages.findLast((m) => m.role === "user" && !m.content.startsWith("[engine]"))?.content ?? "";
-  const requested = Object.entries(run.catalog.components).filter(([name]) => {
-    const token = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    return new RegExp(`\\b${token}\\s+component\\b|\\bcomponent\\s+(?:named\\s+)?${token}\\b|\\b(?:a|an|the)\\s+(?:[\\w-]+\\s+){0,3}${token}\\b`, "i").test(request);
-  });
+  const requested = namedComponents(run.catalog, lastRequest(opts)).map((name) => [name, run.catalog.components[name]!] as const);
   if (requested.length) {
     parts.push("Requested components: use these exact types, with every supplied item and verbatim labels, captions and source. Do not replace them with other components.\n" + requested.map(([name, def]) => `type: ${name}. ${def.hint ?? ""} Props schema (supply values): ${JSON.stringify(toWireSchema(def.props))}`).join("\n"));
   }
