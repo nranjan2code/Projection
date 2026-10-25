@@ -2,6 +2,8 @@
 
 Response-completion API added 2026-10-26: `runAgent` / `host.run` accept opt-in `completion: "response"`. Default projection completion remains unchanged; tool runs can continue after publication. 238 tests and typecheck pass, including interleaved external work, step limits and host propagation. No runtime dependency added.
 
+Wrapped-list binding repair added 2026-10-26 from real local-agent research: known absolute array references inside singleton arrays become canonical list bindings only where the schema permits them. Literal/missing/scalar/relative cases remain unchanged. 240 tests including replay gate and typecheck pass.
+
 Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](SPECS.md).
 
 ## Handover prompt (paste into a new session)

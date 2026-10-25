@@ -3,6 +3,11 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: wrapped list references
+
+- A singleton list such as `rows: ["data/evidence"]` becomes a whole-list binding only when the prop schema declares both a list and a binding and the existing absolute data target is an array. Real local-agent research otherwise rendered a path instead of evidence rows without diagnostics. Keep a reference so later data updates still work; do not copy data into props.
+- Missing targets, scalar targets, ordinary file paths, explicit row-cell arrays and relative bindings stay untouched. The repair is schema-driven for all projectors. 240 tests (replay gate included) and typecheck pass.
+
 ## 2026-10-26: response-oriented run completion
 
 - `runAgent` and public `host.run` accept `completion: "response"`: tool runs can publish progress surfaces, perform further tool work and publish additional results before ending on a response without tool calls. Defaults still stop on a clean projection. Step limits, errors, cancellation and publication remain unchanged. The host selects tool generation for this mode; direct constrained-only response protocols reject it explicitly.

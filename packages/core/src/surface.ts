@@ -421,8 +421,37 @@ export class SurfaceStore {
       ...this.dropSelfTemplates(state),
       ...this.fillMissingTemplates(state),
       ...this.bindInputNames(state),
+      ...this.bindWrappedLists(state),
       ...this.dropEmptyContainers(state),
     ];
+  }
+
+  /**
+   * Real local-agent research wrote rows: ["data/evidence"] instead of a
+   * whole-list binding. Only unwrap a schema-declared list reference when its
+   * existing data target is an array; ordinary rows, paths and source stay literal.
+   */
+  private bindWrappedLists(state: SurfaceState): Diagnostic[] {
+    const diags: Diagnostic[] = [];
+    const walk = (value: unknown, schema: JSONSchema | undefined, node: string, at: string): unknown => {
+      if (!schema || schema.literal) return value;
+      if (Array.isArray(value) && value.length === 1 && typeof value[0] === "string") {
+        const raw = value[0];
+        const reference = isBinding(raw) && raw.startsWith("{/") ? raw : /^(?:\/|data\/)[A-Za-z0-9_~.\-/]+$/.test(raw) ? `{${raw.startsWith("/") ? raw : "/" + raw}}` : undefined;
+        const list = schema.anyOf?.some((branch) => branch.type === "array");
+        const binding = reference && schema.anyOf?.some((branch) => branch.type === "string" && branch.pattern && validate(branch, reference).length === 0);
+        if (list && binding && Array.isArray(resolveValue(reference, { data: state.data, base: "" }))) {
+          diags.push({ severity: "warning", surface: state.id, node, message: `${at}: read a wrapped list reference as ${reference}` });
+          return reference;
+        }
+      }
+      const branch = schema.anyOf?.find((part) => Array.isArray(value) ? part.type === "array" : part.type === "object" || part.properties !== undefined) ?? schema;
+      if (Array.isArray(value)) return branch.items ? value.map((item, i) => walk(item, branch.items, node, `${at}/${i}`)) : value;
+      if (value && typeof value === "object" && branch.properties) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, walk(item, branch.properties?.[key], node, `${at}/${key}`)]));
+      return value;
+    };
+    for (const node of state.nodes.values()) node.props = walk(node.props ?? {}, propsSchema(this.catalog, node.type), node.id, "props") as Record<string, unknown>;
+    return diags;
   }
 
   /**

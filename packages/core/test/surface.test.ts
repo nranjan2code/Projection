@@ -843,3 +843,28 @@ test("a top-level node then written inside a parent in the same call is placed, 
   assert.equal(text.match(/\[Button: Book Ritz Carlton Kyoto → confirm_booking\]/g)?.length, 1);
   assert.equal(text.match(/\[Button: /g)?.length, 6);
 });
+
+test("a wrapped list reference resolves existing array data without copying it into rows", () => {
+  // Primary local-agent research produced rows: ["data/evidence"] and no diagnostics.
+  const store = new SurfaceStore(basicCatalog);
+  const diagnostics = store.apply("vak_render", { surface: "evidence", data: { evidence: [{ source: "First", verified: true }, { source: "Second", verified: false }] }, nodes: [{ id: "root", type: "table", props: { columns: [{ key: "source", label: "Source" }, { key: "verified", label: "Verified" }], rows: ["data/evidence"] } }] });
+  assert.equal(diagnostics.some((d) => d.severity === "error"), false);
+  assert.ok(diagnostics.some((d) => d.message.includes("wrapped list reference")));
+  assert.equal(store.snapshot("evidence")!.nodes[0]!.props!.rows, "{/data/evidence}");
+  assert.equal((store.resolve("evidence")!.root!.props.rows as unknown[]).length, 2);
+  assert.match(projectText(store.resolve("evidence")!), /First/);
+  store.apply("vak_update", { surface: "evidence", data: { evidence: [{ source: "Updated", verified: true }] } });
+  assert.match(projectText(store.resolve("evidence")!), /Updated/);
+  assert.equal((store.resolve("evidence")!.root!.props.rows as unknown[]).length, 1);
+});
+
+test("wrapped-list repair preserves literal paths, missing targets, scalars and nested row cells", () => {
+  for (const rows of [["data/missing"], ["data/scalar"], ["{evidence}"], ["notes/report.txt"], [["data/evidence"]], ["data/evidence", "other"]]) {
+    const store = new SurfaceStore(basicCatalog);
+    store.apply("vak_render", { surface: "literal", data: { scalar: "text", evidence: [{ name: "Real" }] }, nodes: [{ id: "root", type: "table", props: { columns: ["File"], rows } }] });
+    assert.deepEqual(store.snapshot("literal")!.nodes[0]!.props!.rows, rows);
+  }
+  const store = new SurfaceStore(basicCatalog);
+  store.apply("vak_render", { surface: "quoted", data: { evidence: ["one", "two"] }, nodes: [{ id: "root", type: "list", props: { items: ["{/evidence}"] } }] });
+  assert.equal(store.snapshot("quoted")!.nodes[0]!.props!.items, "{/evidence}");
+});
