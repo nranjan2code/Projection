@@ -22,7 +22,7 @@ LLM (Ollama · Anthropic · OpenAI · Gemini · any OpenAI-compatible)
   └────────────► back to the model as an action
 ```
 
-- **Spec (VPS):** flat, id-addressed nodes, root first; a separate data model bound with `{/path}`; templated lists; named validation checks. See [SCOPE.md](SCOPE.md).
+- **Spec (VPS):** id-addressed nodes, root first, children written inline (or referenced by id); a separate data model bound with `{/path}`; templated lists; named validation checks. See [SCOPE.md](SCOPE.md).
 - **Catalog:** the single source of truth. It generates tool schemas and prompts, declares the repair vocabulary (component/prop aliases, enum spellings, defaults) and worked examples.
 - **Repair, not rejection:** malformed or sloppy model output is normalized by general rules: schema-scored type inference, structural repair, alias resolution. Whatever can't be repaired goes back to the model as diagnostics.
 - **Capability policy:** per model, declared facts from the provider API plus an optional cached calibration run choose the generation mode, catalog tier and prompt guidance, with stated reasons.
