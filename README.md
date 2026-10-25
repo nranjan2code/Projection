@@ -70,6 +70,16 @@ TELEGRAM_BOT_TOKEN=…   # in .env, from @BotFather
 npm run telegram       # long polling; VAK_PROVIDER / VAK_MODEL pick the model
 ```
 
+Chats are saved in `.vak/telegram/`, so a restarted bot keeps its views, buttons and forms in progress.
+
+## Slack and Discord
+
+`packages/slack` projects a surface into one Block Kit message: a header, sections in mrkdwn, stats as section fields, native table blocks (charts become tables), and button rows. A form shows its fields and opens as a **modal** with Slack's own inputs (selects, date pickers, checkboxes); submitted values are read back through the same field rules, and problems return as per-field errors.
+
+`packages/discord` projects a surface into one **Components V2** message: a container of text displays, separators, media and button rows. Tables and charts are aligned monospace blocks, since Discord markdown has none. A form opens as modals of up to 5 fields (selects for choices), paged when longer.
+
+Both keep within each platform's limits (blocks, components, characters) and cut with a note rather than send something the platform rejects. Model text is escaped, mentions are disabled, and only `https` / `mailto` links survive. The bots that send these and route clicks are not built yet.
+
 ## Benchmark
 
 `npm run bench -- run <provider:model> --runs 2 --save` runs 30 scenarios, single- and multi-turn, and scores them with structural checks plus an optional semantic judge (`--judge provider:model`). Results come with 95% intervals. Each record is saved as soon as it finishes, so a stopped run keeps what it measured.
@@ -87,6 +97,8 @@ npm run telegram       # long polling; VAK_PROVIDER / VAK_MODEL pick the model
 | `packages/web` | `<vak-surface>` renderer, charts, markdown, client |
 | `packages/mcp` | MCP server exposing vak tools over stdio |
 | `packages/telegram` | Telegram projector, form flow, Bot API client, bot |
+| `packages/slack` | Block Kit projector, modal forms |
+| `packages/discord` | Components V2 projector, modal forms |
 | `packages/bench` | scenarios, rubric, runner, replay, stats, judge |
 | `apps/playground` | dev server + chat UI + `/api/project` for direct projection |
 | `scripts` | eval and smoke tests |

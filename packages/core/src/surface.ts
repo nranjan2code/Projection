@@ -230,6 +230,9 @@ export class SurfaceStore {
     if (!state) return [{ severity: "error", surface: surfaceId, message: `no surface "${surfaceId}"; call vak_render first` }];
     const diags: Diagnostic[] = [];
     if (typeof args.title === "string") state.title = args.title;
+    const shownBefore = reachable(state.nodes);
+    const sent = new Set<string>();
+    collectIds(args.nodes, sent);
     this.nodeData = undefined;
     for (const patch of Array.isArray(args.nodes) ? args.nodes : []) {
       if (!isObject(patch)) continue;
@@ -255,6 +258,15 @@ export class SurfaceStore {
       if (!setAt(state.data, op.path, structuredClone(value), mode)) {
         diags.push({ severity: "error", surface: surfaceId, message: `cannot ${op.op} data at ${op.path}` });
       }
+    }
+    // Nodes a patch cut out of the tree (a parent's children replaced
+    // without them) are gone, as the patch says, not re-attached elsewhere.
+    // The model is told, so a cut it did not mean can be undone.
+    const shownNow = reachable(state.nodes);
+    const released = [...shownBefore].filter((id) => !shownNow.has(id) && !sent.has(id) && state.nodes.has(id));
+    for (const id of released) state.nodes.delete(id);
+    if (released.length) {
+      diags.push({ severity: "warning", surface: surfaceId, message: `no longer in any parent's children, so removed: ${released.map((id) => `"${id}"`).join(", ")}; to keep them, list them in children again` });
     }
     state.version++;
     diags.push(...this.repair(state));
@@ -489,6 +501,7 @@ export class SurfaceStore {
       const ch = node.children;
       if (Array.isArray(ch)) {
         for (const c of ch) {
+
           if (!state.nodes.has(c)) diags.push({ severity: "error", surface: state.id, node: node.id, message: `child "${c}" was never sent: send that node with vak_update, or remove it from children` });
         }
       } else if (ch && !state.nodes.has(ch.template)) {
@@ -644,3 +657,26 @@ export function formatDiagnostics(diags: Diagnostic[]): string {
   return [head, ...diags.map((d) => `- ${d.severity}${d.node ? ` [${d.node}]` : ""}: ${d.message}`)].join("\n");
 }
 
+
+/** Ids reachable from the root through children lists and list templates. */
+function reachable(nodes: Map<string, VpsNode>): Set<string> {
+  const root = nodes.has("root") ? "root" : nodes.keys().next().value;
+  const seen = new Set<string>();
+  const visit = (id: string) => {
+    if (seen.has(id) || !nodes.has(id)) return;
+    seen.add(id);
+    const ch = nodes.get(id)!.children;
+    if (Array.isArray(ch)) ch.forEach(visit);
+    else if (ch) visit(ch.template);
+  };
+  if (root !== undefined) visit(root);
+  return seen;
+}
+
+/** Every node id written in a patch, including nodes nested inline as children. */
+function collectIds(raw: unknown, into: Set<string>): void {
+  if (Array.isArray(raw)) return raw.forEach((r) => collectIds(r, into));
+  if (!isObject(raw)) return;
+  if (typeof raw.id === "string") into.add(raw.id);
+  collectIds(raw.children, into);
+}

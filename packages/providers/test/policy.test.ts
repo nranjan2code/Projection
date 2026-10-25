@@ -60,3 +60,20 @@ test("a model with neither tools nor constrained output is refused, not guessed"
   const p: ModelProfile = { provider: "x", model: "y", facts: { tools: false, fingerprint: "f", source: "t" }, constrainedOutput: false };
   assert.throws(() => choosePlan(p), /neither tool calling nor constrained output/);
 });
+
+test("calibration replaces the declared plan only when it is clearly better", () => {
+  const cal = (constrainedComplete: number): Calibration => ({
+    version: CALIBRATION_VERSION,
+    fingerprint: "sha-1",
+    at: "2026-10-25T00:00:00Z",
+    results: [
+      { config: { generation: "constrained", tier: "core", examples: true }, runs: 4, valid: 4, complete: constrainedComplete, medianMs: 9000 },
+      { config: { generation: "tools", tier: "core", examples: true, authoring: "inline" }, runs: 4, valid: 3, complete: 2, medianMs: 16000 },
+    ],
+  });
+  const noisy = choosePlan(local(4.5e9, { calibration: cal(3) }));
+  assert.deepEqual([noisy.generation, noisy.authoring], ["tools", "inline"], "3/4 vs 2/4 is noise");
+  assert.match(noisy.reasons[0]!, /not a clear difference/);
+  const lopsided: Calibration = { ...cal(4), results: [cal(4).results[0]!, { ...cal(4).results[1]!, complete: 0 }] };
+  assert.equal(choosePlan(local(4.5e9, { calibration: lopsided })).generation, "constrained", "4/4 vs 0/4 is not");
+});

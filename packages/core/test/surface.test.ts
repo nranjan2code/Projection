@@ -400,3 +400,28 @@ test("an empty container surface is an error the model can act on", () => {
   assert.ok(diags.some((d) => d.severity === "error" && /surface is empty/.test(d.message)));
   assert.ok(!store.render({ surface: "ok", nodes: [{ id: "root", type: "stack", children: ["t"] }, { id: "t", type: "text", props: { text: "hi" } }] }).some((d) => /empty/.test(d.message)));
 });
+
+test("an update that replaces a parent's children removes what it cut out, and a node keeps one parent", () => {
+  // From a live run: after a booking submit the model patched the form with the
+  // hotel cards as its children, cutting out the form's own fields.
+  const store = new SurfaceStore(basicCatalog);
+  store.render({
+    surface: "h",
+    nodes: [
+      { id: "root", type: "stack", children: ["compare", "book"] },
+      { id: "compare", type: "grid", children: ["h1", "h2"] },
+      { id: "h1", type: "card", props: { title: "Ritz" } },
+      { id: "h2", type: "card", props: { title: "Hoshinya" } },
+      { id: "book", type: "form", props: { submit: "confirm" }, children: ["name"] },
+      { id: "name", type: "input", props: { label: "Name", bind: "/b/name" } },
+    ],
+  });
+  const diags = store.update({ surface: "h", nodes: [{ id: "book", children: [{ id: "h1", type: "card", props: { title: "Ritz", badge: "booked" } }, { id: "h2", type: "card", props: { title: "Hoshinya" } }] as never }] });
+  const st = store.get("h")!;
+  assert.ok(!st.nodes.has("name"), "the cut-out field is gone, not attached to the root");
+  assert.ok(diags.some((d) => /removed: "name"/.test(d.message)));
+  assert.deepEqual(st.nodes.get("compare")!.children, ["h1", "h2"]);
+  assert.deepEqual(st.nodes.get("book")!.children, [], "the cards stay with their first parent");
+  assert.ok(diags.some((d) => d.node === "h1" && /kept under "compare"/.test(d.message)));
+  assert.deepEqual(st.nodes.get("root")!.children, ["compare", "book"]);
+});

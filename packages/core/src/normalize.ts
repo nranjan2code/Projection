@@ -235,6 +235,20 @@ export function repairStructure(
     repairs.push({ node: node.id, message: `${node.type} cannot have children; they were placed after it` });
   }
 
+  // A node listed by two parents would show twice: it stays with the first
+  // parent in document order.
+  const parentOf = new Map<string, string>();
+  for (const node of nodes.values()) {
+    if (!Array.isArray(node.children)) continue;
+    node.children = node.children.filter((c) => {
+      const first = parentOf.get(c);
+      if (first === undefined) return parentOf.set(c, node.id), true;
+      if (first === node.id) return false;
+      repairs.push({ node: c, message: `listed in the children of both "${first}" and "${node.id}"; kept under "${first}" only (give a second copy its own id)` });
+      return false;
+    });
+  }
+
   const referenced = new Set<string>();
   for (const node of nodes.values()) {
     if (Array.isArray(node.children)) node.children.forEach((c) => referenced.add(c));

@@ -44,15 +44,29 @@ export function choosePlan(profile: ModelProfile, ctx: { userTools?: boolean } =
   if (ctx.userTools && !canTools) throw new Error(`${profile.model} cannot call tools, and this run has user tools`);
   const possible = (c: ProjectionConfig) => (c.generation === "tools" ? canTools : canConstrained);
 
-  // 1. Measured: the best configuration this model was calibrated on.
+  const declared = declaredPlan(profile, canTools);
+
+  // 1. Measured: the best configuration this model was calibrated on. A few
+  // calibration cases are noisy, so it replaces the declared plan only when it
+  // is clearly better (its 95% interval above the declared one's), or when the
+  // declared configuration was not measured or cannot run here.
   if (calibrationApplies(profile)) {
     const ranked = profile.calibration!.results
       .filter((r) => r.runs > 0 && possible(r.config))
       .sort((a, b) => rate(b, "complete") - rate(a, "complete") || rate(b, "valid") - rate(a, "valid") || a.medianMs - b.medianMs);
     const best = ranked[0];
     if (best) {
+      const at = profile.calibration!.at.slice(0, 10);
+      const mine = ranked.find((r) => configKey(r.config) === configKey(declared));
+      if (mine && mine !== best && wilson(best.complete, best.runs).lo <= wilson(mine.complete, mine.runs).hi) {
+        reasons.push(
+          `calibrated ${at}: ${configKey(best.config)} completed ${best.complete}/${best.runs}, ${configKey(mine.config)} ${mine.complete}/${mine.runs}; not a clear difference, keeping the declared plan`,
+          ...declared.reasons,
+        );
+        return { ...declared, reasons };
+      }
       reasons.push(
-        `calibrated ${profile.calibration!.at.slice(0, 10)}: ${configKey(best.config)} completed ${best.complete}/${best.runs}` +
+        `calibrated ${at}: ${configKey(best.config)} completed ${best.complete}/${best.runs}` +
           (ranked.length > 1 ? ` (best of ${ranked.length} configurations)` : ""),
       );
       const weak = rate(best, "complete") < 0.5;
@@ -64,7 +78,22 @@ export function choosePlan(profile: ModelProfile, ctx: { userTools?: boolean } =
   } else {
     reasons.push("not calibrated; using declared facts");
   }
+  return { ...declared, reasons: [...reasons, ...declared.reasons] };
+}
 
+/** 95% Wilson score interval for k successes in n trials. */
+function wilson(k: number, n: number, z = 1.96): { lo: number; hi: number } {
+  if (n === 0) return { lo: 0, hi: 1 };
+  const p = k / n;
+  const d = 1 + (z * z) / n;
+  const c = (p + (z * z) / (2 * n)) / d;
+  const h = (z * Math.sqrt((p * (1 - p)) / n + (z * z) / (4 * n * n))) / d;
+  return { lo: Math.max(0, c - h), hi: Math.min(1, c + h) };
+}
+
+/** The plan from declared facts alone. */
+function declaredPlan(profile: ModelProfile, canTools: boolean): ProjectionPlan {
+  const reasons: string[] = [];
   // 2. Declared facts only.
   // Tools first: on calibrated local models, grammar decoding guaranteed shape
   // but produced thinner UIs than tool calling.

@@ -3,25 +3,10 @@
 // field's named checks; values are written to the surface store, so the final
 // submit is the same store.submit the web uses.
 
-import { getAt, isRequired, type ResolvedNode, runChecks, type SurfaceStore } from "@vak/core";
+import { type FormField, formFields, getAt, readField, type SurfaceStore } from "@vak/core";
 
-export interface Choice {
-  label: string;
-  value: unknown;
-}
-
-export interface Step {
-  key: string;
-  bindPath: string;
-  type: string;
-  label: string;
-  required: boolean;
-  checks: unknown;
-  kind?: string;
-  choices?: Choice[];
-  multiple?: boolean;
-  range?: boolean;
-}
+/** A form field as asked in the chat (see formFields in @vak/core). */
+export type Step = FormField;
 
 export interface Prompt {
   text: string;
@@ -31,39 +16,16 @@ export interface Prompt {
   typed: boolean;
 }
 
-const INPUT_TYPES = new Set(["input", "textarea", "select", "checkbox", "date"]);
 const SKIP = "skip";
 
-function choicesOf(n: ResolvedNode): Choice[] | undefined {
-  if (n.type === "checkbox") return [{ label: "Yes", value: true }, { label: "No", value: false }];
-  if (n.type !== "select" || !Array.isArray(n.props.options)) return undefined;
-  return n.props.options.map((o) =>
-    o && typeof o === "object" ? { label: String((o as Record<string, unknown>).label ?? (o as Record<string, unknown>).value), value: (o as Record<string, unknown>).value } : { label: String(o), value: o },
-  );
-}
-
 /** The bound fields inside `scope`, in reading order. */
-export function stepsOf(scope: ResolvedNode): Step[] {
-  const steps: Step[] = [];
-  const visit = (n: ResolvedNode) => {
-    if (INPUT_TYPES.has(n.type) && n.bindPath) {
-      steps.push({
-        key: n.key,
-        bindPath: n.bindPath,
-        type: n.type,
-        label: String(n.props.label ?? n.id),
-        required: isRequired(n.props.checks),
-        checks: n.props.checks,
-        kind: typeof n.props.kind === "string" ? n.props.kind : undefined,
-        choices: choicesOf(n),
-        multiple: Boolean(n.props.multiple),
-        range: Boolean(n.props.range),
-      });
-    }
-    n.children.forEach(visit);
-  };
-  visit(scope);
-  return steps;
+export const stepsOf = formFields;
+
+export interface FlowState {
+  surface: string;
+  source: string;
+  index: number;
+  picked: unknown[];
 }
 
 export class FormFlow {
@@ -123,23 +85,27 @@ export class FormFlow {
       }
       value = choice.value;
     } else {
-      const text = (input.text ?? "").trim();
-      if (text.toLowerCase() === SKIP && !step.required) return this.advance(store, step, undefined);
-      if (step.type === "date" && step.range) {
-        const m = /^(\d{4}-\d{2}-\d{2})\s*(?:to|–|-{1,2}|→)\s*(\d{4}-\d{2}-\d{2})$/i.exec(text);
-        if (!m) return "Please send two dates like 2026-11-10 to 2026-11-17";
-        value = [m[1], m[2]];
-      } else if (step.type === "date") {
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return "Please send a date like 2026-11-10";
-        value = text;
-      } else if (step.kind === "number") {
-        if (!Number.isFinite(Number(text)) || text === "") return "Please send a number";
-        value = Number(text);
-      } else value = text;
+      const text = input.text ?? "";
+      if (text.trim().toLowerCase() === SKIP && !step.required) return this.advance(store, step, undefined);
+      const read = readField(step, text);
+      if ("error" in read) return read.error;
+      value = read.value;
     }
-    const fails = runChecks(value, step.checks);
-    if (fails.length) return fails.join("; ");
     return this.advance(store, step, value);
+  }
+
+  /** Progress only: the steps are derived from the surface again on restore. */
+  save(): FlowState {
+    return { surface: this.surface, source: this.source, index: this.index, picked: [...this.picked] };
+  }
+
+  static restore(store: SurfaceStore, state: FlowState): FormFlow | undefined {
+    const found = store.submitScope(state.surface, state.source);
+    if (!found?.scope) return undefined;
+    const flow = new FormFlow(state.surface, state.source, stepsOf(found.scope));
+    flow.index = Math.min(state.index, flow.steps.length);
+    flow.picked = [...state.picked];
+    return flow;
   }
 
   private advance(store: SurfaceStore, step: Step, value: unknown): undefined {

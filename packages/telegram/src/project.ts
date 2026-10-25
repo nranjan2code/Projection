@@ -2,7 +2,7 @@
 // Telegram is a linear target: containers flatten in priority order. What
 // Telegram cannot show natively degrades declaratively (see telegramProfile).
 
-import { byPriority, type CapabilityProfile, isRequired, type ResolvedNode, type ResolvedSurface, walk } from "@vak/core";
+import { byPriority, type CapabilityProfile, chartText, isRequired, type ResolvedNode, type ResolvedSurface, tableText, type TextTable, walk } from "@vak/core";
 import { esc, markdownToHtml } from "./html.ts";
 
 /** What the model should know about this target (narrows the catalog and prompt). */
@@ -131,6 +131,13 @@ function buttonRow(buttons: ResolvedNode[], ctx: Ctx): string {
     .join("")}</tg-button-row>`;
 }
 
+function htmlTable(t: TextTable, attrs: string, headless = false): string {
+  const align = (i: number) => (t.align[i] === "end" ? ' align="right"' : t.align[i] === "center" ? ' align="center"' : "");
+  const head = headless ? "" : `<tr>${t.headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr>`;
+  const body = t.rows.map((r) => `<tr>${r.map((v, i) => `<td${align(i)}>${esc(v)}</td>`).join("")}</tr>`).join("");
+  return `<table ${attrs}>${head}${body}</table>`;
+}
+
 function block(n: ResolvedNode, out: string[], ctx: Ctx): void {
   const p = n.props;
   switch (n.type) {
@@ -167,36 +174,16 @@ function block(n: ResolvedNode, out: string[], ctx: Ctx): void {
     }
     case "stat":
       return void out.push(statTable([n]));
-    case "table": {
-      const cols = ((Array.isArray(p.columns) ? p.columns : []) as Record<string, unknown>[]).slice(0, MAX_COLUMNS);
-      const rows = Array.isArray(p.rows) ? p.rows : [];
-      const head = `<tr>${cols.map((c) => `<th>${esc(c.label ?? c.key)}</th>`).join("")}</tr>`;
-      const body = rows
-        .map((r) => {
-          const cells = cols.map((c, i) => (Array.isArray(r) ? r[i] : r && typeof r === "object" ? (r as Record<string, unknown>)[str(c.key)] : r));
-          return `<tr>${cells.map((v, i) => `<td${cols[i]?.align === "end" ? ' align="right"' : cols[i]?.align === "center" ? ' align="center"' : ""}>${esc(str(v))}</td>`).join("")}</tr>`;
-        })
-        .join("");
-      return void out.push(`<table bordered striped compact>${head}${body}</table>`);
-    }
+    case "table":
+      return void out.push(htmlTable(tableText(p, MAX_COLUMNS), "bordered striped compact"));
     case "list": {
       const tag = p.ordered ? "ol" : "ul";
       const items = (Array.isArray(p.items) ? p.items : []).map((i) => `<li>${markdownToHtml(i).replace(/^<p>|<\/p>$/g, "")}</li>`);
       return void out.push(`<${tag}>${items.join("")}</${tag}>`);
     }
-    case "chart": {
+    case "chart":
       // No charts in Telegram: the same data as a table (a pie shows shares).
-      const labels = (Array.isArray(p.labels) ? p.labels : []).map(str);
-      const series = (Array.isArray(p.series) ? p.series : []) as { name?: string; values?: number[] }[];
-      if (p.kind === "pie" && series[0]?.values) {
-        const total = series[0].values.reduce((a, b) => a + (Number(b) || 0), 0) || 1;
-        const rows = series[0].values.map((v, i) => `<tr><td>${esc(labels[i] ?? i + 1)}</td><td align="right">${esc(v)}</td><td align="right">${Math.round((Number(v) / total) * 100)}%</td></tr>`);
-        return void out.push(`<table compact>${rows.join("")}</table>`);
-      }
-      const head = `<tr><th></th>${series.map((s, i) => `<th>${esc(s.name ?? `Series ${i + 1}`)}</th>`).join("")}</tr>`;
-      const body = labels.map((l, i) => `<tr><td>${esc(l)}</td>${series.map((s) => `<td align="right">${esc(s.values?.[i] ?? "")}</td>`).join("")}</tr>`).join("");
-      return void out.push(`<table compact>${head}${body}</table>`);
-    }
+      return void out.push(htmlTable(chartText(p), "compact", p.kind === "pie"));
     case "alert":
       return void out.push(`<blockquote>${p.title ? `<b>${esc(p.title)}</b><br/>` : ""}${markdownToHtml(p.body).replace(/^<p>|<\/p>$/g, "")}</blockquote>`);
     case "image":

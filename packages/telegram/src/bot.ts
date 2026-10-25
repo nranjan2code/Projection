@@ -3,11 +3,11 @@
 // in place as surfaces change; buttons route to form flows or actions, and
 // every user action goes back to the model.
 
-import { appendFileSync, mkdirSync } from "node:fs";
-import { basicCatalog, type Catalog, projectText, SurfaceStore } from "@vak/core";
+import { appendFileSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { basicCatalog, type Catalog, projectText, type SurfaceSnapshot, SurfaceStore } from "@vak/core";
 import { actionMessage, type Message, type ProjectionPlan, type Provider, runAgent } from "@vak/providers";
 import { type TelegramApi, TelegramError, type TgUpdate } from "./api.ts";
-import { FormFlow, stepsOf } from "./flow.ts";
+import { FormFlow, type FlowState, stepsOf } from "./flow.ts";
 import { MediaVerifier } from "./media.ts";
 import { type Control, imageSources, projectTelegram, telegramProfile } from "./project.ts";
 
@@ -39,6 +39,21 @@ export interface BotOptions {
   log?: (line: string) => void;
   /** Directory for per-chat transcripts of each turn's raw tool calls (for diagnosing model output). */
   transcriptDir?: string;
+  /** Directory where each chat's state is saved after every update, so a restart keeps chats and buttons working. */
+  stateDir?: string;
+}
+
+interface SavedChat {
+  v: 1;
+  surfaces: SurfaceSnapshot[];
+  messages: Message[];
+  posted: [string, number][];
+  shown: [string, string][];
+  tokens: [string, Control & { surface: string }][];
+  choiceTokens: [string, string][];
+  choicePrompt?: { messageId: number; text: string };
+  nextToken: number;
+  flow?: FlowState;
 }
 
 interface Chat {
@@ -76,9 +91,60 @@ export class TelegramBot {
     let c = this.chats.get(id);
     if (!c) {
       c = { id, store: new SurfaceStore(this.opts.catalog ?? basicCatalog), messages: [], posted: new Map(), shown: new Map(), tokens: new Map(), choiceTokens: new Map(), busy: Promise.resolve(), pending: 0, nextToken: 0 };
+      this.restore(c);
       this.chats.set(id, c);
     }
     return c;
+  }
+
+  private statePath(id: number): string | undefined {
+    return this.opts.stateDir ? `${this.opts.stateDir}/${id}.state.json` : undefined;
+  }
+
+  private restore(chat: Chat): void {
+    const path = this.statePath(chat.id);
+    if (!path) return;
+    let saved: SavedChat;
+    try {
+      saved = JSON.parse(readFileSync(path, "utf8")) as SavedChat;
+    } catch {
+      return; // no saved state yet
+    }
+    if (saved.v !== 1) return;
+    for (const snap of saved.surfaces) chat.store.load(snap);
+    chat.messages = saved.messages;
+    chat.posted = new Map(saved.posted);
+    chat.shown = new Map(saved.shown);
+    chat.tokens = new Map(saved.tokens);
+    chat.choiceTokens = new Map(saved.choiceTokens);
+    chat.choicePrompt = saved.choicePrompt;
+    chat.nextToken = saved.nextToken;
+    if (saved.flow) chat.flow = FormFlow.restore(chat.store, saved.flow);
+  }
+
+  private save(chat: Chat): void {
+    const path = this.statePath(chat.id);
+    if (!path) return;
+    const saved: SavedChat = {
+      v: 1,
+      surfaces: chat.store.list().map((s) => chat.store.snapshot(s.id)!),
+      messages: chat.messages,
+      posted: [...chat.posted],
+      shown: [...chat.shown],
+      tokens: [...chat.tokens],
+      choiceTokens: [...chat.choiceTokens],
+      choicePrompt: chat.choicePrompt,
+      nextToken: chat.nextToken,
+      flow: chat.flow?.save(),
+    };
+    try {
+      mkdirSync(this.opts.stateDir!, { recursive: true });
+      // Write then rename, so a crash mid-write never leaves a torn file.
+      writeFileSync(`${path}.tmp`, JSON.stringify(saved));
+      renameSync(`${path}.tmp`, path);
+    } catch (err) {
+      this.opts.log?.(`chat ${chat.id}: state not saved: ${(err as Error).message}`);
+    }
   }
 
   /** Handle one update; work for a chat runs in order. */
@@ -98,6 +164,7 @@ export class TelegramBot {
     chat.busy = chat.busy
       .then(() => this.process(chat, update))
       .catch((err) => this.opts.log?.(`chat ${chatId}: ${(err as Error).message}`))
+      .then(() => this.save(chat))
       .finally(() => void chat.pending--);
     return chat.busy;
   }

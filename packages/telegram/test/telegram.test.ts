@@ -225,3 +225,25 @@ test("bot: a surface the model removes keeps its message as history, without liv
   assert.doesNotMatch(closed.params.rich_message.html, /<tg-button/);
   assert.match(closed.params.rich_message.html, /<i>Closed<\/i>/);
 });
+
+test("bot: a restarted bot keeps the chat, its buttons and a form in progress", async () => {
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const stateDir = mkdtempSync(`${tmpdir()}/vak-tg-`);
+  const signup = basicCatalog.examples.find((e) => e.render.surface === "beta")!.render;
+  const make = () => new TelegramBot({ api: new TelegramApi("TEST", base), provider: scripted([{ name: "vak_render", args: signup }]), model: "m", editIntervalMs: 0, stateDir });
+  const chat = { id: 99 };
+  const before = calls.length;
+  await make().handle({ update_id: 1, message: { message_id: 1, chat, text: "beta signup" } });
+  const html = calls.slice(before).find((c) => c.method === "sendRichMessage" && c.params.chat_id === 99)!.params.rich_message.html as string;
+  const token = /data="([^"]+)" style="primary">Join the beta/.exec(html)![1]!;
+
+  // Restart before the button is pressed.
+  await make().handle({ update_id: 2, callback_query: { id: "cb", data: token, from: { id: 7 }, message: { message_id: 100, chat } } });
+  const ours = () => calls.filter((c) => c.params.chat_id === 99 && c.method === "sendMessage");
+  assert.match(ours().at(-1)!.params.text, /^1\/4 · Name/);
+
+  // Restart again mid-form: the next answer continues where it was.
+  await make().handle({ update_id: 3, message: { message_id: 3, chat, text: "Ada" } });
+  assert.match(ours().at(-1)!.params.text, /^2\/4 · Email/);
+});
