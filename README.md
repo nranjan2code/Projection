@@ -76,6 +76,7 @@ npm run telegram       # long polling; VAK_PROVIDER / VAK_MODEL pick the model
 
 - `npm test` replays the recorded model outputs (cassettes) through the current engine and fails on any regression.
 - `npm run bench:gate` compares a live run with the stored baseline and fails only on a statistically significant drop.
+- `--plan generation/tier/examples[/inline]` pins a configuration, for A/B tests. Writing children inline instead of as a flat id list raised the 4B model's mean check score from 75% to 90% (paired difference +14 points, 95% CI +3 to +26, bench v2, one run per scenario), so tool-calling plans now default to inline.
 
 ## Layout
 

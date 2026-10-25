@@ -458,13 +458,23 @@ export class SurfaceStore {
     }];
   }
 
+  /** A container root with nothing in it shows the user only a title: an error, so the model fills it. */
+  private lintEmpty(state: SurfaceState): Diagnostic[] {
+    const id = this.rootId(state);
+    const root = id ? state.nodes.get(id) : undefined;
+    if (!root || !this.catalog.components[root.type]?.children) return [];
+    const ch = root.children;
+    if (ch && (!Array.isArray(ch) || ch.length)) return [];
+    return [{ severity: "error", surface: state.id, node: root.id, message: "the surface is empty: add the content as children of the root, or remove the surface and answer in text" }];
+  }
+
   private rootId(state: SurfaceState): string | undefined {
     if (state.nodes.has("root")) return "root";
     return state.nodes.keys().next().value;
   }
 
   lint(state: SurfaceState): Diagnostic[] {
-    const diags: Diagnostic[] = [...this.lintSubmittable(state)];
+    const diags: Diagnostic[] = [...this.lintSubmittable(state), ...this.lintEmpty(state)];
     const skip = (v: unknown) => isBinding(v);
     for (const node of state.nodes.values()) {
       if (node.type === "$invalid") {

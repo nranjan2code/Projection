@@ -2,7 +2,7 @@
 // the prompt text, the validator and (via projectors) the renderer registry.
 
 import { type JSONSchema, toWireSchema } from "./schema.ts";
-import { type RenderArgs, TOOL_REMOVE, TOOL_RENDER, TOOL_UPDATE } from "./vps.ts";
+import { type RenderArgs, TOOL_REMOVE, TOOL_RENDER, TOOL_UPDATE, type VpsNode } from "./vps.ts";
 
 /** Another name for a component, optionally implying props ("row" → stack, direction: horizontal). */
 export type ComponentAlias = string | { name: string; props: Record<string, unknown> };
@@ -140,6 +140,14 @@ export interface ToolDefinition {
   inputSchema: JSONSchema;
 }
 
+/**
+ * How the model writes the node tree. "flat": one list, children referenced by
+ * id (best for progressive streaming). "inline": each child written inside its
+ * parent's children, so nothing referenced can be left undefined. The engine
+ * accepts both; this only changes what the model is asked to write.
+ */
+export type Authoring = "flat" | "inline";
+
 export interface ToolOptions {
   /**
    * "strict": each node is a union keyed by `type` with its exact props schema.
@@ -147,11 +155,14 @@ export interface ToolOptions {
    * "compact": props are a free object; the component list lives in the prompt.
    */
   mode?: "strict" | "compact";
+  authoring?: Authoring;
 }
 
-const CHILDREN_SCHEMA: JSONSchema = {
+const childrenSchema = (authoring: Authoring): JSONSchema => ({
   anyOf: [
-    { type: "array", items: { type: "string" }, description: "ids of child nodes, in order" },
+    authoring === "inline"
+      ? { type: "array", items: { anyOf: [{ type: "object", description: "a child node {id, type, props, children}" }, { type: "string" }] }, description: "child nodes, in order (ids of template nodes allowed)" }
+      : { type: "array", items: { type: "string" }, description: "ids of child nodes, in order" },
     {
       type: "object",
       properties: {
@@ -161,9 +172,10 @@ const CHILDREN_SCHEMA: JSONSchema = {
       required: ["each", "template"],
     },
   ],
-};
+});
 
-function nodeSchema(catalog: Catalog, mode: "strict" | "compact", partial: boolean): JSONSchema {
+function nodeSchema(catalog: Catalog, mode: "strict" | "compact", partial: boolean, authoring: Authoring = "flat"): JSONSchema {
+  const CHILDREN_SCHEMA = childrenSchema(authoring);
   const names = Object.keys(catalog.components);
   const required = partial ? ["id"] : ["id", "type"];
   if (mode === "compact") {
@@ -205,7 +217,7 @@ export function toolDefinitions(catalog: Catalog, opts: ToolOptions = {}): ToolD
         properties: {
           surface: { type: "string", description: "stable id for this UI, reuse it to replace" },
           title: { type: "string" },
-          nodes: { type: "array", items: nodeSchema(catalog, mode, false), minItems: 1 },
+          nodes: { type: "array", items: nodeSchema(catalog, mode, false, opts.authoring), minItems: 1 },
           data: { type: "object", description: "data model; props bind into it with {/path}" },
         },
         required: ["surface", "nodes"],
@@ -219,7 +231,7 @@ export function toolDefinitions(catalog: Catalog, opts: ToolOptions = {}): ToolD
         properties: {
           surface: { type: "string" },
           title: { type: "string" },
-          nodes: { type: "array", items: nodeSchema(catalog, "compact", true) },
+          nodes: { type: "array", items: nodeSchema(catalog, "compact", true, opts.authoring) },
           data: {
             description: "JSON Patch ops, or an object deep-merged into the data model",
             anyOf: [
@@ -303,6 +315,27 @@ function describeProps(schema: JSONSchema): string {
 export interface PromptOptions {
   /** Include the catalog's worked examples (helps models that compose UIs poorly). */
   examples?: boolean;
+  authoring?: Authoring;
+}
+
+/** A flat example rewritten with children inline (template nodes stay top-level, as ids are needed there). */
+export function toInline(render: RenderArgs): RenderArgs {
+  const byId = new Map(render.nodes.map((n) => [n.id, n]));
+  const templates = new Set(render.nodes.flatMap((n) => (n.children && !Array.isArray(n.children) ? [n.children.template] : [])));
+  const used = new Set<string>();
+  const build = (id: string): VpsNode => {
+    const n = byId.get(id)!;
+    used.add(id);
+    const out: VpsNode = { ...n };
+    if (Array.isArray(n.children)) {
+      out.children = n.children.map((c) => (byId.has(c) && !templates.has(c) && !used.has(c) ? build(c) : c)) as never;
+    }
+    return out;
+  };
+  const root = byId.get("root") ?? render.nodes[0]!;
+  const nodes = [build(root.id)];
+  for (const n of render.nodes) if (!used.has(n.id)) nodes.push(build(n.id));
+  return { ...render, nodes };
 }
 
 export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts: PromptOptions = {}): string {
@@ -312,7 +345,9 @@ export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts
     "Prefer UI over long prose whenever content has structure: options, comparisons, metrics, steps, forms.",
     "",
     "Rules:",
-    "- nodes is a FLAT list. Put the node with id \"root\" first. Parents reference children by id in \"children\".",
+    opts.authoring === "inline"
+      ? "- nodes starts with the node with id \"root\". Write each child node directly inside its parent's \"children\" array, so every node is defined where it is used. A template node (see each/template below) is its own entry in nodes."
+      : "- nodes is a FLAT list. Put the node with id \"root\" first. Parents reference children by id in \"children\".",
     "- Put values in data and bind them: \"{/path}\" inside any string. A string that is only \"{/path}\" keeps the raw value.",
     "- Repeat a node per list item with children: {\"each\": \"/items\", \"template\": \"tplId\"}; inside the template use relative paths like \"{name}\".",
     "- Inputs use bind: \"/form/field\". A form's submit is an action name.",
@@ -337,7 +372,7 @@ export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts
   if (common) lines.push(`Common props on every node: ${common}`);
   if (opts.examples && catalog.examples.length) {
     lines.push("", "Examples of good vak_render arguments:");
-    for (const ex of catalog.examples) lines.push(`Request: ${ex.request}`, `vak_render: ${JSON.stringify(ex.render)}`);
+    for (const ex of catalog.examples) lines.push(`Request: ${ex.request}`, `vak_render: ${JSON.stringify(opts.authoring === "inline" ? toInline(ex.render) : ex.render)}`);
   }
   if (profile) {
     lines.push("", `Target: ${profile.target}.`);

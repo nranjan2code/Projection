@@ -75,3 +75,10 @@ test("a mismatched closer is read the way the text after it parses", () => {
     { id: "b" },
   ]);
 });
+
+test("a stray extra closer is dropped when the closers after it fit the open containers", () => {
+  // From a live 4B run: one "}" too many after a nested child; reading it as a
+  // closer would end the node list early and lose the form after it.
+  const text = '[{"id":"card","children":[{"id":"b","props":{"style":"primary"}}}]}, {"id":"form"}]';
+  assert.deepEqual(parseLenient(text), [{ id: "card", children: [{ id: "b", props: { style: "primary" } }] }, { id: "form" }]);
+});

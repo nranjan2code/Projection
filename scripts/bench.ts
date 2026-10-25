@@ -106,10 +106,17 @@ async function live(
   const planFlag = flag("plan");
   let plan = choosePlan(profile);
   if (planFlag && planFlag !== "auto") {
-    const [generation, tier, examples] = planFlag.split("/");
-    plan = { ...plan, generation: generation as ProjectionPlan["generation"], tier: tier as ProjectionPlan["tier"], examples: examples === "examples", reasons: [`--plan ${planFlag}`] };
+    const [generation, tier, examples, authoring] = planFlag.split("/");
+    plan = {
+      ...plan,
+      generation: generation as ProjectionPlan["generation"],
+      tier: tier as ProjectionPlan["tier"],
+      examples: examples === "examples",
+      authoring: authoring === "inline" ? "inline" : "flat",
+      reasons: [`--plan ${planFlag}`],
+    };
   }
-  console.log(`${spec} · plan ${plan.generation}/${plan.tier}/${plan.examples ? "examples" : "plain"} — ${plan.reasons.join("; ")}`);
+  console.log(`${spec} · plan ${plan.generation}/${plan.tier}/${plan.examples ? "examples" : "plain"}/${plan.authoring ?? "flat"} — ${plan.reasons.join("; ")}`);
 
   const only = flag("only")?.split(",");
   const category = flag("category");
@@ -178,7 +185,7 @@ if (command === "run") {
       provider: ctx.provider,
       model: ctx.model,
       fingerprint: ctx.fingerprint,
-      config: { generation: ctx.plan.generation, tier: ctx.plan.tier, examples: ctx.plan.examples },
+      config: { generation: ctx.plan.generation, tier: ctx.plan.tier, examples: ctx.plan.examples, authoring: ctx.plan.authoring ?? "flat" },
       commit: commit(),
       at: new Date().toISOString(),
       summary: summarize(ctx.records),

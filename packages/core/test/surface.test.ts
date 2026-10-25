@@ -393,3 +393,10 @@ test("inputs nothing can submit are an error; visibility toggles and forms are f
   });
   assert.deepEqual(toggle.filter((d) => d.severity === "error"), []);
 });
+
+test("an empty container surface is an error the model can act on", () => {
+  const store = new SurfaceStore(basicCatalog);
+  const diags = store.render({ surface: "chats", title: "Messages", nodes: [{ id: "root", type: "stack" }] });
+  assert.ok(diags.some((d) => d.severity === "error" && /surface is empty/.test(d.message)));
+  assert.ok(!store.render({ surface: "ok", nodes: [{ id: "root", type: "stack", children: ["t"] }, { id: "t", type: "text", props: { text: "hi" } }] }).some((d) => /empty/.test(d.message)));
+});

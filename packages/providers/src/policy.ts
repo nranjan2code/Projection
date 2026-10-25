@@ -92,5 +92,9 @@ export function choosePlan(profile: ModelProfile, ctx: { userTools?: boolean } =
     examples = false;
     reasons.push(`${ctxWindow}-token context: core components, no examples`);
   }
-  return { generation, tier, examples, maxSteps, maxTokens: 6000, reasons };
+  // Inline children cannot leave a referenced child undefined. Bench v2 A/B on
+  // the 4B model: +14 points mean check score, paired 95% CI [+3, +26].
+  const authoring = generation === "tools" ? "inline" : "flat";
+  if (authoring === "inline") reasons.push("children written inline");
+  return { generation, tier, examples, authoring, maxSteps, maxTokens: 6000, reasons };
 }

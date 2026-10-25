@@ -118,6 +118,37 @@ class Parser {
     return /^.\s*,\s*("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|[A-Za-z_$][\w$-]*)\s*[:=]/s.test(this.s.slice(this.i, this.i + 400));
   }
 
+  /**
+   * A mismatched closer has three readings: a typo for the right closer, the
+   * right closer omitted before it (it closes the enclosing container), or a
+   * stray extra. Each leaves a different stack of open containers; the reading
+   * under which the closers right after it line up with that stack is the one
+   * the rest of the text agrees with. Returns the best-fitting reading, or
+   * undefined when the following text does not tell them apart.
+   */
+  private closerReading(): "typo" | "omitted" | "stray" | undefined {
+    const run = /^.([\s\]}]*)/s.exec(this.s.slice(this.i, this.i + 200))![1]!.replace(/\s+/g, "");
+    if (!run) return undefined;
+    const fit = (stack: ("{" | "[")[]) => {
+      const st = [...stack];
+      let n = 0;
+      for (const c of run) {
+        if (st.pop() !== (c === "}" ? "{" : "[")) return { n, full: false };
+        n++;
+      }
+      return { n, full: true };
+    };
+    const open = this.open;
+    const readings = {
+      typo: fit(open.slice(0, -1)),
+      omitted: open.at(-2) === (open.at(-1) === "[" ? "{" : "[") ? fit(open.slice(0, -2)) : { n: -1, full: false },
+      stray: fit(open),
+    };
+    const score = (r: { n: number; full: boolean }) => (r.full ? 1000 : 0) + r.n;
+    const ranked = (Object.entries(readings) as [keyof typeof readings, { n: number; full: boolean }][]).sort((a, b) => score(b[1]) - score(a[1]));
+    return score(ranked[0]![1]) > score(ranked[1]![1]) ? ranked[0]![0] : undefined;
+  }
+
   /** True when a container of `kind` encloses the current (innermost) one. */
   private enclosedBy(kind: "{" | "["): boolean {
     return this.open.slice(0, -1).includes(kind);
@@ -144,12 +175,18 @@ class Parser {
         continue;
       }
       if (c === "]") {
-        // Mismatched closer: read it the way the text after it parses. If an
+        // Mismatched closer: read it the way the text after it parses (see
+        // closerReading). Undecided by the closers after it: if an
         // object member follows, the "]" really closes the enclosing array
         // (this object's "}" was omitted): end here, leave it to that array.
         // Otherwise it was typed for this object's "}". No enclosing array:
         // treat it as this object's closer too.
-        if (this.enclosedBy("[") && this.memberFollows()) return obj;
+        const reading = this.closerReading();
+        if (reading === "stray") {
+          this.i++;
+          continue;
+        }
+        if (reading === "omitted" || (reading === undefined && this.enclosedBy("[") && this.memberFollows())) return obj;
         this.i++;
         return obj;
       }
@@ -208,11 +245,17 @@ class Parser {
         return arr;
       }
       if (c === "}") {
-        // Mismatched closer: read it the way the text after it parses. If an
+        // Mismatched closer: read it the way the text after it parses (see
+        // closerReading). Undecided by the closers after it: if an
         // object member follows, it was typed for this array's "]" (we are
         // back in the enclosing object). Otherwise this array's "]" was
         // omitted and the "}" closes the enclosing object: end here, leave it.
-        if (this.enclosedBy("{") && !this.memberFollows()) return arr;
+        const reading = this.closerReading();
+        if (reading === "stray") {
+          this.i++;
+          continue;
+        }
+        if (reading === "omitted" || (reading === undefined && this.enclosedBy("{") && !this.memberFollows())) return arr;
         this.i++;
         return arr;
       }

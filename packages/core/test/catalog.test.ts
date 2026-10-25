@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { basicCatalog } from "../src/basic-catalog.ts";
-import { narrow, systemPrompt, toolDefinitions } from "../src/catalog.ts";
+import { narrow, systemPrompt, toInline, toolDefinitions } from "../src/catalog.ts";
+import { SurfaceStore } from "../src/surface.ts";
 import { validate } from "../src/schema.ts";
 
 test("strict tool schema accepts a valid render and rejects bad props", () => {
@@ -46,4 +47,28 @@ test("core tier drops extended components but keeps the container and fitting ex
   const prompt = systemPrompt(core, undefined, { examples: true });
   assert.match(prompt, /Examples of good vak_render arguments/);
   assert.doesNotMatch(systemPrompt(core), /Examples of good/);
+});
+
+test("inline authoring: schema accepts nested children, prompt and examples teach it", () => {
+  const [flat] = toolDefinitions(basicCatalog, { mode: "strict" });
+  const [inline] = toolDefinitions(basicCatalog, { mode: "strict", authoring: "inline" });
+  const nested = { surface: "s", nodes: [{ id: "root", type: "stack", children: [{ id: "a", type: "text", props: { text: "hi" } }] }] };
+  assert.ok(validate(flat!.inputSchema, nested).length > 0);
+  assert.deepEqual(validate(inline!.inputSchema, nested), []);
+  const prompt = systemPrompt(basicCatalog, undefined, { examples: true, authoring: "inline" });
+  assert.match(prompt, /directly inside its parent/);
+  assert.doesNotMatch(prompt, /FLAT list/);
+});
+
+test("toInline nests every non-template child and renders the same surface as flat", () => {
+  for (const ex of basicCatalog.examples) {
+    const inline = toInline(ex.render);
+    const templates = new Set(ex.render.nodes.flatMap((n) => (n.children && !Array.isArray(n.children) ? [n.children.template] : [])));
+    assert.equal(inline.nodes.length, 1 + templates.size, ex.request);
+    const a = new SurfaceStore(basicCatalog);
+    const b = new SurfaceStore(basicCatalog);
+    a.render(ex.render);
+    b.render(inline);
+    assert.deepEqual(b.snapshot(ex.render.surface), a.snapshot(ex.render.surface), ex.request);
+  }
 });

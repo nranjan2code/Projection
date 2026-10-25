@@ -45,8 +45,8 @@ try {
   console.error(`✖ ${(err as Error).message}`);
   process.exit(1);
 }
-const bot = new TelegramBot({ api, provider, model, plan, log: (l) => console.error(l) });
-console.error(`vak telegram bot @${username} · ${providerId}/${model} · plan ${plan.generation}/${plan.tier}/${plan.examples ? "examples" : "plain"}`);
+const bot = new TelegramBot({ api, provider, model, plan, log: (l) => console.error(l), transcriptDir: `${repo}.vak/telegram` });
+console.error(`vak telegram bot @${username} · ${providerId}/${model} · plan ${plan.generation}/${plan.tier}/${plan.examples ? "examples" : "plain"}/${plan.authoring ?? "flat"}`);
 
 // A long-running bot logs unexpected failures instead of dying on them.
 process.on("unhandledRejection", (err) => console.error(`unhandled: ${(err as Error)?.message ?? String(err)}`));

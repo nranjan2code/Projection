@@ -159,7 +159,7 @@ export async function runScenario(s: Scenario, run: number, opts: BenchOptions):
   }
 
   const score = scoreTurns(turns);
-  const record: RunRecord = { benchVersion: BENCH_VERSION, scenario: s.id, run, config: { generation: opts.plan.generation, tier: opts.plan.tier, examples: opts.plan.examples }, turns, ...score };
+  const record: RunRecord = { benchVersion: BENCH_VERSION, scenario: s.id, run, config: { generation: opts.plan.generation, tier: opts.plan.tier, examples: opts.plan.examples, authoring: opts.plan.authoring ?? "flat" }, turns, ...score };
   if (opts.judge && active) {
     const finalText = store.list().map((st) => projectText(store.resolve(st.id)!)).join("\n\n");
     try {

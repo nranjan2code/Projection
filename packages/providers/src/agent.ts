@@ -75,6 +75,8 @@ interface ResolvedRun {
   catalog: Catalog;
   generation: "tools" | "constrained";
   examples: boolean;
+  /** Tools generation only; constrained output always uses the flat schema. */
+  authoring: "flat" | "inline";
   maxSteps: number;
   maxTokens?: number;
 }
@@ -90,13 +92,14 @@ export function resolveRun(opts: RunOptions): ResolvedRun {
     catalog,
     generation,
     examples: opts.plan?.examples ?? false,
+    authoring: generation === "tools" ? (opts.plan?.authoring ?? "flat") : "flat",
     maxSteps: opts.maxSteps ?? opts.plan?.maxSteps ?? (generation === "constrained" ? 3 : 6),
     maxTokens: opts.maxTokens ?? opts.plan?.maxTokens,
   };
 }
 
 export function buildSystem(opts: RunOptions, run: ResolvedRun = resolveRun(opts)): string {
-  const parts = [opts.instructions, systemPrompt(run.catalog, opts.profile, { examples: run.examples })].filter(Boolean);
+  const parts = [opts.instructions, systemPrompt(run.catalog, opts.profile, { examples: run.examples, authoring: run.authoring })].filter(Boolean);
   return parts.join("\n\n");
 }
 
@@ -217,7 +220,7 @@ async function constrainedLoop(opts: RunOptions, run: ResolvedRun): Promise<{ st
 
 async function toolsLoop(opts: RunOptions, run: ResolvedRun): Promise<{ stop: string }> {
   const catalog = run.catalog;
-  const vakSpecs: ToolSpec[] = toolDefinitions(catalog, { mode: opts.schemaMode ?? "compact" }).map((t) => ({
+  const vakSpecs: ToolSpec[] = toolDefinitions(catalog, { mode: opts.schemaMode ?? "compact", authoring: run.authoring }).map((t) => ({
     name: t.name,
     description: t.description,
     inputSchema: t.inputSchema,

@@ -53,8 +53,8 @@ async function planFor(providerId: string, model: string): Promise<{ plan?: Proj
 /** Configurations calibration measures for a provider. */
 function calibrationConfigs(constrained: boolean): ProjectionConfig[] {
   const configs: ProjectionConfig[] = [
-    { generation: "tools", tier: "extended", examples: false },
-    { generation: "tools", tier: "core", examples: true },
+    { generation: "tools", tier: "extended", examples: false, authoring: "inline" },
+    { generation: "tools", tier: "core", examples: true, authoring: "inline" },
   ];
   if (constrained) configs.push({ generation: "constrained", tier: "core", examples: true });
   return configs;

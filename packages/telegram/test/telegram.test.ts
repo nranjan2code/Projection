@@ -140,6 +140,8 @@ test("bot: message → rich form → step-by-step answers → submit → model u
   const designer = roleKeyboard.flat().find((b) => b.text === "Designer")!;
   assert.ok(designer.callback_data.length <= 64);
   await bot.handle(press(designer.callback_data, 6));
+  assert.match(last("editMessageText").params.text, /3\/4 · Role.*: Designer$/, "answered buttons are replaced by the answer");
+  assert.equal(last("editMessageText").params.reply_markup, undefined);
   const yes = (last("sendMessage").params.reply_markup.inline_keyboard as { text: string; callback_data: string }[][]).flat().find((b) => b.text === "Yes")!;
   await bot.handle(press(yes.callback_data, 7));
 
@@ -203,4 +205,23 @@ test("unverified images are never sent; if rich messages fail entirely, text wit
   assert.match(text.params.text, /\[Card\] Hotel Kyo/);
   assert.equal(text.params.reply_markup.inline_keyboard[0][0].text, "Book");
   refuseRich = undefined;
+});
+
+test("bot: a surface the model removes keeps its message as history, without live buttons", async () => {
+  const trips = basicCatalog.examples.find((e) => e.render.surface === "trips")!.render;
+  const bot = new TelegramBot({
+    api: new TelegramApi("TEST", base),
+    provider: scripted([{ name: "vak_render", args: trips }, { name: "vak_remove", args: { surface: "trips" } }]),
+    model: "m",
+    editIntervalMs: 0,
+  });
+  const before = calls.length;
+  await bot.handle({ update_id: 1, message: { message_id: 1, chat: { id: 77 }, text: "trips please" } });
+  await bot.handle({ update_id: 2, message: { message_id: 2, chat: { id: 77 }, text: "close it" } });
+  const mine = calls.slice(before).filter((c) => c.params.chat_id === 77);
+  const sent = mine.find((c) => c.method === "sendRichMessage")!;
+  assert.match(sent.params.rich_message.html, /<tg-button/);
+  const closed = mine.filter((c) => c.method === "editMessageText").at(-1)!;
+  assert.doesNotMatch(closed.params.rich_message.html, /<tg-button/);
+  assert.match(closed.params.rich_message.html, /<i>Closed<\/i>/);
 });

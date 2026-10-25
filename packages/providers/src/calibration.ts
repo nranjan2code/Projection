@@ -16,9 +16,12 @@ export interface ProjectionConfig {
   tier: "core" | "extended";
   /** Worked examples in the prompt. */
   examples: boolean;
+  /** How the node tree is written (default "flat"). */
+  authoring?: "flat" | "inline";
 }
 
-export const configKey = (c: ProjectionConfig) => `${c.generation}/${c.tier}/${c.examples ? "examples" : "plain"}`;
+export const configKey = (c: ProjectionConfig) =>
+  `${c.generation}/${c.tier}/${c.examples ? "examples" : "plain"}${c.authoring === "inline" ? "/inline" : ""}`;
 
 type Counts = Map<string, number>;
 const n = (c: Counts, t: string) => c.get(t) ?? 0;
