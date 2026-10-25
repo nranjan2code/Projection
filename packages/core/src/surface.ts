@@ -989,7 +989,7 @@ export class SurfaceStore {
   }
 
   lint(state: SurfaceState): Diagnostic[] {
-    const diags: Diagnostic[] = [...this.lintSubmittable(state), ...this.lintEmpty(state), ...this.lintUnbound(state), ...this.lintBindable(state)];
+    const diags: Diagnostic[] = [...this.lintSubmittable(state), ...this.lintEmpty(state), ...this.lintUnbound(state), ...this.lintBindable(state), ...this.lintResolved(state)];
     const skip = (v: unknown) => isBinding(v);
     for (const node of state.nodes.values()) {
       if (node.type === "$invalid") {
@@ -1011,6 +1011,49 @@ export class SurfaceStore {
         diags.push({ severity: "error", surface: state.id, node: node.id, message: `template "${ch.template}" was never sent: send one node with id "${ch.template}" (one item's layout, with {field} for the item's fields) using vak_update; the rest of the surface stays` });
       }
     }
+    return diags;
+  }
+
+  /**
+   * The schema check in lint skips bindings: their value is unknown until the
+   * data fills them. Nothing checked them after, so any bound prop could
+   * resolve to a shape its component can't show and pass as clean: a chart's
+   * series bound to records [{day, km}] drew seven empty series (4B, running
+   * stats), a stat bound to a list showed raw JSON (4B, budget tracker).
+   * Each bound value is validated once resolved, as the component's schema
+   * would have validated it written in place; the first failing instance of a
+   * node (a template repeats) is reported.
+   */
+  private lintResolved(state: SurfaceState): Diagnostic[] {
+    const root = this.resolve(state.id)?.root;
+    if (!root) return [];
+    const diags: Diagnostic[] = [];
+    const reported = new Set<string>();
+    walk(root, (n) => {
+      const node = state.nodes.get(n.id);
+      if (!node || reported.has(n.id) || n.type.startsWith("$")) return;
+      const bound = bindingsIn(node.props ?? {});
+      if (!bound.size) return;
+      const schema = propsSchema(this.catalog, n.type);
+      if (!schema) return;
+      const props = coerce(schema, n.props) as Record<string, unknown>;
+      for (const e of validate(schema, props)) {
+        const at = [...bound.keys()].find((b) => e.path === b || e.path.startsWith(`${b}/`));
+        // No value at all is lintUnbound's report (a path the data lacks).
+        if (at === undefined || getAt(props, at) === undefined) continue;
+        reported.add(n.id);
+        // The schema's own description says what fits; a failed anyOf's last
+        // branch ("expected string") does not.
+        const want = schema.properties?.[at.split("/")[1]!]?.description;
+        // What the data held, before a catalog finalize reshaped it. Only for
+        // absolute paths: a relative one depends on the list item.
+        const binding = bound.get(at)!;
+        const held = describeValue(binding.startsWith("{/") ? resolveValue(binding, { data: state.data, base: "" }) : getAt(props, at));
+        const why = want && e.path === at ? `${binding} is ${held}, but ${at.slice(1)} takes ${want}` : `props${e.path} ${e.message}, once ${binding} (${held}) is filled from the data`;
+        diags.push({ severity: "error", surface: state.id, node: n.id, message: `${why}. Change the data to that shape, or bind to data that has it` });
+        return;
+      }
+    });
     return diags;
   }
 
@@ -1237,4 +1280,28 @@ function textProps(schema: JSONSchema | undefined, props: Record<string, unknown
     out[k] = v.filter((x) => x !== null && x !== "").join(", ");
   }
   return out;
+}
+
+/** Pointer of every whole-binding value in props ("/series" → "{/rows}"). */
+function bindingsIn(props: Record<string, unknown>): Map<string, string> {
+  const out = new Map<string, string>();
+  const scan = (v: unknown, at: string): void => {
+    if (isBinding(v)) out.set(at, v as string);
+    else if (Array.isArray(v)) v.forEach((x, i) => scan(x, `${at}/${i}`));
+    else if (v && typeof v === "object") for (const [k, x] of Object.entries(v)) scan(x, `${at}/${k}`);
+  };
+  for (const [k, v] of Object.entries(props)) if (k !== "bind" && k !== "visibleIf") scan(v, `/${k}`);
+  return out;
+}
+
+/** A short account of a resolved value, for telling the model what its data held. */
+function describeValue(v: unknown): string {
+  if (Array.isArray(v)) {
+    const first = v.find((x) => x !== null && x !== undefined);
+    const n = (word: string) => `a list of ${v.length} ${word}${v.length === 1 ? "" : "s"}`;
+    if (first && typeof first === "object" && !Array.isArray(first)) return `${n("record")} with ${Object.keys(first).join(", ")}`;
+    return n(first === undefined ? "item" : Array.isArray(first) ? "list" : typeof first);
+  }
+  if (v && typeof v === "object") return `a record with ${Object.keys(v).join(", ")}`;
+  return `the ${typeof v} ${JSON.stringify(v)}`;
 }

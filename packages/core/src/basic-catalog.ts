@@ -152,6 +152,37 @@ function normalizeChart(p: Record<string, unknown>): Record<string, unknown> {
 }
 
 /**
+ * Series bound to records, `{/distances/daily_km}` with [{day, km}, ...] (4B,
+ * running stats): the rows of a table, not series. Each field that holds a
+ * number in every row that has it is a series named after the field, and a
+ * text field labels the points when the chart has no labels. A row without
+ * the field is a gap (null), which the resolved-props check reports, so the
+ * model fills it rather than the chart silently dropping the point. After
+ * bindings resolve, so the shorthands normalizeChart reads apply here too.
+ * A record of numbers is one series, a point per key.
+ */
+function finalizeChart(p: Record<string, unknown>): Record<string, unknown> {
+  const s = p.series;
+  const record = (x: unknown): x is Record<string, unknown> => x !== null && typeof x === "object" && !Array.isArray(x);
+  // `{/data/expense_totals}` with {"Rent/Mortgage": 750, "Utilities": 180, ...}
+  // (4B, budget tracker): one series, a point per key, labelled by the keys
+  // when the chart has no labels of its own.
+  if (record(s) && Object.keys(s).length && Object.values(s).every(numeric)) {
+    const labels = Array.isArray(p.labels) && p.labels.length ? p.labels : Object.keys(s);
+    return { ...p, series: [{ values: Object.values(s).map(Number) }], labels };
+  }
+  const hasValues = (r: Record<string, unknown>) => ["values", "data", "points", "y"].some((k) => Array.isArray(r[k]));
+  if (!Array.isArray(s) || !s.length || !s.every(record) || s.some(hasValues)) return normalizeChart(p);
+  const keys = [...new Set(s.flatMap((r) => Object.keys(r)))];
+  const numbers = keys.filter((k) => s.some((r) => r[k] !== undefined) && s.every((r) => r[k] === undefined || numeric(r[k])));
+  if (!numbers.length) return p;
+  const label = keys.find((k) => !numbers.includes(k) && s.every((r) => typeof r[k] === "string"));
+  const series = numbers.map((k) => ({ name: k, values: s.map((r) => (r[k] === undefined ? null : Number(r[k]))) }));
+  const labels = Array.isArray(p.labels) && p.labels.length ? p.labels : label ? s.map((r) => r[label]) : p.labels;
+  return { ...p, series, ...(labels !== undefined ? { labels } : {}) };
+}
+
+/**
  * An item of a list whose template the model never sent: a card titled by its
  * name-like field, the other text fields as labelled lines, and its lists as
  * bullet lists, so every field the model sent is shown.
@@ -362,6 +393,7 @@ export const basicCatalog = defineCatalog(
         ["kind", "series"],
       ),
       normalize: normalizeChart,
+      finalize: finalizeChart,
       aliases: [
         "graph", "plot",
         { name: "barchart", props: { kind: "bar" } },

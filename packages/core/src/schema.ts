@@ -96,11 +96,17 @@ export function validate(
   const fail = (message: string) => errors.push({ path: path || "/", message });
 
   if (schema.anyOf) {
+    // The branch the value matched furthest (its first error deepest) is the
+    // one meant; fewest errors breaks ties. By count alone, chart series of
+    // [{name, values}] with five gaps lost to "a list of numbers" (one error,
+    // "series/0 expected number, got object"), and the model was told the
+    // wrong shape (4B, running stats).
+    const depth = (errs: SchemaError[]) => Math.min(...errs.map((e) => e.path.split("/").length));
     let best: SchemaError[] | undefined;
     for (const branch of schema.anyOf) {
       const errs = validate(branch, value, opts, path);
       if (errs.length === 0) return [];
-      if (!best || errs.length < best.length) best = errs;
+      if (!best || depth(errs) > depth(best) || (depth(errs) === depth(best) && errs.length < best.length)) best = errs;
     }
     return best ?? [];
   }

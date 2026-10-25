@@ -3,6 +3,14 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: bound props are checked once filled
+
+From a local 4B run ("show my running stats … with a chart of daily distance"): the chart's series were bound to records `[{day, km}]` and drew seven empty series; the call passed as clean. The cause was general: lint skips the schema check for a binding (its value is unknown at write time), and nothing checked it after the data filled it in, for any component.
+
+- **Resolved props are validated** (`lintResolved`): each bound value is checked against the component's schema once resolved, the first failing instance of a template reported once. The message says what the data held ("a list of 7 records with day, km") and, when the prop has a description, what it takes. A binding with no value at all stays `lintUnbound`'s report.
+- **Chart `finalize`:** a record of numbers (`{"Rent": 750, ...}`) is one series labelled by its keys; series bound to records plot each field that is numeric in every row that has it, named after the field; a text field labels the points when the chart has none. A row without the field is a gap, which the check above reports.
+- **`validate` with `anyOf`:** the branch the value matched furthest (its first error deepest) is reported, fewest errors breaking ties. By count alone, series with gaps were reported as "series/0 expected number".
+
 ## 2026-10-26: absolute bindings are checked
 
 From a local 4B run ("make a monthly budget tracker … and a chart"): the chart's series were bound to `{/budget.income.values.0}`, a path the data never had. The chart drew empty, and the call passed as clean, because only relative `{name}` bindings were checked.

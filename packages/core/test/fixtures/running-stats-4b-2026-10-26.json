@@ -1,0 +1,9 @@
+{
+ "source": "Projection engine at e7c4ef1, ollama qwen3.5:4b-mlx, 2026-10-26: \"Show my running stats for this week with a chart of daily distance\" (1 vak_render call, passed as clean)",
+ "calls": [
+  {
+   "tool": "vak_render",
+   "args": "{\"surface\":\"running_stats\",\"title\":\"Running Stats This Week\",\"nodes\":[{\"children\":[{\"children\":[{\"id\":\"total_stats\",\"props\":{\"delta\":\"+1.2%\",\"label\":\"Total Distance\",\"tone\":\"success\",\"trend\":\"up\",\"value\":\"/distances/total_km\"},\"type\":\"stat\"},{\"id\":\"avg_stats\",\"props\":{\"delta\":\"+0.5%\",\"label\":\"Average Daily Distance\",\"tone\":\"neutral\",\"trend\":\"up\",\"value\":\"/distances/avg_km\"},\"type\":\"stat\"}],\"id\":\"kpi_container\",\"props\":{\"columns\":2,\"gap\":\"md\"},\"type\":\"grid\"},{\"id\":\"chart_container\",\"props\":{\"kind\":\"line\",\"labels\":[\"Mon\",\"Tue\",\"Wed\",\"Thu\",\"Fri\",\"Sat\",\"Sun\"],\"series\":\"/distances/daily_km\"},\"type\":\"chart\"}],\"id\":\"root\",\"props\":{\"description\":\"Weekly summary and daily distance tracking\",\"title\":\"This Week's Running Stats\"},\"type\":\"section\"}],\"data\":\"{\\\"distances\\\":{\\\"total_km\\\":\\\"24.8km\\\",\\\"avg_km\\\":\\\"3.5km\\\",\\\"daily_km\\\":[{\\\"day\\\":\\\"Mon\\\",\\\"km\\\":3.1},{\\\"day\\\":\\\"Tue\\\",\\\"km\\\":3.5},{\\\"day\\\":\\\"Wed\\\":\\\"3.2\\\"},{\\\"day\\\":\\\"Thu\\\":\\\"4.0\\\"},{\\\"day\\\":\\\"Fri\\\":\\\"3.7\\\"},{\\\"day\\\":\\\"Sat\\\":\\\"5.2\\\"},{\\\"day\\\":\\\"Sun\\\":\\\"2.1\\\"}]}}\"}"
+  }
+ ]
+}

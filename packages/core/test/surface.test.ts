@@ -769,3 +769,59 @@ test("a binding with an extra first step the data does not have reads without it
   const errs = exact.apply("vak_render", { surface: "s", nodes: [{ id: "root", type: "stat", props: { label: "D", value: "{/stats/distance}" } }], data: { stats: {}, distance: "1" } });
   assert.ok(errs.some((d) => d.severity === "error" && d.message.includes("{/stats/distance}")));
 });
+
+// Real 4B output (local engine run, 2026-10-26): chart series bound to records
+// [{day, km}] drew seven empty series and passed as clean. Its data also lost
+// the "km" key from five rows ("day":"Wed":"3.2").
+const runningStats = JSON.parse(readFileSync(new URL("./fixtures/running-stats-4b-2026-10-26.json", import.meta.url), "utf8")) as { calls: { tool: string; args: string }[] };
+
+test("series bound to records plot each numeric field; gaps are reported", () => {
+  const store = new SurfaceStore(basicCatalog);
+  const errors = store.apply(runningStats.calls[0]!.tool, runningStats.calls[0]!.args).filter((d) => d.severity === "error");
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0]!.node, "chart_container");
+  assert.match(errors[0]!.message, /props\/series\/0\/values\/2 expected number, got null, once \{\/distances\/daily_km\} \(a list of 7 records with day, km\)/);
+  assert.match(projectText(store.resolve("running_stats")!), /km: 3\.1, 3\.5/);
+  // Complete records are clean, and their text field labels the points.
+  const clean = new SurfaceStore(basicCatalog);
+  const diags = clean.apply("vak_render", {
+    surface: "s",
+    nodes: [{ id: "root", type: "chart", props: { kind: "bar", series: "{/daily}" } }],
+    data: { daily: [{ day: "Mon", km: 3, pace: "5:28" }, { day: "Tue", km: "4.5", pace: "5:02" }] },
+  });
+  assert.deepEqual(diags.filter((d) => d.severity === "error"), []);
+  const text = projectText(clean.resolve("s")!);
+  assert.match(text, /\[bar chart\] Mon, Tue/);
+  assert.match(text, /km: 3, 4\.5/);
+  assert.doesNotMatch(text, /pace/);
+  // 4B budget tracker: a record of numbers is one series labelled by its keys.
+  const totals = new SurfaceStore(basicCatalog);
+  const d2 = totals.apply("vak_render", {
+    surface: "s",
+    nodes: [{ id: "root", type: "chart", props: { kind: "bar", series: "{/data/expense_totals}" } }],
+    data: { expense_totals: { "Rent/Mortgage": 750, Utilities: 180, Groceries: "320" } },
+  });
+  assert.deepEqual(d2.filter((d) => d.severity === "error"), []);
+  assert.match(projectText(totals.resolve("s")!), /\[bar chart\] Rent\/Mortgage, Utilities, Groceries\n\s+(series: )?750, 180, 320/);
+});
+
+test("a bound prop is checked against its schema once the data fills it", () => {
+  // 4B budget tracker: a stat bound to the expenses list showed raw JSON.
+  const store = new SurfaceStore(basicCatalog);
+  const errors = store.apply("vak_render", {
+    surface: "s",
+    nodes: [{ id: "root", type: "stat", props: { label: "Expenses", value: "{/budget/expenses}" } }],
+    data: { budget: { expenses: [{ amount: 0, category: "Housing" }] } },
+  }).filter((d) => d.severity === "error");
+  assert.equal(errors.length, 1);
+  assert.match(errors[0]!.message, /props\/value expected string or number, got array, once \{\/budget\/expenses\} \(a list of 1 record with amount, category\)/);
+  // A binding inside a list template is checked per item, reported once.
+  const list = new SurfaceStore(basicCatalog);
+  const errs = list.apply("vak_render", {
+    surface: "s",
+    nodes: [{ id: "root", type: "stack", children: { each: "/rows", template: "t" } }, { id: "t", type: "stat", props: { label: "{name}", value: "{parts}" } }],
+    data: { rows: [{ name: "a", parts: [{ x: 1 }] }, { name: "b", parts: [{ x: 2 }] }] },
+  }).filter((d) => d.severity === "error");
+  assert.equal(errs.length, 1);
+  assert.equal(errs[0]!.node, "t");
+});
