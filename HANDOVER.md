@@ -7,7 +7,7 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 ```
 Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection.
 
-First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 117 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
+First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 124 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
 
 Focus: the core system. That means the engine (parser, normalizer, lint, resolve), the catalog, and the projectors (web, text, Telegram, Slack, Discord as renderers, tested offline), and the bench. Telegram live testing is parked: don't start the bot unless I ask.
 
@@ -23,7 +23,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
-- **Tests:** 117 passing, typecheck clean. The 2026-10-25 afternoon work (below) is in the working tree; check `git log` to see whether it was committed.
+- **Tests:** 124 passing, typecheck clean. The 2026-10-25 afternoon work (below) is in the working tree; check `git log` to see whether it was committed.
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios):
 
   | | Now | Old flat baseline |
@@ -38,6 +38,13 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Done in this stretch
 
+- **Web tests finished (was Next #1)** in the browser pane, 4B model, live. Each defect found was fixed generally, with a test from the real call:
+  - Workout tabs: every day's button had the id `"actions"`; each replaced the last (Day 1 showed "Start Day 5"). An inline node reusing an id from the same call now gets its own id.
+  - Dashboard 1: a root list closed early (`]}, {alert}`) lost the alert silently; `rows: "/top_products"` showed the path. Values after a closed top-level list continue it past stray closers; bare pointers bind.
+  - Dashboard 2: a stray `}` with no closers after it was read as an omitted `]`, and the chart, table and data were lost. Undecided closers are now read by how the rest of the text closes. This also lifted the recorded rome-itinerary from 0.33 to 1.00 (replay gate updated).
+  - Dashboard 3: `"action':'view_july'` (mixed quotes) swallowed half the surface. A key opened with one quote and closed with the other ends there.
+  - Viewports: tablet (2 columns) and phone (1 column) render well. The header wrapped into 3 rows at 800px (the provider select sized to its longest option); now 2 rows at 800px, tidy on phone and desktop.
+  - Seen, not fixed: the model copies the worked example's values ($198k, Desk lamp); a card given stat props (`label`/`value`/`delta`) shows only a badge.
 - **Prop values that name a component (was Next #1):** catalog extension `namesComponent` (on `input.kind`). `{"type":"input","props":{"kind":"date"}}` becomes a `date` node instead of an enum error and a retry; aliases work both ways (`inputType: "daterange"` → `date` with `range: true`, `kind: "checkbox"` → `checkbox`). Unknown values (`"password"`) are still errors. Test built from the real Telegram call.
 - **Long chats (was Next #2):** `runAgent` takes `history: N` (last N turns plus a note describing the shown surfaces); Telegram uses 6. `/start` resets the chat. Tests are built from the real 50-message chat.
 - **Engine, from the live hotel test:**
@@ -97,24 +104,18 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Next (in order)
 
-1. **Finish the web tests** in the browser pane (interrupted earlier):
-   - a live dashboard prompt (charts)
-   - a workout tabs prompt
-   - tablet and phone viewports
-
-   Check the header wrapping: at 800px the playground's controls wrap into 3 rows.
-2. **Weak bench categories:** planning (tabs/sections, itinerary text) and dashboard (charts).
+1. **Weak bench categories:** planning (tabs/sections, itinerary text) and dashboard (charts).
    - Analyze failures in `packages/bench/data/results/2026-10-25T01-01-37-105Z_run_*.jsonl` and fix root causes.
    - Prove it with replay plus a live gate run (`npm run bench -- gate ollama:qwen3.5:4b-mlx --runs 1`, ~25 min local), which also measures the parser and settings fixes above.
    - Re-record the baseline when engine changes move scores.
-3. **Form design:** a form says "choose your hotel" but has no hotel field. Consider a lint warning, or rely on the action data already carrying the chosen item.
-4. **The MCP server still teaches flat authoring.** Its instructions say "nodes is a FLAT list" (`packages/mcp`, via `systemPrompt` without a plan). Decide whether MCP clients (often strong models) should get the inline rule too, and pass `authoring` through if so.
-5. **Re-record the form slice baseline** on inline (`--category form --slice form --save`); it is still flat v2.
-6. **Parked until the user asks: Telegram live.**
+2. **Form design:** a form says "choose your hotel" but has no hotel field. Consider a lint warning, or rely on the action data already carrying the chosen item.
+3. **The MCP server still teaches flat authoring.** Its instructions say "nodes is a FLAT list" (`packages/mcp`, via `systemPrompt` without a plan). Decide whether MCP clients (often strong models) should get the inline rule too, and pass `authoring` through if so.
+4. **Re-record the form slice baseline** on inline (`--category form --slice form --save`); it is still flat v2.
+5. **Parked until the user asks: Telegram live.**
    - Start the bot; the saved Save Details press replays.
    - Check the booking confirmation flow end to end and "/night" with prices.
    - The transcript doesn't record the user message that started a turn, only what follows it; consider recording it for diagnosis.
-7. **Optional, ask first:**
+6. **Optional, ask first:**
    - prompt caching
    - near-miss id pairing
    - a security review of the projectors

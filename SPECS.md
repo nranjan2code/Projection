@@ -39,8 +39,9 @@ In MCP there is also `vak_wait_action`.
 ## 3. Engine pipeline
 
 1. **Lenient streaming JSON parser** (`partial-json.ts`).
-   - Handles prefixes, comments, single quotes, unquoted keys and Python literals.
-   - Mismatched closers are read as a typo, an omitted closer or a stray extra, whichever the following closers fit.
+   - Handles prefixes, comments, single quotes (and a key opened with one quote and closed with the other), unquoted keys and Python literals.
+   - Mismatched closers are read as a typo, an omitted closer or a stray extra, whichever the following closers fit. When no closers follow it directly, the reading under which the rest of the text's closers line up best wins.
+   - Values after a closed top-level list (`[a], b` or `[a]}, b`) continue it.
    - A keyless value, or a value after a stray colon, continues the previous member.
    - JSON written inside a string without escaping is read as a structure.
    - A `"key":` inside an array ends the array.
@@ -48,7 +49,8 @@ In MCP there is also `vak_wait_action`.
 2. **Call recovery** (`SurfaceStore.apply`): members written inside the nodes string after the list (`"[...], \"data\": {...}"`) belong to the call.
 3. **Normalizer** (`normalize.ts`).
    - Type resolution: name → alias → schema-scored inference. A `namesComponent` prop whose value names another component (by name or alias, with its presets) makes the node that component when the result validates; the prop is dropped.
-   - Prop preparation: presets, coercion, defaults, HTML → markdown, double-escaped `\n` repair.
+   - Prop preparation: presets, bare pointers (`"/items"`) where a prop takes a binding become `{/items}`, coercion, defaults, HTML → markdown, double-escaped `\n` repair.
+   - An inline node reusing an id already written in the same call gets its own id (`actions_2`) instead of replacing the first.
    - Structure repair:
      - prose children become text
      - a missing root is synthesized; orphans are attached to it

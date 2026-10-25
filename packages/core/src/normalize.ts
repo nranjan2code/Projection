@@ -10,7 +10,7 @@
 //      reinterpret — declared type is invalid for its props, and another component
 //      explains every prop sent and validates: the props say what was meant
 //      retype by value — a `namesComponent` prop names another component ("kind": "date")
-//   3. props   — alias presets → schema coercion → component normalize → coercion
+//   3. props   — alias presets → bare pointers bind → schema coercion → component normalize → coercion
 //                → derived defaults → schema defaults for missing required props
 //                → markdown-format prose: inline HTML converted to markdown
 // Structure pipeline (per surface, after a complete render/update):
@@ -38,6 +38,9 @@ export interface TypeMatch {
   /** Props implied by the alias that matched ("row" → direction: horizontal). */
   presets?: Record<string, unknown>;
 }
+
+/** A JSON pointer into the data model: "/items", "/a/b/0". */
+const POINTER = /^\/[A-Za-z0-9_~.\-]+(?:\/[A-Za-z0-9_~.\-]+)*$/;
 
 const key = (name: string) => name.toLowerCase().replace(/[-_\s]/g, "");
 
@@ -200,6 +203,15 @@ export class Normalizer {
     if (!def || !schema) return raw;
     let p: Record<string, unknown> = { ...raw };
     for (const [k, v] of Object.entries(presets ?? {})) if (p[k] === undefined) p[k] = v;
+    // A bare JSON pointer ("rows": "/top_products") where a prop takes a list
+    // or its binding: the model meant the binding but left out the braces, and
+    // coercion would otherwise make it a one-item list showing the path.
+    for (const [name, sub] of Object.entries(schema.properties ?? {})) {
+      for (const k of [name, ...(sub.aliases ?? [])]) {
+        const v = p[k];
+        if (typeof v === "string" && POINTER.test(v) && validate(sub, v).length > 0 && validate(sub, `{${v}}`).length === 0) p[k] = `{${v}}`;
+      }
+    }
     p = coerce(schema, p, isBinding) as Record<string, unknown>;
     if (def.normalize) p = coerce(schema, def.normalize(p), isBinding) as Record<string, unknown>;
     if (def.defaults) {

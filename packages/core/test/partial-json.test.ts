@@ -109,3 +109,23 @@ test("an object where a key belongs, inside an array, starts the next element", 
   const [form] = parseLenient(text) as { children: { id: string }[] }[];
   assert.deepEqual(form!.children.map((c) => c.id), ["date", "guests", "notes"]);
 });
+
+test("stray closers between a closed top-level list and its next element are part of the early close", () => {
+  // Playground sales dashboard, 2026-10-25 (4B): "...,"span":3}]}, {"id":"alert",...}]}]".
+  // The "]" closed the list, the "}" stopped the continuation, and the alert was lost.
+  assert.deepEqual(parseLenient('[{"id":"a"}]}, {"id":"b"}]}]'), [{ id: "a" }, { id: "b" }]);
+  assert.deepEqual(parseLenient('[1]], 2] trailing prose'), [1, 2]);
+});
+
+test("a stray extra closer followed by more elements is read by the closers further on", () => {
+  // Shape of the 4B dashboard call above: one "}" too many inside a children list.
+  const text = '[{"id":"root","children":[{"id":"k","children":[{"id":"a"}}, {"id":"b"}]}], "span": 2}, {"id":"c"}]';
+  assert.deepEqual(parseLenient(text), [{ id: "root", children: [{ id: "k", children: [{ id: "a" }, { id: "b" }] }], span: 2 }, { id: "c" }]);
+});
+
+test("a key that opens with one quote and closes with the other", () => {
+  // Playground Q3 dashboard, 2026-10-25 (4B): "action':'view_july','payload':{'month':'July'}.
+  assert.deepEqual(parseLenient(`{"label":"View details","action':'view_july','payload':{'month':'July'}}`), { label: "View details", action: "view_july", payload: { month: "July" } });
+  // An apostrophe inside an ordinary string value is untouched.
+  assert.deepEqual(parseLenient(`{"content":"it's: fine","n":1}`), { content: "it's: fine", n: 1 });
+});

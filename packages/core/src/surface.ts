@@ -225,6 +225,7 @@ export class SurfaceStore {
     }
     const raw = Array.isArray(rawNodes) ? rawNodes : isObject(rawNodes) ? [rawNodes] : [];
     this.nodeData = undefined;
+    this.callIds.clear();
     for (const n of raw) this.ingest(n, nodes, surfaceId, diags);
     const nodeData = this.nodeData as Record<string, unknown> | undefined;
     this.nodeData = undefined;
@@ -262,6 +263,7 @@ export class SurfaceStore {
     const sent = new Set<string>();
     collectIds(args.nodes, sent);
     this.nodeData = undefined;
+    this.callIds.clear();
     for (const patch of Array.isArray(args.nodes) ? args.nodes : []) {
       if (!isObject(patch)) continue;
       // Known ids are patched, unknown ids become new nodes.
@@ -330,6 +332,9 @@ export class SurfaceStore {
   // -------------------------------------------------------------------------
   // Ingest (see normalize.ts for the pipeline)
 
+  /** Ids written so far in the current render/update call. */
+  private callIds = new Set<string>();
+
   private nextId(type: string): string {
     return `${type}_${++this.autoId}`;
   }
@@ -356,7 +361,7 @@ export class SurfaceStore {
       else if (isObject(c) && this.onlyNodeSettings(c)) this.applyToPrevious(c, ids, into, surface, diags);
       else if (isObject(c)) {
         // Nested node instead of an id: flatten it.
-        const id = this.ingest(c, into, surface, diags, merge);
+        const id = this.ingest(c, into, surface, diags, merge, true);
         if (id) ids.push(id);
       }
     }
@@ -396,9 +401,21 @@ export class SurfaceStore {
   }
 
   /** Normalize one raw node into `into`; returns its id. With `merge`, an existing id is patched. */
-  private ingest(raw: unknown, into: Map<string, VpsNode>, surface: string, diags: Diagnostic[], merge = false): string | undefined {
+  private ingest(raw: unknown, into: Map<string, VpsNode>, surface: string, diags: Diagnostic[], merge = false, inline = false): string | undefined {
     if (!isObject(raw)) return undefined;
-    const givenId = typeof raw.id === "string" && raw.id ? raw.id : undefined;
+    let givenId = typeof raw.id === "string" && raw.id ? raw.id : undefined;
+    // A node written inside its parent whose id was already written earlier in
+    // this call is a second node, not a replacement: the 4B model gave every
+    // day's button the id "actions" in a 5-tab plan, and the last one replaced
+    // the rest (Day 1 showed "Start Day 5"; days 2-5 had none).
+    if (givenId && inline && this.callIds.has(givenId)) {
+      const first = givenId;
+      let n = 2;
+      while (into.has(`${first}_${n}`) || this.callIds.has(`${first}_${n}`)) n++;
+      givenId = `${first}_${n}`;
+      diags.push({ severity: "warning", surface, node: givenId, message: `id "${first}" was already used in this call; this one is "${givenId}"` });
+    }
+    if (givenId) this.callIds.add(givenId);
     const existing = givenId ? into.get(givenId) : undefined;
     if (existing && merge) {
       this.mergePatch(existing, raw as unknown as NodePatch, into, surface, diags);

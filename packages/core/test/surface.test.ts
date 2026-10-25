@@ -569,3 +569,84 @@ test("an input whose kind names another component is that component", () => {
   assert.ok(p.some((d) => d.node === "b" && /names the "date" component/.test(d.message)));
   assert.equal(typo.get("s")!.nodes.get("b")!.type, "date");
 });
+
+test("a root list closed one level early keeps its later siblings; a bare pointer where a list is bound is the binding", () => {
+  // Playground, 2026-10-25, the 4B model asked for a Q3 sales dashboard: it shut
+  // the root list after the KPI grid ("]}]}"), and an extra "]}" after the table
+  // closed the whole list, so the alert after it vanished without a word. The
+  // table's rows were "/top_products" with no braces and showed the path itself.
+  const call = {
+    surface: "sales_dashboard",
+    title: "Q3 Sales Dashboard",
+    nodes:
+      "[{\"id\": \"root\", \"type\": \"stack\", \"children\": [{\"id\": \"kpis\", \"type\": \"grid\", \"props\": {\"columns\": 4}, \"children\": [{\"id\": \"k1\", \"type\": \"stat\", \"props\": {\"label\": \"Revenue\", \"value\": \"$1.2M\", \"delta\": \"+15%\", \"trend\": \"up\"}, \"span\": 2}, {\"id\": \"k2\", \"type\": \"stat\", \"props\": {\"label\": \"Orders\", \"value\": \"8,420\", \"delta\": \"+8%\", \"trend\": \"up\"}, \"span\": 2}, {\"id\": \"k3\", \"type\": \"stat\", \"props\": {\"label\": \"Conversion Rate\", \"value\": \"3.2%\", \"delta\": \"+0.4%\", \"trend\": \"up\"}, \"span\": 1}]}]}, {\"id\": \"chart\", \"type\": \"chart\", \"props\": {\"kind\": \"line\", \"labels\": [\"Jul\", \"Aug\", \"Sep\"], \"series\": [{\"name\": \"Revenue ($k)\", \"values\": [645, 623, 789]}]}}, {\"id\": \"top\", \"type\": \"table\", \"props\": {\"columns\": [{\"key\": \"product\", \"label\": \"Product\"}, {\"key\": \"sales\", \"label\": \"Sales ($k)\", \"align\": \"end\"}], \"rows\": \"/top_products\"}, \"span\": 3}]}, {\"id\": \"alert\", \"type\": \"alert\", \"props\": {\"title\": \"Q3 Report Ready\", \"body\": \"Your Q3 sales report is ready for review.\", \"tone\": \"success\"}}]}]",
+    data: { conversion_rate: "3.2%", orders: 8420, revenue: "$1.2M", top_products: [{ product: "Pro Keyboard", sales: "$245k" }, { product: "USB-C Hub", sales: "$189k" }, { product: "Monitor Stand", sales: "$167k" }, { product: "Webcam 4K", sales: "$142k" }, { product: "Desk Mat", sales: "$98k" }] },
+  };
+  const store = new SurfaceStore(basicCatalog);
+  const diags = store.apply("vak_render", call);
+  assert.deepEqual(diags.filter((d) => d.severity === "error"), []);
+  assert.deepEqual(store.get("sales_dashboard")!.nodes.get("root")!.children, ["kpis", "chart", "top", "alert"]);
+  const text = projectText(store.resolve("sales_dashboard")!);
+  assert.match(text, /Pro Keyboard \| \$245k/);
+  assert.match(text, /Desk Mat \| \$98k/);
+  assert.doesNotMatch(text, /\/top_products/);
+  assert.match(text, /Q3 Report Ready/);
+
+  // A bare pointer stays text where a prop takes plain text.
+  const plain = new SurfaceStore(basicCatalog);
+  plain.apply("vak_render", { surface: "s", nodes: [{ id: "root", type: "text", props: { content: "/help" } }] });
+  assert.equal(plain.get("s")!.nodes.get("root")!.props?.content, "/help");
+});
+
+test("an inline node reusing an id already written in the same call is its own node", () => {
+  // Playground, 2026-10-25, the 4B model asked for a 5-day workout plan, one tab
+  // per day: every day's button had the id "actions". Each replaced the one
+  // before, so Day 1 showed "Start Day 5" and days 2-5 had no button.
+  const call = {"surface":"workout_plan","title":"5-Day Beginner Workout Plan","nodes":[{"children":[{"children":[{"id":"actions","props":{"action":"start_day1","label":"Start Day 1","style":"primary"},"type":"button"}],"id":"day1","props":{"body":"Dynamic stretching, light cardio","subtitle":"Focus on mobility","title":"Day 1: Full Body Warm-Up","tone":"info"},"type":"card"},{"children":[{"id":"actions","props":{"action":"start_day2","label":"Start Day 2","style":"primary"},"type":"button"}],"id":"day2","props":{"body":"Chest, back, shoulder exercises","subtitle":"Push and pull focus","title":"Day 2: Upper Body Strength","tone":"info"},"type":"card"},{"children":[{"id":"actions","props":{"action":"start_day3","label":"Start Day 3","style":"primary"},"type":"button"}],"id":"day3","props":{"body":"Yoga or light walking","subtitle":"Low intensity movement","title":"Day 3: Active Recovery","tone":"success"},"type":"card"},{"children":[{"id":"actions","props":{"action":"start_day4","label":"Start Day 4","style":"primary"},"type":"button"}],"id":"day4","props":{"body":"Squats, lunges, core work","subtitle":"Legs and glutes focus","title":"Day 4: Lower Body Power","tone":"info"},"type":"card"},{"children":[{"id":"actions","props":{"action":"start_day5","label":"Start Day 5","style":"primary"},"type":"button"}],"id":"day5","props":{"body":"Short bursts of intense exercise","subtitle":"High intensity burn","title":"Day 5: HIIT Finisher","tone":"warning"},"type":"card"}],"id":"root","props":{"title":"Daily Plans"},"type":"tabs"}]};
+  const store = new SurfaceStore(basicCatalog);
+  const diags = store.apply("vak_render", call);
+  assert.deepEqual(diags.filter((d) => d.severity === "error"), []);
+  const text = projectText(store.resolve("workout_plan")!);
+  for (let day = 1; day <= 5; day++) assert.equal((text.match(new RegExp(`\\[Button: Start Day ${day} → start_day${day}\\]`, "g")) ?? []).length, 1);
+  assert.match(text, /Day 1: Full Body Warm-Up[^]*Start Day 1[^]*Day 2: Upper Body/);
+
+  // An update still patches an existing node by its id.
+  store.apply("vak_update", { surface: "workout_plan", nodes: [{ id: "day2", children: [{ id: "actions_2", props: { label: "Begin" } }] }] });
+  assert.match(projectText(store.resolve("workout_plan")!), /\[Button: Begin → start_day2\]/);
+});
+
+test("a stray closer with no closers right after it is read by how the rest of the text closes", () => {
+  // Playground, 2026-10-25, the 4B model's second Q3 dashboard: an extra "}" after
+  // the first KPI ("...}}}, {orders}...") was read as an omitted "]", which shut the
+  // KPI stack early. Every closer after it landed one level off, so the chart, the
+  // table and the data were lost (only the KPIs showed).
+  const call = {"surface":"sales-q3","title":"Q3 Sales Dashboard","nodes":"[{\"id\": \"root\", \"type\": \"grid\", \"props\": {\"columns\": 4, \"gap\": \"lg\"}, \"children\": [{\"id\": \"kpis\", \"type\": \"stack\", \"props\": {\"direction\": \"vertical\", \"gap\": \"md\"}, \"children\": [{\"id\": \"revenue_kpi\", \"type\": \"stat\", \"props\": {\"label\": \"Revenue\", \"value\": \"$198k\", \"delta\": \"+$23k\", \"trend\": \"up\", \"tone\": \"success\"}}}, {\"id\": \"orders_kpi\", \"type\": \"stat\", \"props\": {\"label\": \"Orders\", \"value\": \"1,284\", \"delta\": \"+120\", \"trend\": \"up\", \"tone\": \"info\"}}, {\"id\": \"refund_kpi\", \"type\": \"stat\", \"props\": {\"label\": \"Refund Rate\", \"value\": \"0.9%\", \"delta\": \"-0.1%\", \"trend\": \"down\", \"tone\": \"neutral\"}}]}], \"span\": 2, \"priority\": \"primary\"}, {\"id\": \"chart_section\", \"type\": \"stack\", \"props\": {\"direction\": \"vertical\", \"gap\": \"lg\"}, \"children\": [{\"id\": \"revenue_chart\", \"type\": \"chart\", \"props\": {\"kind\": \"line\", \"labels\": [\"July\", \"Aug\", \"Sep\"], \"series\": [{\"name\": \"Revenue ($k)\", \"values\": [135, 142, 186]}, {\"name\": \"Orders (%)\", \"values\": [79, 81, 77]}]}}, {\"id\": \"revenue_breakdown\", \"type\": \"stack\", \"props\": {\"direction\": \"vertical\", \"gap\": \"md\"}, \"children\": [{\"id\": \"prod_1\", \"type\": \"stat\", \"props\": {\"label\": \"Top Product\", \"value\": \"Desk lamp\", \"delta\": \"+24k\", \"trend\": \"up\", \"tone\": \"success\"}}}, {\"id\": \"prod_2\", \"type\": \"stat\", \"props\": {\"label\": \"Runner-up\", \"value\": \"Chair\", \"delta\": \"+19k\", \"trend\": \"up\", \"tone\": \"info\"}}]}], \"priority\": \"secondary\"}, {\"id\": \"top_products_table\", \"type\": \"table\", \"props\": {\"columns\": [{\"key\": \"name\", \"label\": \"Product\"}, {\"key\": \"sales\", \"label\": \"Sales (in $k)\", \"align\": \"end\"}], \"rows\": \"/products/q3\"}, \"priority\": \"primary\"}], \"data\": {\"revenue\": \"$198k\", \"orders\": 1284, \"refunds\": \"0.9%\", \"products\": {\"q3\": [{\"name\": \"Desk lamp\", \"sales\": \"$24k\"}, {\"name\": \"Chair\", \"sales\": \"$19k\"}, {\"name\": \"Cable organizer\", \"sales\": \"$16k\"}, {\"name\": \"Foot rest\", \"sales\": \"$15k\"}, {\"name\": \"Monitor stand\", \"sales\": \"$14k\"}]}}}]"};
+  const store = new SurfaceStore(basicCatalog);
+  const diags = store.apply("vak_render", call);
+  assert.deepEqual(diags.filter((d) => d.severity === "error"), []);
+  const nodes = store.get("sales-q3")!.nodes;
+  assert.deepEqual(nodes.get("kpis")!.children, ["revenue_kpi", "orders_kpi", "refund_kpi"]);
+  assert.deepEqual(nodes.get("revenue_breakdown")!.children, ["prod_1", "prod_2"]);
+  const text = projectText(store.resolve("sales-q3")!);
+  assert.match(text, /\[line chart\] July, Aug, Sep/);
+  assert.match(text, /Monitor stand \| \$14k/);
+});
+
+test("a key opened with a double quote and closed with a single one ends at that quote", () => {
+  // Playground, 2026-10-25, the 4B model's third Q3 dashboard: every button wrote
+  // "action':'view_july','payload':{'month':'July'}. Read to the next double quote,
+  // the key swallowed the August card, the table and three product cards, and the
+  // buttons that were left sent the action ":".
+  const call = {"surface":"q3_dashboard","title":"Q3 Sales Dashboard","nodes":"[{\"id\": \"root\", \"type\": \"grid\", \"props\": {\"columns\": 2, \"minItemWidth\": \"md\", \"gap\": \"lg\"}, \"children\": [{\"id\": \"kpis\", \"type\": \"stack\", \"props\": {\"direction\": \"horizontal\", \"gap\": \"sm\", \"align\": \"end\"}, \"priority\": \"primary\", \"children\": [{\"id\": \"k1\", \"type\": \"stat\", \"props\": {\"label\": \"Revenue\", \"value\": \"$482.3k\", \"delta\": \"+$52.1k\", \"trend\": \"up\", \"tone\": \"success\"}, \"span\": 1}, {\"id\": \"k2\", \"type\": \"stat\", \"props\": {\"label\": \"Orders\", \"value\": \"1,047\", \"delta\": \"+18% w/w\", \"trend\": \"up\", \"tone\": \"info\"}, \"span\": 1}, {\"id\": \"k3\", \"type\": \"stat\", \"props\": {\"label\": \"Avg. Order Value\", \"value\": \"$459\", \"delta\": \"+$34\", \"trend\": \"up\", \"tone\": \"neutral\"}, \"span\": 2}]}, {\"id\": \"revenue_chart\", \"type\": \"chart\", \"props\": {\"kind\": \"area\", \"labels\": [\"July\", \"August\", \"September\"], \"series\": [{\"name\": \"Revenue ($k)\", \"values\": [430, 415, 482]}], \"span\": 1}, \"children\": [{\"id\": \"chart_lines\", \"type\": \"stack\", \"props\": {\"direction\": \"vertical\"}, \"children\": [{\"id\": \"july_line\", \"type\":\"card\",\"props\":{\"label\":\"July\",\"value\":\"$430k\",\"delta\":\"+12%\"},\"children\":[{\"id\":\"view\",\"type\":\"button\",\"props\":{\"label\":\"View details\",\"action':'view_july','payload':{'month':'July'}}}]}}, {\"id\":\"august_line\", \"type\":\"card\",\"props\":{\"label\":\"August\",\"value\":\"$415k\",\"delta\":\"+9%\"},\"children\":[{\"id\":\"view\",\"type\":\"button\",\"props\":{\"label\":\"View details\",\"action':'view_august','payload':{'month':'August'}}}]}]}}]}, {\"id\": \"products_table\", \"type\": \"table\", \"props\": {\"columns\": [{\"key\":\"product\",\"label\":\"Product\"},{\"key\":\"sales\",\"label\":\"Sales ($k)\"}], \"rows\": \"/top_products\"}, \"priority\": \"secondary\", \"children\": [{\"id\":\"row1\",\"type\":\"card\",\"props\":{\"title\":\"Probiotic Complex\",\"value\":\"$24,850\",\"delta\":\"+15%\"},\"children\":[{\"id\":\"action\",\"type\":\"button\",\"props\":{\"label\":\"View details\",\"action':'view_product','payload':{'product':'Probiotic Complex'}}}]}, {\"id\":\"row2\",\"type\":\"card\",\"props\":{\"title\":\"Immune Boost Tablets\",\"value\":\"$38,700\",\"delta\":\"+4%\"},\"children\":[{\"id\":\"action\",\"type\":\"button\",\"props\":{\"label\":\"View details\",\"action':'view_product','payload':{'product':'Immune Boost Tablets'}}}]}, {\"id\":\"row3\",\"type\":\"card\",\"props\":{\"title\":\"Multi-Vitamin Pack\",\"value\":\"$18,200\",\"delta\":\"+7%\"},\"children\":[{\"id\":\"action\",\"type\":\"button\",\"props\":{\"label\":\"View details\",\"action':'view_product','payload':{'product':'Multi-Vitamin Pack'}}}]}, {\"id\":\"row4\",\"type\":\"card\",\"props\":{\"title\":\"Omega-3 Fish Oil\",\"value\":\"$15,400\",\"delta\":\"+2%\"},\"children\":[{\"id\":\"action\",\"type\":\"button\",\"props\":{\"label\":\"View details\",\"action':'view_product','payload':{'product':'Omega-3 Fish Oil'}}}]}, {\"id\":\"row5\",\"type\":\"card\",\"props\":{\"title\":\"Vitamin C Gummies\",\"value\":\"$12,600\",\"delta\":\"+1%\"},\"children\":[{\"id\":\"action\",\"type\":\"button\",\"props\":{\"label\":\"View details\",\"action':'view_product','payload':{'product':'Vitamin C Gummies'}}}]}]}}]","data":{"avg_order_value":459,"orders":1047,"revenue":482.3,"top_products":[{"delta":"+15%","product":"Probiotic Complex","sales":"$24,850"},{"delta":"+4%","product":"Immune Boost Tablets","sales":"$38,700"},{"delta":"+7%","product":"Multi-Vitamin Pack","sales":"$18,200"}]}};
+  const store = new SurfaceStore(basicCatalog);
+  const diags = store.apply("vak_render", call);
+  assert.deepEqual(diags.filter((d) => d.severity === "error"), []);
+  const text = projectText(store.resolve("q3_dashboard")!);
+  assert.match(text, /\[Button: View details → view_july\]/);
+  assert.match(text, /\[Button: View details → view_august\]/);
+  for (const p of ["Probiotic Complex", "Immune Boost Tablets", "Multi-Vitamin Pack", "Omega-3 Fish Oil", "Vitamin C Gummies"]) assert.match(text, new RegExp(`\\[Card\\] ${p}`));
+  assert.match(text, /Probiotic Complex \| \$24,850/);
+  assert.doesNotMatch(text, /→ :\]/);
+  const button = [...store.get("q3_dashboard")!.nodes.values()].find((n) => n.props?.action === "view_july");
+  assert.deepEqual(button?.props?.payload, { month: "July" });
+});

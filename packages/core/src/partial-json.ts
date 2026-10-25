@@ -3,11 +3,13 @@
 // - Parses any prefix of a JSON document, closing whatever is still open, so a
 //   UI can render while tool-call arguments stream in.
 // - Repairs what models commonly emit: code fences and prose around the JSON,
-//   comments, trailing commas, single quotes, unquoted keys, raw newlines in
+//   comments, trailing commas, single quotes (even a key that opens with one
+//   quote and closes with the other), unquoted keys, raw newlines in
 //   strings, Python-style True/False/None, and keyless values inside an object
 //   ({"body": "a", "b"} — the stray value continues the previous member),
 //   objects whose "}" was omitted before the next array element, and
-//   values after a closed top-level array ("[a], b, c" — they continue the array).
+//   values after a closed top-level array ("[a], b, c" or "[a]}, b" — they
+//   continue the array).
 // - Reports which containers are unfinished and which object keys hold a
 //   string that was cut off, so callers never act on a half-written id.
 
@@ -62,10 +64,19 @@ class Parser {
     return this.truncated;
   }
 
-  /** "[a], b, c": an array closed too early; comma-separated values after it belong to it. */
+  /**
+   * "[a], b, c": an array closed too early; comma-separated values after it
+   * belong to it. Stray closers before a comma were part of the same early
+   * close ("[{..}]}, {..}]}]" from the 4B model, which shut its root list
+   * one level too soon and kept writing siblings).
+   */
   continueArray(arr: unknown[]): void {
     for (;;) {
       this.skip();
+      while (this.s[this.i] === "]" || this.s[this.i] === "}") {
+        this.i++;
+        this.skip();
+      }
       if (this.s[this.i] !== ",") return;
       this.i++;
       this.skip();
@@ -73,7 +84,6 @@ class Parser {
       const v = this.value();
       if (v === MISSING) return;
       arr.push(v);
-      if (this.s[this.i] === "]") this.i++;
     }
   }
 
@@ -142,7 +152,7 @@ class Parser {
    */
   private closerReading(): "typo" | "omitted" | "stray" | undefined {
     const run = /^.([\s\]}]*)/s.exec(this.s.slice(this.i, this.i + 200))![1]!.replace(/\s+/g, "");
-    if (!run) return undefined;
+    if (!run) return this.restReading(this.open);
     const fit = (stack: ("{" | "[")[]) => {
       const st = [...stack];
       let n = 0;
@@ -160,7 +170,46 @@ class Parser {
     };
     const score = (r: { n: number; full: boolean }) => (r.full ? 1000 : 0) + r.n;
     const ranked = (Object.entries(readings) as [keyof typeof readings, { n: number; full: boolean }][]).sort((a, b) => score(b[1]) - score(a[1]));
-    return score(ranked[0]![1]) > score(ranked[1]![1]) ? ranked[0]![0] : undefined;
+    if (score(ranked[0]![1]) > score(ranked[1]![1])) return ranked[0]![0];
+    return this.restReading(open);
+  }
+
+  /**
+   * The closers right after a mismatched one don't decide (`}, {"id":...`):
+   * look at every closer in the rest of the text instead. Under each reading,
+   * count closers that close something minus closers left with nothing to
+   * close; the reading the rest agrees with best wins. From the 4B model's
+   * dashboard: `{...stat...}}}, {...}, {...}]}], "span": 2, ...` — the third
+   * "}" was a stray extra, but read as an omitted "]" it shut the KPI stack,
+   * every later closer landed one level off, and the chart and table were lost.
+   */
+  private restReading(open: ("{" | "[")[]): "typo" | "omitted" | "stray" | undefined {
+    const rest = this.s.slice(this.i + 1, this.i + 8000);
+    const agree = (stack: ("{" | "[")[]) => {
+      const st = [...stack];
+      let score = 0;
+      for (let j = 0; j < rest.length; j++) {
+        const c = rest[j]!;
+        if (c === '"' || c === "'") {
+          for (j++; j < rest.length && rest[j] !== c; j++) if (rest[j] === "\\") j++;
+        } else if (c === "{" || c === "[") st.push(c);
+        else if (c === "}" || c === "]") {
+          if (st.at(-1) === (c === "}" ? "{" : "[")) {
+            st.pop();
+            score++;
+          } else score--;
+        }
+      }
+      return score;
+    };
+    const omittedFits = open.at(-2) === (open.at(-1) === "[" ? "{" : "[");
+    const readings: ["typo" | "omitted" | "stray", number][] = [
+      ["typo", agree(open.slice(0, -1))],
+      ["omitted", omittedFits ? agree(open.slice(0, -2)) : -Infinity],
+      ["stray", agree(open)],
+    ];
+    readings.sort((a, b) => b[1] - a[1]);
+    return readings[0]![1] > readings[1]![1] ? readings[0]![0] : undefined;
   }
 
   /** True when a container of `kind` encloses the current (innermost) one. */
@@ -361,6 +410,15 @@ class Parser {
 
   key(): Parsed {
     const c = this.s[this.i]!;
+    // `"action':'view_july'`: a key opened with one quote and closed with the
+    // other (the 4B model drifted into single quotes mid-object). Read to the
+    // first quote, the key ended there; read as one string, the key ran to the
+    // next `"` and swallowed the nodes after it.
+    const mixed = /^(["'])([A-Za-z_$][\w$-]*)(["'])\s*[:=]/.exec(this.s.slice(this.i, this.i + 200));
+    if (mixed && mixed[1] !== mixed[3]) {
+      this.i += mixed[1]!.length + mixed[2]!.length + 1;
+      return mixed[2]!;
+    }
     if (c === '"' || c === "'") {
       const { value, closed } = this.string();
       return closed ? value : MISSING;

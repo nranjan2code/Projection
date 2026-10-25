@@ -51,9 +51,12 @@ code { font: 0.88em ui-monospace, SFMono-Regular, Menlo, monospace; background: 
 .brand { display: flex; align-items: center; gap: 8px; font-size: 1rem; white-space: nowrap; }
 .brand .muted { font-size: 0.88rem; }
 .logo { width: 22px; height: 22px; border-radius: 7px; background: conic-gradient(from 200deg, var(--accent), #06b6d4, #f59e0b, var(--accent)); }
-.controls { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; flex: 1; justify-content: flex-end; }
+/* Basis 0: the controls share the brand's row and wrap inside themselves, instead of the whole group dropping below it. */
+.controls { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; flex: 1 1 0; min-width: 0; justify-content: flex-end; }
 .ctl { display: flex; flex-direction: column; gap: 2px; font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 600; }
-.ctl.grow { flex: 1 1 200px; max-width: 280px; }
+/* The provider select would otherwise size to its longest option (~380px). */
+.ctl { flex: 1 1 130px; max-width: 200px; min-width: 0; }
+.ctl.grow { flex: 2 1 140px; max-width: 280px; }
 .ctl select, .ctl input {
   font: 500 0.9rem/1 inherit; font-family: inherit; text-transform: none; letter-spacing: 0; color: var(--fg);
   background: var(--panel); border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; min-height: 36px; width: 100%;
@@ -119,8 +122,10 @@ details.diag pre { white-space: pre-wrap; margin: 6px 0 0; font-size: 0.8rem; }
 .composer textarea { flex: 1; border: 0; outline: 0; resize: none; background: none; color: var(--fg); font: inherit; padding: 8px 0; max-height: 200px; }
 .send { flex: none; width: 40px; height: 40px; border-radius: 12px; border: 0; background: var(--accent); color: var(--accent-fg); cursor: pointer; display: grid; place-items: center; }
 .send[disabled] { opacity: 0.45; cursor: progress; }
-@media (max-width: 640px) {
+@media (max-width: 960px) {
   .brand .muted { display: none; }
+}
+@media (max-width: 640px) {
   .controls { justify-content: flex-start; }
   #viewport { display: none; }
 }
