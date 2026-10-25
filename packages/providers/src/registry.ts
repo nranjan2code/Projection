@@ -34,7 +34,15 @@ export function providersFromEnv(env: Record<string, string | undefined> = proce
   const ollamaHost = env.OLLAMA_HOST ? (env.OLLAMA_HOST.startsWith("http") ? env.OLLAMA_HOST : `http://${env.OLLAMA_HOST}`) : "http://127.0.0.1:11434";
   const geminiKey = env.GEMINI_API_KEY ?? env.GOOGLE_API_KEY;
   return [
-    { id: "ollama", label: "Ollama (local)", available: true, make: (o = {}) => ollama({ host: ollamaHost, think: o.think }) },
+    {
+      id: "ollama",
+      label: "Ollama (local)",
+      available: true,
+      // The primary target (AGENTS.md). Without it the first installed model was
+      // picked, and that was the 0.8B one.
+      defaultModel: env.OLLAMA_MODEL ?? "qwen3.5:4b-mlx",
+      make: (o = {}) => ollama({ host: ollamaHost, think: o.think }),
+    },
     {
       id: "anthropic",
       label: "Anthropic",

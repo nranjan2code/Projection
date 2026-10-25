@@ -240,9 +240,11 @@ const server = createServer(async (req, res) => {
       if (!entry?.available) return json(res, 400, { error: "provider unavailable" });
       try {
         const models = (await entry.make({}).listModels?.(AbortSignal.timeout(8000))) ?? [];
-        // Only a declared default is suggested; the first listed model is arbitrary.
+        // A declared default is suggested; a local one only when it is installed,
+        // else the first listed model.
         const local = entry.id === "ollama";
-        return json(res, 200, { models, default: entry.defaultModel ?? (local ? models[0] : undefined) });
+        const declared = local && entry.defaultModel && models.length && !models.includes(entry.defaultModel) ? undefined : entry.defaultModel;
+        return json(res, 200, { models, default: declared ?? (local ? models[0] : undefined) });
       } catch (err) {
         return json(res, 502, { error: (err as Error).message, models: [], default: entry.defaultModel });
       }
