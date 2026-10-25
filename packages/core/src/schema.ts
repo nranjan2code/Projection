@@ -8,6 +8,7 @@
 //   enumAliases:    other spellings for enum values ({"left": "start"})
 //   namesComponent: a value outside the enum may name the component meant
 //                   (an input's kind "date" is the date component)
+//   literal:        preserve embedded braces in source code instead of binding them
 
 import { parseLenient } from "./partial-json.ts";
 
@@ -33,6 +34,8 @@ export interface JSONSchema {
   pattern?: string;
   /** Annotation; "markdown" marks prose the engine normalizes (see Normalizer). */
   format?: string;
+  /** Extension: embedded braces are literal text; a whole-value binding still works. */
+  literal?: boolean;
   default?: unknown;
   /** Extension: alternative property names models use for this property. */
   aliases?: readonly string[];
@@ -42,7 +45,7 @@ export interface JSONSchema {
   namesComponent?: boolean;
 }
 
-const EXTENSION_KEYS = new Set(["aliases", "enumAliases", "namesComponent"]);
+const EXTENSION_KEYS = new Set(["aliases", "enumAliases", "namesComponent", "literal"]);
 
 /** Deep copy without extension keywords, for provider tool definitions. */
 export function toWireSchema(schema: JSONSchema): JSONSchema {

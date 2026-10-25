@@ -152,3 +152,30 @@ test("workout plan (playground, 0.8B): nodes after the list are kept; empty cont
   });
   assert.ok(d.some((x) => x.severity === "error" && /the surface is empty/.test(x.message)));
 });
+
+// The component bench's real 4B output retried four times on the JavaScript
+// template literal ${name}. Literal source must survive even when surface
+// data or a form happens to use the same name.
+test("javascript-snippet (component bench): code braces are literal and whole-value bindings still work", () => {
+  const call = JSON.parse(readFileSync(new URL("./fixtures/bench-code-4b-2026-10-25.json", import.meta.url), "utf8")) as { tool: string; args: string };
+  const store = new SurfaceStore(basicCatalog);
+  const args = parseLenient(call.args) as Record<string, unknown>;
+  const expected = 'const name = "Ada";\nconsole.log(`Hello, ${name}!`);\n';
+  assert.deepEqual(store.apply(call.tool, args).filter((d) => d.severity === "error"), []);
+  assert.equal(store.resolve(String(args.surface))!.root!.props.code, expected);
+  store.apply("vak_update", { surface: args.surface, data: { name: "Grace" } });
+  assert.equal(store.resolve(String(args.surface))!.root!.props.code, expected);
+
+  // Aliases are protected before normalization can collapse {{name}}, and
+  // code can still come from data without interpolating inside that source.
+  const diagnostics = store.render({ surface: "literal", data: { snippet: expected }, nodes: [
+    { id: "root", type: "form", props: { submit: "save" }, children: ["literal", "bound", "name"] },
+    { id: "name", type: "input", props: { label: "Name", bind: "/form/name" } },
+    { id: "literal", type: "code", props: { source: '{{name}} ${name} {name} \\{name}' } },
+    { id: "bound", type: "code", props: { code: "{/snippet}" } },
+  ] });
+  assert.deepEqual(diagnostics.filter((d) => d.severity === "error"), []);
+  const children = store.resolve("literal")!.root!.children;
+  assert.equal(children[0]!.props.code, '{{name}} ${name} {name} \\{name}');
+  assert.equal(children[1]!.props.code, expected);
+});

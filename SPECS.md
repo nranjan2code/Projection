@@ -29,6 +29,7 @@ In MCP there is also `vak_wait_action`.
 
 `packages/core/src/basic-catalog.ts` defines 26 components with JSON Schema props and vak extensions (timeline, steps, code, map and gallery are extended tier, lowered to basic components for targets that don't draw them: `core/lower.ts`):
 - `aliases`, `enumAliases`, `default`, `format: "markdown"`, `pattern`
+- `literal` on a prop preserves embedded source braces through normalization, lint and resolution; a whole-value binding still loads source from data (used by `code.code`)
 - `namesComponent` on a prop: a value outside its enum that names another component retypes the node (input `kind: "date"` → `date`)
 - component-level `normalize`, `defaults`, `finalize` (e.g. the chart's `normalize` reads bare number lists as a series and drops a series with no numbers beside real ones)
 - `role` (`form`/`action`) and `tier` (`core`/`extended`)
@@ -171,7 +172,8 @@ A separate product built on the framework (AGENTS.md rule 1 exception): Tauri 2 
 
 ## 13. Benchmark
 
-- `@vak/bench`: 30 single- and multi-turn scenarios, a rubric DSL, a simulated user, Wilson intervals.
+- `@vak/bench`: 36 single- and multi-turn scenarios, a rubric DSL, a simulated user, Wilson intervals.
 - Baselines and cassettes live in `packages/bench/data/`.
 - The replay gate (part of `npm test`) re-scores recorded outputs through the current engine and fails on any drop.
-- Current version: `BENCH_VERSION = 2`.
+- Current version: `BENCH_VERSION = 3` (six additive scenarios: timeline, steps, code, map, gallery and table totals). Property checks inspect resolved payloads, alongside the text the user sees; totals arithmetic, currency retention and percentage exclusion are separate checks.
+- The component slice uses `tools/extended/examples/inline` to expose all five new components to the 4B model. Current saved baseline: `components-v3`; earlier recordings are also retained. The replay gate still protects the unchanged v2 scenarios; v2 live baselines remain historical and need re-recording before a v3 live comparison.

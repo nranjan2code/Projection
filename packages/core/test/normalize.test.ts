@@ -52,7 +52,7 @@ test("props: aliases renamed, enum spellings fixed, derived and schema defaults 
 
 test("tool schemas sent to providers carry no extension keywords", () => {
   const wire = JSON.stringify(toolDefinitions(basicCatalog, { mode: "strict" }));
-  assert.doesNotMatch(wire, /"aliases"|"enumAliases"/);
+  assert.doesNotMatch(wire, /"aliases"|"enumAliases"|"namesComponent"|"literal"/);
 });
 
 test("an invalid declared type yields to the component its props describe", () => {

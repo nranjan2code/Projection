@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { basicCatalog, projectText, SurfaceStore } from "@vak/core";
+import { evaluate } from "../src/rubric.ts";
 import type { Provider, ProviderEvent } from "@vak/providers";
 import { replay } from "../src/replay.ts";
 import { runScenario } from "../src/runner.ts";
@@ -22,8 +24,8 @@ test("mean interval and the significance rule", () => {
   assert.equal(significantlyWorse(wilson(14, 20), wilson(16, 20)), false, "noise is not a regression");
 });
 
-test("scenario set: ~30, unique ids, every category, multi-turn flows act on the UI", () => {
-  assert.ok(SCENARIOS.length >= 30, `${SCENARIOS.length}`);
+test("scenario set: 36, unique ids, every category, multi-turn flows act on the UI", () => {
+  assert.equal(SCENARIOS.length, 36);
   assert.equal(new Set(SCENARIOS.map((s) => s.id)).size, SCENARIOS.length);
   assert.deepEqual(new Set(SCENARIOS.map((s) => s.category)), new Set(["comparison", "dashboard", "form", "planning", "information", "interaction"]));
   assert.ok(SCENARIOS.filter((s) => s.turns.length > 1).length >= 8);
@@ -84,4 +86,19 @@ test("an incomplete run is scored as such, and replay agrees", async () => {
   assert.equal(record.complete, false);
   assert.ok(record.passed >= 1 && record.passed < record.total);
   assert.deepEqual([replay(record).passed, replay(record).total], [record.passed, record.total]);
+});
+
+// Component counts and prose alone cannot protect rich payloads: a stepper
+// can have the right labels yet lose its state during normalization/resolution.
+test("property rubric checks resolved values, nested items, lengths and missing properties", () => {
+  const store = new SurfaceStore(basicCatalog);
+  store.render({ surface: "progress", nodes: [{ id: "root", type: "steps", props: { items: [{ title: "Payment", status: "done" }, { title: "Packing", status: "current" }] } }] });
+  const surface = store.resolve("progress")!;
+  const check = (path: string[], value: unknown) => evaluate([{ kind: "prop", type: "steps", path, value }], { surface, text: projectText(surface) })[0]!.pass;
+  assert.equal(check(["items", "length"], 2), true);
+  assert.equal(check(["items", "0", "status"], "done"), true);
+  assert.equal(check(["items", "1", "status"], "todo"), false);
+  assert.equal(check(["items", "2", "status"], "done"), false);
+  assert.equal(check(["items", "0"], { status: "done", title: "Payment" }), true);
+  assert.equal(evaluate([{ kind: "prop", type: "timeline", path: ["items", "length"], value: 2 }], { surface, text: "timeline with 2 items" })[0]!.pass, false);
 });

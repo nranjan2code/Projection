@@ -1,0 +1,116 @@
+{
+  "benchVersion": 3,
+  "slice": "components-v3",
+  "planned": 6,
+  "finished": 6,
+  "provider": "ollama",
+  "model": "qwen3.5:4b-mlx",
+  "fingerprint": "61aa3858e9d3022e8fca725550089addd9289c4446f33bd09dfd12f95f2a6792",
+  "config": {
+    "generation": "tools",
+    "tier": "extended",
+    "examples": true,
+    "authoring": "inline"
+  },
+  "commit": "cfe1b27-dirty",
+  "at": "2026-10-25T15:23:41.931Z",
+  "summary": {
+    "runs": 6,
+    "complete": {
+      "value": 0.3333333333333333,
+      "lo": 0.09677141021353453,
+      "hi": 0.7000066870052566,
+      "n": 6
+    },
+    "score": {
+      "value": 0.6643518518518519,
+      "lo": 0.381943338444509,
+      "hi": 0.9467603652591947,
+      "n": 6
+    },
+    "byCategory": {
+      "information": {
+        "runs": 3,
+        "complete": {
+          "value": 0.6666666666666666,
+          "lo": 0.2076595988078242,
+          "hi": 0.9385080559790691,
+          "n": 3
+        },
+        "score": {
+          "value": 0.9444444444444445,
+          "lo": 0.8355575555555557,
+          "hi": 1,
+          "n": 3
+        }
+      },
+      "planning": {
+        "runs": 2,
+        "complete": {
+          "value": 0,
+          "lo": 0,
+          "hi": 0.6576197760453506,
+          "n": 2
+        },
+        "score": {
+          "value": 0.3680555555555556,
+          "lo": 0,
+          "hi": 0.8716574166666666,
+          "n": 2
+        }
+      },
+      "dashboard": {
+        "runs": 1,
+        "complete": {
+          "value": 0,
+          "lo": 0,
+          "hi": 0.7934506882081973,
+          "n": 1
+        },
+        "score": {
+          "value": 0.4166666666666667,
+          "lo": 0,
+          "hi": 1,
+          "n": 1
+        }
+      }
+    },
+    "byScenario": {
+      "release-timeline": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "delivery-steps": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.1111111111111111
+      },
+      "javascript-snippet": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.8333333333333334
+      },
+      "london-places": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.625
+      },
+      "photo-gallery": {
+        "runs": 1,
+        "complete": 1,
+        "score": 1
+      },
+      "invoice-totals": {
+        "runs": 1,
+        "complete": 0,
+        "score": 0.4166666666666667
+      }
+    },
+    "medianMs": 4790,
+    "usage": {
+      "input": 19508,
+      "output": 962
+    }
+  }
+}

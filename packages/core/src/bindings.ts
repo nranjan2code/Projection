@@ -3,6 +3,7 @@
 // Relative paths (`{name}`) bind inside a template scope, or at the top level
 // to the surface's own data of that name; `\{` escapes.
 
+import type { JSONSchema } from "./schema.ts";
 import { getAt, resolvePath } from "./pointer.ts";
 
 const BINDING = /\\\{|\{(\/?[A-Za-z0-9_~.\-][A-Za-z0-9_~.\-/]*|\/)\}/g;
@@ -85,12 +86,13 @@ export function interpolate(text: string, scope: Scope): unknown {
 }
 
 /** Deeply resolve bindings in a props value. */
-export function resolveValue(value: unknown, scope: Scope): unknown {
+export function resolveValue(value: unknown, scope: Scope, schema?: JSONSchema): unknown {
+  if (schema?.literal && !isBinding(value)) return value;
   if (typeof value === "string") return interpolate(value, scope);
-  if (Array.isArray(value)) return value.map((v) => resolveValue(v, scope));
+  if (Array.isArray(value)) return value.map((v) => resolveValue(v, scope, schema?.items));
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = resolveValue(v, scope);
+    for (const [k, v] of Object.entries(value)) out[k] = resolveValue(v, scope, schema?.properties?.[k]);
     return out;
   }
   return value;

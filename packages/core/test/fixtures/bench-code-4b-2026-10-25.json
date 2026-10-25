@@ -1,0 +1,4 @@
+{
+  "tool": "vak_render",
+  "args": "{\"surface\":\"greet-code\",\"title\":\"greet.js\",\"nodes\":\"[{\\\"id\\\": \\\"root\\\", \\\"type\\\": \\\"code\\\", \\\"props\\\": {\\\"code\\\": \\\"const name = \\\\\\\"Ada\\\\\\\";\\\\nconsole.log(\\\\`Hello, \\\\${name}!\\\\`);\\\\n\\\", \\\"language\\\": \\\"javascript\\\", \\\"title\\\": \\\"greet.js\\\"}}]\"}"
+}

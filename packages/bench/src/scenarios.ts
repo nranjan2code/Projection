@@ -5,7 +5,7 @@
 import type { Check } from "./rubric.ts";
 
 /** Bump when scenarios or checks change: baselines and cassettes record it. */
-export const BENCH_VERSION = 2;
+export const BENCH_VERSION = 3;
 
 /** Simulated interaction with the UI the previous turn produced. */
 export interface Act {
@@ -31,8 +31,9 @@ export interface Scenario {
 }
 
 const count = (types: string | string[], min = 1, max?: number): Check => ({ kind: "count", types: Array.isArray(types) ? types : [types], min, ...(max !== undefined ? { max } : {}) });
-const text = (pattern: string): Check => ({ kind: "text", pattern });
+const text = (pattern: string, flags?: string): Check => ({ kind: "text", pattern, ...(flags ? { flags } : {}) });
 const anyOf = (...checks: Check[]): Check => ({ kind: "anyOf", checks });
+const prop = (type: string, path: string[], value: unknown): Check => ({ kind: "prop", type, path, value });
 const actionable: Check = { kind: "actionable" };
 const bound: Check = { kind: "bound" };
 const changed: Check = { kind: "changed" };
@@ -187,6 +188,62 @@ export const SCENARIOS: Scenario[] = [
     category: "information",
     intent: "A 7-day weather forecast for Paris.",
     turns: [{ say: "Show a 7-day weather forecast for Paris", expect: [anyOf(count("card", 7), count("table"), count("chart"), count("stat", 7)), text("paris")] }],
+  },
+  // These supplied facts exercise the extended catalog without network access.
+  // Record with tools/extended/examples/inline; the default 4B plan is core-only.
+  {
+    id: "release-timeline",
+    category: "information",
+    intent: "A timeline preserving three supplied release milestones in order, with their dates.",
+    turns: [{
+      say: "Show a timeline of these project milestones in order: 2026-01-10 Prototype; 2026-02-20 Beta; 2026-03-30 Launch. Use the timeline component.",
+      expect: [count("timeline"), prop("timeline", ["items", "length"], 3), prop("timeline", ["items", "0", "date"], "2026-01-10"), prop("timeline", ["items", "0", "title"], "Prototype"), prop("timeline", ["items", "1", "title"], "Beta"), prop("timeline", ["items", "2", "title"], "Launch"), text("2026-02-20"), text("2026-03-30")],
+    }],
+  },
+  {
+    id: "delivery-steps",
+    category: "planning",
+    intent: "A delivery stepper: Payment done, Packing current, Shipping todo, in that order.",
+    turns: [{
+      say: "Show my delivery progress with the steps component: Payment is done, Packing is current, Shipping is todo. Keep that order.",
+      expect: [count("steps"), prop("steps", ["items", "length"], 3), prop("steps", ["items", "0", "title"], "Payment"), prop("steps", ["items", "0", "status"], "done"), prop("steps", ["items", "1", "title"], "Packing"), prop("steps", ["items", "1", "status"], "current"), prop("steps", ["items", "2", "title"], "Shipping"), prop("steps", ["items", "2", "status"], "todo")],
+    }],
+  },
+  {
+    id: "javascript-snippet",
+    category: "information",
+    intent: "A copyable JavaScript code block preserving the supplied multiline snippet.",
+    turns: [{
+      say: 'Show this exact JavaScript in a copyable code component titled greet.js, preserving the newline:\nconst name = "Ada";\nconsole.log(`Hello, ${name}!`);',
+      expect: [count("code"), prop("code", ["title"], "greet.js"), prop("code", ["language"], "javascript"), anyOf(prop("code", ["code"], 'const name = "Ada";\nconsole.log(`Hello, ${name}!`);'), prop("code", ["code"], 'const name = "Ada";\nconsole.log(`Hello, ${name}!`);\n')), text("Hello")],
+    }],
+  },
+  {
+    id: "london-places",
+    category: "planning",
+    intent: "A map with both supplied London places and their addresses, without inventing coordinates.",
+    turns: [{
+      say: "Use the map component to show these two places in this order: British Museum, Great Russell Street, London; Tate Modern, Bankside, London. Use the supplied addresses; coordinates are not needed.",
+      expect: [count("map"), prop("map", ["places", "length"], 2), prop("map", ["places", "0", "name"], "British Museum"), prop("map", ["places", "0", "address"], "Great Russell Street, London"), prop("map", ["places", "1", "name"], "Tate Modern"), prop("map", ["places", "1", "address"], "Bankside, London"), text("openstreetmap")],
+    }],
+  },
+  {
+    id: "photo-gallery",
+    category: "information",
+    intent: "A gallery preserving two supplied image URLs and captions in order; no fetching is required.",
+    turns: [{
+      say: "Make a gallery component with these two supplied images, in order. URL https://example.com/coast.jpg, caption Coast; URL https://example.com/forest.jpg, caption Forest. Just display the supplied URLs; do not search for images.",
+      expect: [count("gallery"), prop("gallery", ["images", "length"], 2), prop("gallery", ["images", "0", "src"], "https://example.com/coast.jpg"), prop("gallery", ["images", "0", "alt"], "Coast"), prop("gallery", ["images", "1", "src"], "https://example.com/forest.jpg"), prop("gallery", ["images", "1", "alt"], "Forest"), text("Coast"), text("Forest")],
+    }],
+  },
+  {
+    id: "invoice-totals",
+    category: "dashboard",
+    intent: "An invoice table with engine-computed totals: 9 units and $65 revenue; percentage rates are not summed.",
+    turns: [{
+      say: "Show an invoice table with columns Item, Units, Revenue, Margin. Rows: Pens, 3, $15, 10%; Notebooks, 2, $30, 20%; Folders, 4, $20, 15%. Enable the table's computed totals option; do not write a total row yourself.",
+      expect: [count("table"), prop("table", ["totals"], true), prop("table", ["totalsRow"], true), prop("table", ["rows", "length"], 4), text("Pens"), text("Notebooks"), text("Folders"), text("^\\s*Total\\s*\\|\\s*9\\s*\\|", "im"), text("^\\s*Total\\s*\\|[^|\\n]*\\|\\s*\\$?65(?:\\.00)?\\s*\\|", "im"), text("^\\s*Total\\s*\\|[^|\\n]*\\|\\s*\\$", "im"), text("^\\s*Total\\s*\\|[^|\\n]*\\|[^|\\n]*\\|\\s*$", "im")],
+    }],
   },
   // --- interaction (multi-turn) ----------------------------------------------------------
   {

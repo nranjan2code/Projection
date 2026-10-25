@@ -448,7 +448,8 @@ export class SurfaceStore {
     if (!binds.length) return [];
     const inTemplate = this.templateNodes(state);
     const diags: Diagnostic[] = [];
-    const rewrite = (v: unknown, node: string): unknown => {
+    const rewrite = (v: unknown, node: string, schema?: JSONSchema): unknown => {
+      if (schema?.literal && !isBinding(v)) return v;
       if (typeof v === "string") {
         return v.replace(/(?<!\\)\{([A-Za-z_][\w-]*)\}/g, (m, name: string) => {
           if (getAt(state.data, `/${name}`) !== undefined) return m;
@@ -458,13 +459,13 @@ export class SurfaceStore {
           return `{${hits[0]}}`;
         });
       }
-      if (Array.isArray(v)) return v.map((x) => rewrite(x, node));
-      if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, rewrite(x, node)]));
+      if (Array.isArray(v)) return v.map((x) => rewrite(x, node, schema?.items));
+      if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, rewrite(x, node, schema?.properties?.[k])]));
       return v;
     };
     for (const node of state.nodes.values()) {
       if (inTemplate.has(node.id) || !node.props || node.props.bind !== undefined) continue;
-      node.props = rewrite(node.props, node.id) as Record<string, unknown>;
+      node.props = rewrite(node.props, node.id, propsSchema(this.catalog, node.type)) as Record<string, unknown>;
     }
     return diags;
   }
@@ -755,13 +756,14 @@ export class SurfaceStore {
     for (const node of state.nodes.values()) {
       if (inTemplate.has(node.id)) continue;
       const found = new Set<string>();
-      const scan = (v: unknown): void => {
+      const scan = (v: unknown, schema?: JSONSchema): void => {
+        if (schema?.literal && !isBinding(v)) return;
         if (typeof v === "string") {
           for (const m of v.matchAll(/(?<!\\)\{([A-Za-z_][^{}\s]*)\}/g)) if (getAt(state.data, `/${m[1]}`) === undefined) found.add(m[1]!);
-        } else if (Array.isArray(v)) v.forEach(scan);
-        else if (v && typeof v === "object") Object.values(v).forEach(scan);
+        } else if (Array.isArray(v)) v.forEach((x) => scan(x, schema?.items));
+        else if (v && typeof v === "object") Object.entries(v).forEach(([k, x]) => scan(x, schema?.properties?.[k]));
       };
-      scan(node.props);
+      scan(node.props, propsSchema(this.catalog, node.type));
       if (!found.size) continue;
       const names = [...found].map((f) => `{${f}}`).join(", ");
       diags.push({ severity: "error", surface: state.id, node: node.id, message: `${names} has no value: there is no such surface data, and this node is not inside a list template. Put the value in "data", or render the node from children {each, template}` });
@@ -859,7 +861,7 @@ export class SurfaceStore {
     const node = state.nodes.get(id);
     if (!node) return { key, id, type: "$pending", props: {}, children: [] };
     if (path.has(id)) return { key, id, type: "$invalid", props: {}, children: [], error: "cycle" };
-    const resolved = textProps(propsSchema(this.catalog, node.type), resolveValue(node.props ?? {}, scope) as Record<string, unknown>);
+    const resolved = textProps(propsSchema(this.catalog, node.type), resolveValue(node.props ?? {}, scope, propsSchema(this.catalog, node.type)) as Record<string, unknown>);
     const finalize = this.catalog.components[node.type]?.finalize;
     const props = finalize ? finalize(resolved) : resolved;
 

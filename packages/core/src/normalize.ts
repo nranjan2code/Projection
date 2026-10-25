@@ -47,10 +47,11 @@ const POINTER = /^\/[A-Za-z0-9_~.\-]+(?:\/[A-Za-z0-9_~.\-]+)*$/;
  * the 4B model wrote "${{/data/avg_order_value}}" in a stat (bench sales-q3)
  * and the user saw "${}".
  */
-function singleBraces(v: unknown): unknown {
+function singleBraces(v: unknown, schema?: JSONSchema): unknown {
+  if (schema?.literal) return v;
   if (typeof v === "string") return v.includes("{{") ? v.replace(/\{\{\s*(\/?[A-Za-z0-9_~.\-][A-Za-z0-9_~.\-/]*)\s*\}\}/g, "{$1}") : v;
-  if (Array.isArray(v)) return v.map(singleBraces);
-  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, singleBraces(x)]));
+  if (Array.isArray(v)) return v.map((x) => singleBraces(x, schema?.items));
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, singleBraces(x, schema?.properties?.[k] ?? Object.values(schema?.properties ?? {}).find((sub) => sub.aliases?.includes(k)))]));
   return v;
 }
 
@@ -62,6 +63,7 @@ function singleBraces(v: unknown): unknown {
  * any depth, following the schema (and property aliases).
  */
 function bindBarePointers(schema: JSONSchema, v: unknown): unknown {
+  if (schema.literal) return v;
   if (typeof v === "string") return POINTER.test(v) && validate(schema, v).length > 0 ? `{${v}}` : v;
   const branch = schema.anyOf?.find((b) => (Array.isArray(v) ? b.type === "array" : b.type === "object" || b.properties !== undefined));
   const s = branch ?? schema;
@@ -235,7 +237,7 @@ export class Normalizer {
     const def: ComponentDef | undefined = this.catalog.components[type];
     const schema = propsSchema(this.catalog, type);
     if (!def || !schema) return raw;
-    let p = singleBraces({ ...raw }) as Record<string, unknown>;
+    let p = singleBraces({ ...raw }, schema) as Record<string, unknown>;
     for (const [k, v] of Object.entries(presets ?? {})) if (p[k] === undefined) p[k] = v;
     p = bindBarePointers(schema, p) as Record<string, unknown>;
     p = coerce(schema, p, isBinding) as Record<string, unknown>;

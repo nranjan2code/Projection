@@ -2,11 +2,14 @@
 // Checks are plain data (patterns are strings) so scenarios, cassettes and
 // baselines stay JSON.
 
+import { isDeepStrictEqual } from "node:util";
 import type { ResolvedNode, ResolvedSurface } from "@vak/core";
 
 export type Check =
   /** Between min and max nodes whose type is one of `types`. */
   | { kind: "count"; types: string[]; min?: number; max?: number }
+  /** A resolved component has this exact property value (including nested array entries). */
+  | { kind: "prop"; type: string; path: string[]; value: unknown }
   /** A regular expression matches the surface's text projection. */
   | { kind: "text"; pattern: string; flags?: string }
   /** Every input-like node writes to the data model (has a bind path). */
@@ -45,6 +48,8 @@ export function describe(check: Check): string {
       const range = check.max !== undefined ? `${check.min ?? 0}-${check.max}` : `≥${check.min ?? 1}`;
       return `${range} ${check.types.join("/")}`;
     }
+    case "prop":
+      return `${check.type}.${check.path.join(".")} = ${JSON.stringify(check.value)}`;
     case "text":
       return `text /${check.pattern}/${check.flags ?? ""}`;
     case "bound":
@@ -69,6 +74,22 @@ function passes(check: Check, ctx: CheckContext): boolean {
         if (check.types.includes(node.type)) n++;
       });
       return n >= (check.min ?? 1) && (check.max === undefined || n <= check.max);
+    }
+    case "prop": {
+      let found = false;
+      walkTree(root, (node) => {
+        if (node.type !== check.type) return;
+        let value: unknown = node.props;
+        for (const key of check.path) {
+          if (value === null || typeof value !== "object" || !Object.hasOwn(value, key)) {
+            value = undefined;
+            break;
+          }
+          value = (value as Record<string, unknown>)[key];
+        }
+        if (isDeepStrictEqual(value, check.value)) found = true;
+      });
+      return found;
     }
     case "text":
       return new RegExp(check.pattern, check.flags ?? "i").test(ctx.text);

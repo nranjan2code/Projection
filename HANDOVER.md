@@ -7,7 +7,7 @@ Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](S
 ```
 Continue vak Projection in /Users/nisheethranjan/Projects/vakProjection.
 
-First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 181 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
+First read AGENTS.md (rules), SPECS.md (architecture) and HANDOVER.md (status and next steps). Then run `npm test`; 189 tests should pass, and `npm run typecheck` should be clean. Nothing is running. Start the playground (.claude/launch.json "playground") when you need it, and tell me when you do.
 
 Focus: the core system (engine, catalog, projectors: web, text, Markdown, terminal, email, Telegram, Slack, Discord) and the bench, plus the desktop app (apps/desktop, also served as the playground) and its integrations. Telegram live testing is parked: don't start the bot unless I ask. No Slack/Discord bots.
 
@@ -23,7 +23,7 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 ## Where things stand
 
-- **Tests:** 181 passing, typecheck clean. Everything below is committed and pushed (latest: the "Framework and app, 2026-10-25 evening" round).
+- **Tests:** 189 passing for this round, typecheck clean. Latest round: component benchmark coverage and literal code bindings. The shared workspace also has four passing tests from separate desktop FinOps work.
 - **Baseline** (bench v2, 4B, `tools/core/examples/inline`, 1 run × 30 scenarios), re-recorded 2026-10-25 after the bench-category fixes:
 
   | | Now | Previous | Old flat baseline |
@@ -39,6 +39,15 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 - **The app is installed** at `/Applications/vak.app` (data in `~/Library/Application Support/com.vakprojection.desktop`). **The playground may be running** (started from the session; stop it if not needed). The Telegram bot is stopped. One button press (Save Details on the booking confirmation) is saved in the chat's inbox and replays the next time the bot starts. The old long chat is archived in `.vak/telegram/archive/`.
 
 ## Done in this stretch
+
+- **Component benchmark coverage (2026-10-25):**
+  - Bench v3 adds six supplied-data scenarios (36 total): `release-timeline`, `delivery-steps`, `javascript-snippet`, `london-places`, `photo-gallery`, `invoice-totals`. They inspect actual resolved component payloads, not just mentions in prose. Totals checks separately protect 9 units, 65 revenue, currency formatting and an unsummed percentage column.
+  - Recorded on free local Ollama `qwen3.5:4b-mlx`, plan `tools/extended/examples/inline`. Cassettes retain the initial six, confirmation six, three extra totals samples, and final six (`components-v3`): 21 samples total. No paid model runs. The final six-scenario run passed 2/6 completely (66% mean check score); these are measured failures, not a claim that all new components are reliable. The final baseline uses the finalized rubric; draft summaries were removed, raw calls retained. The original v2 full/form baselines and cassettes are untouched.
+  - The new code scenario exposed `${name}` being treated as a missing UI binding. Added the general catalog property `literal`, used by `code.code`: embedded braces survive normalization, input-name repair, lint and resolution; a whole-value binding can still load code from data. Tested from the verbatim recorded call, also with conflicting data/input names and `{{name}}` source. Original code recording replay improved to full score.
+  - Kept genuine content failures: malformed table rows; missing `totals`; dropped dollar/percentage formatting; incorrect step/map payloads; source code rewritten with ANSI escapes. These are not repaired with scenario-specific logic. Totals arithmetic has a passing real recording even where formatting failed, and a mutation test proves wrong sums lose replay points.
+  - Replay still scores all older cassettes despite the additive version bump. Mandatory coverage prevents silently deleting a new scenario's recordings. The totals rubric was refined into independent checks during development; expected-score changes carry an explicit acceptance reason in the cassettes.
+  - Re-record the component slice with:
+    `npm run bench -- run ollama:qwen3.5:4b-mlx --runs 1 --only release-timeline,delivery-steps,javascript-snippet,london-places,photo-gallery,invoice-totals --slice components-v3 --plan tools/extended/examples/inline --save`.
 
 - **Framework and app, 2026-10-25 evening (user: "do them", then many additions):**
   - **Local interactions** (`core/interact.ts`): web tables sort by header, filter, page; lists and card grids filter. Projector defaults by size (no model involvement); `sortable`/`searchable`/`pageSize` only switch them. `totals: true` adds a computed totals row (a total the model wrote is replaced; percentage columns and the first column are never summed). Shared value parsing ($1,299, 12%, 1.2k, dates).
@@ -153,11 +162,10 @@ Pick up from "Next" in HANDOVER.md, in order, and ask me if in doubt.
 
 1. **Ask the user to retry Appearance in the installed app**; if it still fails, read `~/Library/Application Support/com.vakprojection.desktop/logs/engine.log` (`[ui error]` lines).
 2. **Bench A/B for compact output** (4B): the interface JSON is ~1.3k tokens per answer; a shorter authoring (data-first rows, fewer repeated props) could halve decode time. Measure with `npm run bench -- gate ... --plan`, never change blindly.
-3. **Bench scenarios for the new components and totals**, so the replay gate protects them (none recorded yet).
-4. **Before publishing:** confirm whether the `@vak` npm scope is available. The user chose MIT licensing and no external contributions; see `LICENSE` and `CONTRIBUTING.md`.
-5. **Integrations, next:** OAuth for remote servers (Linear, Notion remote), an update check against newer pinned versions, macOS sandbox profiles for local servers.
-6. **Parked until the user asks: Telegram live** (start the bot; the saved Save Details press replays).
-7. **Optional, ask first:** code signing/notarization and auto-update; Windows/Linux builds; near-miss id pairing.
+3. **Before publishing:** confirm whether the `@vak` npm scope is available. The user chose MIT licensing and no external contributions; see `LICENSE` and `CONTRIBUTING.md`.
+4. **Integrations, next:** OAuth for remote servers (Linear, Notion remote), an update check against newer pinned versions, macOS sandbox profiles for local servers.
+5. **Parked until the user asks: Telegram live** (start the bot; the saved Save Details press replays).
+6. **Optional, ask first:** code signing/notarization and auto-update; Windows/Linux builds; near-miss id pairing.
 
 ## Useful paths
 

@@ -14,7 +14,7 @@ import { defineCatalog } from "./catalog.ts";
 import { cell, type Row, totalsRow } from "./interact.ts";
 import type { JSONSchema } from "./schema.ts";
 
-type Extra = Pick<JSONSchema, "aliases" | "enumAliases" | "namesComponent" | "description" | "default" | "format">;
+type Extra = Pick<JSONSchema, "aliases" | "enumAliases" | "namesComponent" | "description" | "default" | "format" | "literal">;
 
 const str = (extra: Extra = {}): JSONSchema => ({ type: "string", ...extra });
 const oneOf = (values: string[], extra: Extra = {}): JSONSchema => ({ type: "string", enum: values, ...extra });
@@ -399,7 +399,9 @@ export const basicCatalog = defineCatalog(
     code: {
       tier: "extended",
       description: "A block of code or terminal commands, with copy.",
-      props: props({ code: str({ aliases: ["content", "text", "source", "value", "snippet"] }), language: str({ aliases: ["lang", "syntax"] }), title: str({ aliases: ["filename", "file", "label", "caption"] }) }, ["code"]),
+      // The 4B component bench emitted JS `${name}` and retried on an
+      // unbound-placeholder error. Code braces are source, not UI bindings.
+      props: props({ code: str({ literal: true, description: "literal source code; braces are preserved", aliases: ["content", "text", "source", "value", "snippet"] }), language: str({ aliases: ["lang", "syntax"] }), title: str({ aliases: ["filename", "file", "label", "caption"] }) }, ["code"]),
       aliases: ["codeblock", "snippet", "pre", "terminal", "shell"],
     },
     map: {
