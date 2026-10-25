@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, existsSync } from "node:fs";
 import { createServer, request, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -314,5 +314,20 @@ test("application session ownership blocks HTTP mutations between in-process run
     }
     assert.equal((await fetch(base + "/api/sessions/owned")).status, 200);
     assert.equal((await host.view("owned")).surfaces.length, 1);
+  } finally { server.close(); }
+});
+
+
+test("trusted session removal deletes its transcript without deleting other sessions", async () => {
+  const transcripts = mkdtempSync(path.join(tmpdir(), "vak-transcripts-"));
+  const { host, server } = await serve({ transcripts });
+  try {
+    await host.run({ session: "remove-me", provider: "scripted", model: "m", message: "Synthetic input" });
+    await host.run({ session: "keep-me", provider: "scripted", model: "m", message: "Keep" });
+    assert.equal(existsSync(path.join(transcripts, "remove-me.jsonl")), true);
+    await host.remove("remove-me");
+    assert.equal(existsSync(path.join(transcripts, "remove-me.jsonl")), false);
+    assert.equal(existsSync(path.join(transcripts, "keep-me.jsonl")), true);
+    assert.equal((await host.view("keep-me")).surfaces.length, 1);
   } finally { server.close(); }
 });

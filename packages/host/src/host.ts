@@ -147,6 +147,8 @@ export interface VakHost {
   run(input: HostTurn, options?: HostRunOptions): Promise<{ stop: string }>;
   /** A detached copy of the canonical view; never exposes mutable session internals. */
   view(id: string): Promise<SessionView>;
+  /** Delete an idle session and its raw transcript; running sessions must be stopped first. */
+  remove(id: string): Promise<void>;
   /** Handle a request; false when the path is not the host's (serve it yourself). */
   handle(req: IncomingMessage, res: ServerResponse): Promise<boolean>;
   /**
@@ -337,10 +339,11 @@ export function createHost(opts: HostOptions): VakHost {
   }
 
   async function dropSession(id: string): Promise<void> {
-    sessions.get(id)?.busy?.abort();
+    if (sessions.get(id)?.busy) throw new Error("stop the running session before deleting it");
     sessions.delete(id);
     (await summaries()).delete(id);
     if (opts.sessionsDir) await rm(sessionFile(id), { force: true });
+    if (opts.transcripts) await rm(path.join(opts.transcripts, `${safeId(id)}.jsonl`), { force: true });
   }
 
   /** Each turn's messages and raw tool calls, per session, for diagnosing model output. */
@@ -644,6 +647,7 @@ export function createHost(opts: HostOptions): VakHost {
   return {
     run,
     view,
+    remove: dropSession,
     approve,
     async handle(req, res) {
       const url = new URL(req.url ?? "/", "http://localhost");
@@ -694,7 +698,7 @@ export function createHost(opts: HostOptions): VakHost {
           const id = decodeURIComponent(p.slice("/api/sessions/".length));
           if (m !== "GET" && opts.allowSessionMutation?.(id) === false) { json(res, 409, { error: "session is managed by another execution owner" }); return true; }
           if (m === "DELETE") {
-            if (detached.has(id)) { json(res, 409, { error: "session already running" }); return true; }
+            if (sessions.get(id)?.busy) { json(res, 409, { error: "session already running" }); return true; }
             await dropSession(id);
             json(res, 200, { ok: true });
           } else if (m === "PUT") {
@@ -713,7 +717,7 @@ export function createHost(opts: HostOptions): VakHost {
           } else json(res, 405, { error: "method not allowed" });
         } else if (m === "POST" && p === "/api/reset") {
           const body = await readJson(req);
-          if (detached.has(String(body.session)) || opts.allowSessionMutation?.(String(body.session)) === false) { json(res, 409, { error: "session already running" }); return true; }
+          if (sessions.get(String(body.session))?.busy || opts.allowSessionMutation?.(String(body.session)) === false) { json(res, 409, { error: "session already running" }); return true; }
           await dropSession(String(body.session));
           json(res, 200, { ok: true });
         } else json(res, 404, { error: "not found" });
