@@ -218,7 +218,9 @@ export class McpClient {
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
-        buf += value;
+        // SSE lines may end in CRLF or CR as well as LF (Tavily's server sends CRLF); a CR
+        // that ends this chunk waits, since its LF may start the next.
+        buf = (buf + value).replace(/\r\n|\r(?!$)/g, "\n");
         let i: number;
         while ((i = buf.indexOf("\n\n")) >= 0) {
           const frame = buf.slice(0, i);

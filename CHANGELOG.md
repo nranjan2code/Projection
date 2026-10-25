@@ -3,6 +3,11 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: MCP event streams with CRLF line endings
+
+- `McpClient` over HTTP now reads a `text/event-stream` reply whose lines end in CRLF or CR, as the SSE format allows, including a line ending split across chunks. Before, it only split events on LF, so a server such as Tavily's remote MCP server (`mcp.tavily.com`) never had its reply read and the request hung until its timeout.
+
+
 ## 2026-10-26: graph component
 
 - New extended-tier `graph` component: nodes `[{id, label, group, note}]` and edges `[{from, to, label}]`, for knowledge graphs, org charts, dependencies and flows. It accepts the memory server's own shape (`entities`/`relations`, `entityType`, `relationType`, `observations`), edges written as text (`"A -> B: label"`), and edge ends named by id or label; an end naming no node becomes one. A lone node is valid.

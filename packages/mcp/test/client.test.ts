@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
+import { type AddressInfo } from "node:net";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -22,6 +24,32 @@ test("a stdio server starts with a minimal environment: our API keys never reach
   } finally {
     c.close();
     delete process.env.OPENAI_API_KEY;
+  }
+});
+
+test("an http server's event stream is read whatever its line endings, even split across chunks", async () => {
+  const server = createServer((req, res) => {
+    let body = "";
+    req.on("data", (d) => (body += d));
+    req.on("end", () => {
+      const msg = JSON.parse(body);
+      if (!("id" in msg)) return void res.writeHead(202).end();
+      const result = msg.method === "initialize" ? { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "crlf", version: "0" } } : { tools: [{ name: "find", inputSchema: { type: "object" } }] };
+      const frame = `event: message\r\ndata: ${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result })}\r\n\r\n`;
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      // Split between the CR and LF of the blank line, and keep the stream open as a real server may.
+      res.write(frame.slice(0, -1));
+      setTimeout(() => res.write(frame.slice(-1)), 10);
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const c = new McpClient({ name: "crlf", transport: { kind: "http", url: `http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp` } });
+  try {
+    assert.deepEqual((await c.listTools()).map((t) => t.name), ["find"]);
+  } finally {
+    c.close();
+    server.closeAllConnections();
+    server.close();
   }
 });
 
