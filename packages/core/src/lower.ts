@@ -1,11 +1,11 @@
 // Lowering: richer components written as the basic ones every projector
-// already draws. The web renders timeline, steps, code, map and gallery
+// already draws. The web renders timeline, steps, code, map, gallery and graph
 // natively; chat platforms and plain text get them here, so a new component
 // never shows up as nothing on a target that predates it.
 
 import type { ResolvedNode, ResolvedSurface } from "./surface.ts";
 
-export const LOWERED = new Set(["timeline", "steps", "code", "map", "gallery"]);
+export const LOWERED = new Set(["timeline", "steps", "code", "map", "gallery", "graph"]);
 
 const s = (v: unknown) => (v === undefined || v === null ? "" : String(v));
 const items = (p: Record<string, unknown>) => (Array.isArray(p.items) ? p.items : []) as Record<string, unknown>[];
@@ -47,6 +47,23 @@ export function lowerNode(n: ResolvedNode): ResolvedNode {
         {},
         images.map((im, i) => ({ key: `${n.key}#img${i}`, id: `${n.id}_img${i}`, type: "image", props: { src: s(im.src), alt: s(im.alt ?? im.caption) }, children: [] })),
       );
+    }
+    case "graph": {
+      // One line per connection, then the nodes nothing connects, so every
+      // node and edge reads on a target that cannot draw.
+      const nodes = (Array.isArray(p.nodes) ? p.nodes : []) as Record<string, unknown>[];
+      const edges = (Array.isArray(p.edges) ? p.edges : []) as Record<string, unknown>[];
+      const label = new Map(nodes.map((nd) => [s(nd.id), md(nd.label ?? nd.id)]));
+      const name = (id: unknown) => `**${label.get(s(id)) ?? md(id)}**`;
+      const arrow = p.directed === false ? "—" : "→";
+      const linked = new Set(edges.flatMap((e) => [s(e.from), s(e.to)]));
+      const detail = (nd: Record<string, unknown>) => [nd.group ? ` (${md(nd.group)})` : "", nd.note ? ` — ${s(nd.note)}` : ""].join("");
+      return make("list", {
+        items: [
+          ...edges.map((e) => `${name(e.from)} ${arrow}${e.label ? ` ${md(e.label)} ${arrow}` : ""} ${name(e.to)}`),
+          ...nodes.filter((nd) => !linked.has(s(nd.id))).map((nd) => `${name(nd.id)}${detail(nd)}`),
+        ],
+      });
     }
     default:
       return n;

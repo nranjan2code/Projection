@@ -9,6 +9,7 @@
 
 import { mapLink, type Column, filterItems, filterRows, getAt, INTERACT, isRequired, pageRows, type ResolvedNode, sortRows, type SurfaceStore, tableInteraction, type VpsAction } from "@vak/core";
 import { normalizeChart, renderChart } from "./chart.ts";
+import { normalizeGraph, renderGraph } from "./graph.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { surfaceCss } from "./styles.ts";
 
@@ -376,6 +377,8 @@ export class VakSurfaceElement extends HTMLElement {
       }
       case "chart":
         return this.#chart(normalizeChart(p));
+      case "graph":
+        return { el: renderGraph(normalizeGraph(p)) };
       case "timeline": {
         const el = h("ol", "timeline");
         for (const it of (Array.isArray(p.items) ? p.items : []) as Record<string, unknown>[]) {

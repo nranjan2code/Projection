@@ -12,7 +12,7 @@
 
 import { defineCatalog, type ItemField } from "./catalog.ts";
 import { cell, type Row, totalsRow } from "./interact.ts";
-import type { JSONSchema } from "./schema.ts";
+import { coerce, type JSONSchema } from "./schema.ts";
 
 type Extra = Pick<JSONSchema, "aliases" | "enumAliases" | "namesComponent" | "description" | "default" | "format" | "literal">;
 
@@ -180,6 +180,80 @@ function finalizeChart(p: Record<string, unknown>): Record<string, unknown> {
   const series = numbers.map((k) => ({ name: k, values: s.map((r) => (r[k] === undefined ? null : Number(r[k]))) }));
   const labels = Array.isArray(p.labels) && p.labels.length ? p.labels : label ? s.map((r) => r[label]) : p.labels;
   return { ...p, series, ...(labels !== undefined ? { labels } : {}) };
+}
+
+const graphNode = props({
+  id: str({ aliases: ["key", "slug"] }),
+  label: str({ aliases: ["name", "title", "text"] }),
+  group: str({ aliases: ["type", "entityType", "category", "kind", "role"] }),
+  note: { type: ["string", "array"], aliases: ["observations", "description", "details", "notes"] },
+});
+const graphEdge = props(
+  {
+    from: str({ aliases: ["source", "src", "start", "parent", "fromId"] }),
+    to: str({ aliases: ["target", "dst", "end", "child", "toId"] }),
+    label: str({ aliases: ["relation", "relationType", "type", "kind", "name"] }),
+  },
+  ["from", "to"],
+);
+
+const text = (v: unknown) => (typeof v === "string" ? v.trim() : typeof v === "number" ? String(v) : "");
+
+/**
+ * Edges written as text ("Alice -> Acme: works at", "A → B") become
+ * {from, to, label}: a small model lists relations as sentences before it
+ * remembers the edge shape.
+ */
+function edgeObjects(v: unknown): unknown {
+  if (!Array.isArray(v)) return v;
+  return v.map((e) => {
+    if (typeof e !== "string") return e;
+    const m = /^\s*(.+?)\s*(?:-+>|→|=>|—>)\s*(.+?)\s*(?::\s*(.+))?$/.exec(e);
+    return m ? { from: m[1], to: m[2], ...(m[3] ? { label: m[3].trim() } : {}) } : e;
+  });
+}
+
+/**
+ * Canonical nodes [{id, label, group?, note?}] and edges [{from, to, label?}]
+ * whose ends are node ids. Models name an edge's ends by a node's id or by its
+ * label (the memory server's relations use entity names), so both resolve.
+ * Items reached through a binding skip prop coercion, so they are coerced here
+ * against the same item schemas (the memory server's own keys bind directly). An
+ * end that names no node becomes one: models often list only the relations,
+ * and a dropped edge would lose content the user asked for. A node without an
+ * id is known by its label.
+ */
+function finalizeGraph(p: Record<string, unknown>): Record<string, unknown> {
+  const rawNodes = Array.isArray(p.nodes) ? p.nodes : [];
+  const nodes: Record<string, unknown>[] = [];
+  const byKey = new Map<string, string>();
+  const add = (n: Record<string, unknown>) => {
+    const label = text(n.label) || text(n.id);
+    const id = text(n.id) || label;
+    if (!id || byKey.has(id)) return;
+    // Observations arrive as a list (memory server); the note is one line.
+    const note = Array.isArray(n.note) ? n.note.map(text).filter(Boolean).join("; ") : text(n.note);
+    nodes.push({ id, label: label || id, ...(text(n.group) ? { group: text(n.group) } : {}), ...(note ? { note } : {}) });
+    byKey.set(id, id);
+    if (label && !byKey.has(label.toLowerCase())) byKey.set(label.toLowerCase(), id);
+  };
+  for (const n of rawNodes) add(typeof n === "string" || typeof n === "number" ? { label: String(n) } : n && typeof n === "object" ? (coerce(graphNode, n) as Record<string, unknown>) : {});
+  const end = (v: unknown) => {
+    const t = text(v);
+    if (!t) return undefined;
+    const known = byKey.get(t) ?? byKey.get(t.toLowerCase());
+    if (known) return known;
+    add({ label: t });
+    return t;
+  };
+  const edges: Record<string, unknown>[] = [];
+  for (const e of (edgeObjects(Array.isArray(p.edges) ? p.edges : []) as unknown[])) {
+    if (!e || typeof e !== "object") continue;
+    const r = coerce(graphEdge, e) as Record<string, unknown>;
+    const from = end(r.from), to = end(r.to);
+    if (from && to) edges.push({ from, to, ...(text(r.label) ? { label: text(r.label) } : {}) });
+  }
+  return { ...p, nodes, edges };
 }
 
 /**
@@ -395,7 +469,7 @@ export const basicCatalog = defineCatalog(
       normalize: normalizeChart,
       finalize: finalizeChart,
       aliases: [
-        "graph", "plot",
+        "plot",
         { name: "barchart", props: { kind: "bar" } },
         { name: "linechart", props: { kind: "line" } },
         { name: "areachart", props: { kind: "area" } },
@@ -477,6 +551,47 @@ export const basicCatalog = defineCatalog(
       ),
       normalize: (p) => ({ ...p, places: itemObjects(p.places, "name") }),
       aliases: ["places", "locations", "mapview"],
+    },
+    graph: {
+      tier: "extended",
+      description: "Things and how they connect: nodes joined by labelled edges.",
+      hint: "for relationships, knowledge graphs, org charts, dependencies and flows; props.nodes is [{id, label, group}], props.edges is [{from, to, label}] naming node ids; numbers over categories belong in chart",
+      // "graph" was a chart alias, and models still say it for one: a node
+      // with series is a chart.
+      retype: [{ type: "chart", when: props({}, ["series"]) }],
+      props: props(
+        {
+          nodes: listOr(
+            {
+              type: "array",
+              items: {
+                anyOf: [
+                  { type: "string" },
+                  graphNode,
+                ],
+              },
+            },
+            { aliases: ["entities", "vertices", "items", "people", "members"] },
+          ),
+          edges: listOr(
+            {
+              type: "array",
+              items: {
+                anyOf: [
+                  { type: "string" },
+                  graphEdge,
+                ],
+              },
+            },
+            { aliases: ["links", "relations", "relationships", "connections"] },
+          ),
+          directed: bool({ description: "default true", aliases: ["arrows", "isDirected"] }),
+        },
+        ["nodes"],
+      ),
+      normalize: (p) => (p.edges === undefined ? p : { ...p, edges: edgeObjects(p.edges) }),
+      finalize: finalizeGraph,
+      aliases: ["network", "networkgraph", "knowledgegraph", "nodegraph", "mindmap", "orgchart", "flowchart", "diagram", "relations"],
     },
     gallery: {
       tier: "extended",

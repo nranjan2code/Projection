@@ -269,6 +269,28 @@ tr:last-child td { border-bottom: 0; }
 .chart svg.pie { aspect-ratio: 1; max-width: 240px; margin: 0 auto; }
 .chart .gridline { stroke: var(--vak-border); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .chart .axis { fill: var(--vak-muted); font-size: 11px; font-family: var(--vak-font); }
+.graph { margin: 0; padding: 14px; background: var(--vak-surface); border: 1px solid var(--vak-border); border-radius: var(--vak-radius); min-width: 0; }
+.card .graph { padding: 0; border: 0; }
+.graph-tools { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-bottom: 8px; }
+.graph-btn { font: inherit; font-size: 0.82rem; min-width: 30px; height: 28px; padding: 0 8px; border: 1px solid var(--vak-border); border-radius: 7px; background: var(--vak-surface); color: var(--vak-fg); cursor: pointer; }
+.graph-btn:hover { border-color: var(--vak-muted); }
+.graph-find { font: inherit; font-size: 0.84rem; height: 28px; flex: 1; max-width: 240px; margin-right: auto; padding: 0 8px; border: 1px solid var(--vak-border); border-radius: 7px; background: var(--vak-surface); color: var(--vak-fg); }
+.graph-frame { position: relative; height: clamp(200px, var(--graph-h, 320px), 70vh); border-radius: calc(var(--vak-radius) - 4px); background: color-mix(in srgb, var(--vak-border) 22%, var(--vak-surface)); overflow: hidden; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+.graph-frame.dragging { cursor: grabbing; }
+.graph-frame:focus-visible { outline: 2px solid var(--vak-accent); outline-offset: 2px; }
+.graph-frame svg { display: block; width: 100%; height: 100%; font-family: var(--vak-font); }
+.graph .dim { opacity: 0.22; }
+.graph-node.match rect { stroke: var(--vak-accent); stroke-width: 3; }
+.graph-edge { stroke: var(--vak-muted); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.graph-arrow { fill: var(--vak-muted); }
+.graph-edge-label { font-size: 11px; fill: var(--vak-muted); paint-order: stroke; stroke: var(--vak-surface); stroke-width: 4px; stroke-linejoin: round; }
+.graph-node { cursor: pointer; outline: none; transition: opacity 0.15s; }
+.graph-node rect { --node: var(--vak-accent); fill: color-mix(in srgb, var(--node) 14%, var(--vak-surface)); stroke: var(--node); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.graph-node text { font-size: 12.5px; font-weight: 600; fill: var(--vak-fg); pointer-events: none; }
+.graph-node:hover rect, .graph-node.selected rect { stroke-width: 2.5; fill: color-mix(in srgb, var(--node) 26%, var(--vak-surface)); }
+.graph-node:focus-visible rect { stroke-width: 3; }
+.graph-detail { margin-top: 10px; font-size: 0.88rem; color: var(--vak-muted); text-align: center; }
+.graph-detail b { color: var(--vak-fg); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; font-size: 0.84rem; color: var(--vak-muted); justify-content: center; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }

@@ -3,6 +3,15 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: graph component
+
+- New extended-tier `graph` component: nodes `[{id, label, group, note}]` and edges `[{from, to, label}]`, for knowledge graphs, org charts, dependencies and flows. It accepts the memory server's own shape (`entities`/`relations`, `entityType`, `relationType`, `observations`), edges written as text (`"A -> B: label"`), and edge ends named by id or label; an end naming no node becomes one. A lone node is valid.
+- `@vak/web` draws it as dependency-free SVG with a full interactive view: drag to pan, pinch (touch, trackpad, WebKit gesture events) or Ctrl/⌘-scroll to zoom, zoom and fit buttons, keyboard control, draggable nodes, selection that shows a node's note and dims what it does not touch, and search from 12 nodes. Directed acyclic graphs are layered and turn top-down or left-to-right to fit the frame; other graphs get a deterministic force layout. New export `renderGraph`/`normalizeGraph`.
+- Chat, email, markdown, ANSI and text targets get a graph lowered to one line per connection plus its unconnected nodes.
+- "graph" is no longer a `chart` alias; a `graph` node with `series` is still retyped to a chart, so recorded output is unchanged.
+- Engine: a value already valid for an `anyOf` branch now has that branch's declared aliases renamed, as plain object schemas always did. Replay gate unchanged.
+
+
 ## 2026-10-25: in-process host execution
 
 - Additive `VakHost.run` and `view` APIs use the canonical sessions, validation, surfaces and persistence without an HTTP request. Applications may supply bounded execution controls and observe events; active viewers receive progress through the existing event stream.

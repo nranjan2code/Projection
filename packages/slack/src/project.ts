@@ -83,7 +83,7 @@ interface Ctx {
 }
 
 export function projectSlack(surface: ResolvedSurface, tokenFor: (key: string, kind: Control["kind"]) => string, opts: ProjectOptions = {}): SlackProjection {
-  // Timeline, steps, code, map and gallery as lists, text and images.
+  // Timeline, steps, code, map, gallery and graph as lists, text and images.
   surface = lowerSurface(surface);
   const controls: Control[] = [];
   const ctx: Ctx = {

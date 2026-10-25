@@ -210,7 +210,14 @@ export function coerce(schema: JSONSchema, value: unknown, skip?: (v: unknown) =
         } catch { /* ordinary coercion below handles incomplete structures */ }
       }
     }
-    for (const b of schema.anyOf) if (validate(b, value).length === 0) return value;
+    // A value valid for a branch still gets that branch's aliases renamed, as a
+    // plain object schema would: {name, entityType} items are valid graph nodes
+    // with every prop optional, and were kept with keys no projector reads.
+    for (const b of schema.anyOf) {
+      if (validate(b, value).length) continue;
+      const c = coerce(b, value, skip);
+      return validate(b, c).length === 0 ? c : value;
+    }
     // Repair within a branch of the value's own type before converting across
     // types, so {key, align: "Right"} is fixed as an object, not flattened to "key".
     const sameType = (b: JSONSchema) => {
