@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-26: explicit correction deletion
+
+- Correction guidance names the existing node-removal and data JSON Patch removal operations. Omitting a value from merged data preserves it; a recorded review correction omitted an unwanted date and therefore left it intact. No deletion is inferred or silently applied.
+
 ## 2026-10-26: unknown input defaults
 
 - Authoring instructions distinguish supplied initial values from missing facts: unknown inputs stay blank and unrequested populated fields must not be invented. A local report passed arithmetic and layout checks but invented a project deadline in an extra field; this prevention rule preserves blank/user-entered controls without synthesizing data.

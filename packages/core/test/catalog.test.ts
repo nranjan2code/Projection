@@ -115,3 +115,10 @@ test("table authoring distinguishes automatic column sums from custom summary ro
 test("input guidance leaves unknown facts blank instead of inventing initial values", () => {
   assert.match(systemPrompt(basicCatalog), /Leave unspecified input values blank/);
 });
+
+test("correction guidance distinguishes omission, node removal and data deletion", () => {
+  const prompt = systemPrompt(basicCatalog);
+  assert.match(prompt, /delete a node use vak_remove/);
+  assert.match(prompt, /delete stored values use data JSON Patch remove ops/);
+  assert.match(prompt, /Omitting a field from merged data never deletes it/);
+});
