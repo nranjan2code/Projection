@@ -43,6 +43,7 @@ In MCP there is also `vak_wait_action`.
 ## 3. Engine pipeline
 
 1. **Lenient streaming JSON parser** (`partial-json.ts`).
+   - In finalized input, a missing closing key quote before a complete primitive is recovered by token boundaries and standard JSON primitive validation. Proper quoted keys win; unfinished/ambiguous values are not inferred. Schema and application checks remain responsible for validity and factual assertions.
    - Handles prefixes, comments, single quotes (and a key opened with one quote and closed with the other), unquoted keys and Python literals.
    - Missing quotes: a word missing its opening quote (`"type":select"`), prose missing it (`"content": **Bold** ...",` runs to the first quote a delimiter follows), key and value in one string (`"type:section"`, `"type:=","select"`, and `"type: stat"` right after a single-token value such as an id), and a colon inside the key's quotes (`"id: "x"`).
    - A `key:` inside an array, quoted or not, ends the array.

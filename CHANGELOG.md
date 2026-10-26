@@ -3,6 +3,12 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: token-based primitive member recovery
+
+- A key with a missing closing quote before a complete JSON primitive (`"flag:false}`) is recovered using explicit identifier/colon/delimiter scanning and standard `JSON.parse` validation of the primitive token. Recovery waits for finalized input and structural continuation. Properly quoted keys win; partial tokens, strings, containers, nonfinite numbers and non-JSON literal spellings are not inferred. A real comparison otherwise silently lost its first row and merged values from the second.
+- Verbatim render/update fixtures and streamed replay preserve both rows and their supplied booleans/numbers. Incorrect factual claims stay incorrect for application checks; no scenario-specific value repair, new dependency or public schema/version adapter.
+- 281 tests/replay gate and typecheck pass. Work is isolated from concurrent web theme/card styling; no renderer/style changes are included.
+
 ## 2026-10-26: minimal web defaults and inherited themes
 
 - Web defaults use lighter typography, neutral actions and chart series, smaller corners, quiet borders and no card shadows. Cards keep their natural height and card/comparison actions fit their labels; default grids fit three 220px items before wrapping. Controls retain visible focus and larger touch targets.
