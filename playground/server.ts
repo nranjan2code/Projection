@@ -33,6 +33,8 @@ createServer(async (req, res) => {
   if (await host.handle(req, res)) return;
   const p = new URL(req.url ?? "/", "http://x").pathname;
   if (p === "/") return serveFile(res, here, "index.html");
+  if (p === "/styles") return serveFile(res, here, "styles.html");
+  if (p === "/style-examples.ts") return serveFile(res, here, "style-examples.ts");
   // The browser loads the packages' TypeScript, types stripped on the fly.
   const m = /^\/pkg\/(core|web)\/(.+)$/.exec(p);
   if (m) return serveFile(res, path.join(repo, "packages", m[1]!, "src"), m[2]!);

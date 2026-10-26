@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>vak · Theme reference</title>
+  <script type="importmap">{ "imports": { "@vak/core": "/pkg/core/index.ts", "@vak/web": "/pkg/web/index.ts" } }</script>
+  <style>
+    :root { color-scheme: light; background: #f7f7f8; color: #17181c; font: 14px/1.55 system-ui, sans-serif; }
+    :root[data-theme="dark"] { color-scheme: dark; background: #0f1013; color: #ececf0; }
+    body { max-width: 1040px; margin: 0 auto; padding: 32px 24px 64px; }
+    header { margin-bottom: 32px; }
+    h1 { font-size: 20px; font-weight: 550; margin: 0 0 6px; }
+    header p { opacity: .7; margin: 0 0 20px; }
+    .controls { display: flex; flex-wrap: wrap; gap: 12px 20px; }
+    label { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+    select { font: inherit; background: transparent; color: inherit; border: 1px solid #8886; border-radius: 6px; padding: 6px 10px; }
+    vak-surface { display: block; margin: 0 0 36px; }
+    #status { font-size: 12px; opacity: .7; min-height: 20px; }
+    /* These tokens are deliberately on the wrapper: inheritance is part of the contract. */
+    #samples[data-brand="forest"] { --vak-accent: #27634a; --vak-accent-fg: #fff; --vak-accent-soft: #e4efe9; --vak-series-1: #398464; --vak-radius: 4px; --vak-radius-sm: 3px; }
+    [data-theme="dark"] #samples[data-brand="forest"] { --vak-accent: #92ccac; --vak-accent-fg: #10251b; --vak-accent-soft: #213a2c; --vak-series-1: #92ccac; }
+    #samples[data-brand="editorial"] { --vak-font: Georgia, serif; --vak-accent: #8a3f2d; --vak-accent-fg: #fff; --vak-accent-soft: #f3e9e4; --vak-series-1: #ae6450; --vak-radius: 0px; --vak-radius-sm: 0px; --vak-weight-heading: 400; --vak-weight-value: 400; }
+    [data-theme="dark"] #samples[data-brand="editorial"] { --vak-accent: #e8b59e; --vak-accent-fg: #2c1710; --vak-accent-soft: #38271f; --vak-series-1: #e8b59e; }
+    #samples[data-density="comfortable"] { --vak-font-size: 16px; --vak-space-md: 18px; --vak-space-lg: 28px; --vak-card-padding: 22px; --vak-control-height: 44px; --vak-grid-min: 240px; }
+    @media (max-width: 520px) { body { padding: 20px 16px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Theme reference</h1>
+    <p>Every catalog component, using the framework renderer. Changes below stay in this preview.</p>
+    <div class="controls">
+      <label>Appearance <select id="theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+      <label>Brand <select id="brand"><option value="default">Neutral default</option><option value="forest">Forest</option><option value="editorial">Editorial</option></select></label>
+      <label>Density <select id="density"><option value="default">Default</option><option value="comfortable">Comfortable</option></select></label>
+    </div>
+  </header>
+  <main id="samples"></main>
+  <p id="status" role="status"></p>
+  <script type="module">
+    import { SurfaceStore, basicCatalog } from "@vak/core";
+    import { defineVakElements } from "@vak/web";
+    import { styleExamples } from "/style-examples.ts";
+    defineVakElements();
+    const store = new SurfaceStore(basicCatalog);
+    const samples = document.getElementById("samples");
+    for (const example of styleExamples) {
+      const diagnostics = store.apply("vak_render", example);
+      if (diagnostics.length) throw new Error(JSON.stringify(diagnostics));
+      const el = document.createElement("vak-surface");
+      el.setAttribute("theme", "light");
+      el.attach(store, example.surface);
+      samples.append(el);
+    }
+    const theme = document.getElementById("theme");
+    theme.addEventListener("change", () => {
+      document.documentElement.dataset.theme = theme.value;
+      for (const el of samples.children) el.setAttribute("theme", theme.value);
+    });
+    for (const name of ["brand", "density"]) document.getElementById(name).addEventListener("change", (event) => { samples.dataset[name] = event.target.value; });
+    // This reference has no host or model. Show action receipts locally only.
+    document.addEventListener("vak-action", (event) => {
+      document.getElementById("status").textContent = `Preview action: ${event.detail.action.action}`;
+      event.target.releaseAction();
+    });
+  </script>
+</body>
+</html>

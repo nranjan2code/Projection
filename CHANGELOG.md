@@ -3,6 +3,12 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: minimal web defaults and inherited themes
+
+- Web defaults use lighter typography, neutral actions and chart series, smaller corners, quiet borders and no card shadows. Cards keep their natural height and card/comparison actions fit their labels; default grids fit three 220px items before wrapping. Controls retain visible focus and larger touch targets.
+- Public `--vak-*` tokens now inherit correctly from app wrappers in both appearances. Added typography, spacing, card-padding, control-height and default-grid-minimum tokens; component text uses the surface’s type scale. Existing public token names and package exports remain available. See README for the white-label contract.
+- Playground `/styles` provides fixed examples covering the catalog, with light/dark, brand and density controls and local action receipts. No model calls.
+
 ## 2026-10-26: conversation and short answers stay plain text
 
 - The system prompt now says when to answer without a tool, not only when to prefer UI: greetings, thanks, small talk, questions about the assistant, a fact, definition or short explanation, or a request for text. Earlier surfaces in the conversation are no reason to render again. `CONSTRAINED_INSTRUCTIONS` makes `render: null` the answer for conversation and short plain answers, and the kit's default instructions match. Seen in Vakyartha with qwen3.5:4b-mlx, which rendered a greeting surface for "hello" and ignored "Plain text only" after earlier surfaces.

@@ -124,6 +124,63 @@ Tools have **Allow / Ask / Off** policies. Writes, deletes and open-internet acc
 
 Custom MCP servers run with your account’s permissions; they are not sandboxed. Hosted providers receive the prompts sent to them. Read [SECURITY.md](SECURITY.md) for the threat model, limits and private vulnerability reporting guidance.
 
+## Web appearance and white-label themes
+
+`<vak-surface>` ships with a minimal neutral theme: compact controls, quiet borders,
+no card shadows, and responsive layouts. Omit `theme` to follow the system, or set
+`theme="light"` / `theme="dark"` on a surface. The host app owns its page background.
+
+Public `--vak-*` CSS tokens inherit from any app wrapper and can also be set on an
+individual surface. Defaults only fill missing tokens; they never override the
+app’s inherited values. No fonts, CSS library or branding assets are downloaded.
+
+```css
+.my-app {
+  --vak-font: "My app font", system-ui, sans-serif;
+  --vak-font-size: 14px;
+  --vak-accent: #27634a;
+  --vak-accent-fg: #ffffff;
+  --vak-accent-soft: #e4efe9;
+  --vak-radius: 4px;
+  --vak-radius-sm: 3px;
+  --vak-card-padding: 16px;
+  --vak-control-height: 36px;
+  --vak-series-1: #398464;
+}
+.my-app[data-appearance="dark"] {
+  --vak-accent: #92ccac;
+  --vak-accent-fg: #10251b;
+  --vak-accent-soft: #213a2c;
+  --vak-series-1: #92ccac;
+}
+```
+
+Set the surfaces’ `theme` attribute alongside the app’s appearance. When overriding
+colors, provide coordinated foreground/background values for each appearance.
+
+| Tokens (all prefixed `--vak-`) | Controls |
+| --- | --- |
+| `font`, `mono`, `font-size`, `line-height` | Type families and base scale; component text scales with it |
+| `weight-heading`, `weight-label`, `weight-value` | Heading, label and numeric emphasis |
+| `bg`, `surface`, `surface-2`, `fg`, `muted`, `border` | Backgrounds, text and separators |
+| `accent`, `accent-fg`, `accent-soft` | Actions, selection and focus |
+| `info`, `success`, `warning`, `danger` | Semantic feedback |
+| `series-1` through `series-6` | Chart, graph and Gantt palette |
+| `radius`, `radius-sm`, `shadow`, `shadow-hover` | Panel/control shape and elevation |
+| `space-sm`, `space-md`, `space-lg`, `card-padding` | Layout gaps and panel padding |
+| `control-height`, `grid-min`, `grid-align` | Control minimum height, default grid item minimum width and vertical alignment |
+
+Touch controls retain a 44px minimum. Explicit grid `minItemWidth: "sm"` or `"lg"`
+keeps its requested minimum; `grid-min` tunes the default medium minimum.
+Grid items keep their natural height by default; `--vak-grid-align: stretch` gives
+equal-height rows when an app wants them.
+`--_vak-*` values are private implementation fallbacks, not customization hooks.
+
+Run `npm run playground` and open [the theme reference](http://127.0.0.1:5177/styles)
+to review every catalog component with light/dark, brand and density switches.
+The reference uses fixed data and handles actions locally, without model calls.
+Gallery samples load HTTPS placeholder images; other illustrations are embedded.
+
 ## Development and benchmarks
 
 ```bash

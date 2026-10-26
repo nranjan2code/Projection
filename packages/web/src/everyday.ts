@@ -877,7 +877,7 @@ export function renderGantt(p: Rec, ctx: WidgetCtx): HTMLElement {
   frame.append(names, track);
   box.append(tools, frame);
   const groups = [...new Set(tasks.map((t) => str(t.group)))];
-  const color = (t: Rec) => `var(--vak-series-${(Math.max(0, groups.indexOf(str(t.group))) % 6) + 1})`;
+  const color = (t: Rec) => `var(--vak-series-${(Math.max(0, groups.indexOf(str(t.group))) % 6) + 1}, var(--_vak-series-${(Math.max(0, groups.indexOf(str(t.group))) % 6) + 1}))`;
   const draw = () => {
     const px = st.px!;
     const inner = h("div", "gantt-inner");

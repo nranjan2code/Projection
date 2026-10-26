@@ -40,7 +40,7 @@ interface View {
 }
 
 const GAP: Record<string, string> = { sm: "var(--gap-sm)", md: "var(--gap-md)", lg: "var(--gap-lg)" };
-const MIN_W: Record<string, string> = { sm: "180px", md: "240px", lg: "320px" };
+const MIN_W: Record<string, string> = { sm: "180px", md: "var(--vak-grid-min, var(--_vak-grid-min))", lg: "320px" };
 
 function str(v: unknown): string {
   if (v === undefined || v === null) return "";

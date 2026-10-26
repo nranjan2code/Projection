@@ -27,7 +27,7 @@ function svgEl<K extends keyof SVGElementTagNameMap>(doc: Document, tag: K, attr
   return el;
 }
 
-const color = (i: number) => `var(--vak-series-${(i % 6) + 1})`;
+const color = (i: number) => `var(--vak-series-${(i % 6) + 1}, var(--_vak-series-${(i % 6) + 1}))`;
 const clip = (s: string) => (s.length > MAX_LABEL ? `${s.slice(0, MAX_LABEL - 1)}…` : s);
 const str = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ? String(v) : "");
 

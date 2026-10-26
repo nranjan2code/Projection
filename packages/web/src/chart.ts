@@ -23,7 +23,7 @@ function titled<T extends SVGElement>(doc: Document, el: T, text: string): T {
   return el;
 }
 
-const color = (i: number) => `var(--vak-series-${(i % 6) + 1})`;
+const color = (i: number) => `var(--vak-series-${(i % 6) + 1}, var(--_vak-series-${(i % 6) + 1}))`;
 
 function niceMax(v: number): number {
   if (v <= 0) return 1;
@@ -133,7 +133,7 @@ function cartesian(spec: ChartSpec, doc: Document, width: number): SVGSVGElement
         if (v >= 0) up = to;
         else down = to;
         const top = y(Math.max(from, to)), h = Math.abs(y(from) - y(to));
-        svg.append(titled(doc, svgEl(doc, "rect", { x: L + band * i + (band - bw) / 2, y: top, width: Math.max(bw, 1), height: Math.max(h, 0.5), fill: color(si), stroke: "var(--vak-surface)", "stroke-width": 1 }), `${s.name ? `${s.name} · ` : ""}${label}: ${v}`));
+        svg.append(titled(doc, svgEl(doc, "rect", { x: L + band * i + (band - bw) / 2, y: top, width: Math.max(bw, 1), height: Math.max(h, 0.5), fill: color(si), stroke: "var(--vak-surface, var(--_vak-surface))", "stroke-width": 1 }), `${s.name ? `${s.name} · ` : ""}${label}: ${v}`));
       });
     });
   } else if (spec.kind === "bar") {
@@ -223,7 +223,7 @@ function scatter(spec: ChartSpec, doc: Document, width: number): SVGSVGElement {
 function heatmap(spec: ChartSpec, doc: Document, width: number): SVGSVGElement {
   const dated = spec.series.length === 1 && spec.labels.length > 0 && spec.labels.every((l) => /^\d{4}-\d{2}-\d{2}$/.test(l));
   const max = Math.max(...spec.series.flatMap((s) => s.values), 0) || 1;
-  const shade = (v: number) => (v <= 0 ? "var(--vak-surface-2)" : `color-mix(in srgb, var(--vak-accent) ${Math.round(18 + (v / max) * 82)}%, var(--vak-surface))`);
+  const shade = (v: number) => (v <= 0 ? "var(--vak-surface-2, var(--_vak-surface-2))" : `color-mix(in srgb, var(--vak-accent, var(--_vak-accent)) ${Math.round(18 + (v / max) * 82)}%, var(--vak-surface, var(--_vak-surface)))`);
   if (dated) {
     const DAY = 86_400_000;
     const t = spec.labels.map((l) => Date.parse(`${l}T00:00:00Z`));
