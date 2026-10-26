@@ -180,6 +180,13 @@ export class Integrations {
     return [...this.opts.catalog, ...this.saved.custom];
   }
 
+  /** Canonical non-secret configuration without probing keys or connecting a server. */
+  configuration(id: string): { enabled: boolean; config: Record<string, unknown> } {
+    this.entry(id);
+    const state = this.saved.integrations[id];
+    return { enabled: state?.enabled ?? false, config: structuredClone(state?.config ?? {}) };
+  }
+
   private entry(id: string): CatalogEntry {
     const e = this.entries().find((x) => x.id === id);
     if (!e) throw new Error(`unknown integration ${id}`);

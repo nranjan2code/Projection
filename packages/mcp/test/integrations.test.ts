@@ -8,6 +8,21 @@ import { type CatalogEntry, checkFolders, Integrations, type IntegrationsOptions
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
+test("configuration reads are detached canonical snapshots without secret-store probes", async () => {
+  let reads = 0;
+  const secrets = { ...memorySecrets(), get: (_name: string) => { reads++; return undefined; } };
+  const entry: CatalogEntry = { ...time, config: [{ key: "model", label: "Model", kind: "text" }, { key: "key", label: "Key", kind: "secret" }] };
+  const { list } = setup({ catalog: [entry], secrets });
+  await list.configure("time", { enabled: true, config: { model: "chosen" } });
+  reads = 0;
+  const current = list.configuration("time");
+  assert.deepEqual(current, { enabled: true, config: { model: "chosen" } });
+  current.config.model = "mutated";
+  assert.equal(list.configuration("time").config.model, "chosen");
+  assert.equal(reads, 0);
+  assert.throws(() => list.configuration("unknown"), /unknown integration/);
+});
+
 function memorySecrets(): IntegrationsOptions["secrets"] & { values: Map<string, string> } {
   const values = new Map<string, string>();
   return { values, get: (k) => values.get(k), set: (k, v) => void values.set(k, v), delete: (k) => void values.delete(k) };

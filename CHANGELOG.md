@@ -5,6 +5,7 @@
 - A dedicated `media` component renders images, audio and video with captions and optional transcripts. Audio/video controls are local, keyboard accessible and discoverable through the existing voice agenda; `activate` never sends playback to a model or tool. Text/channel lowering preserves descriptions and transcripts without exposing private asset URIs.
 - Web projectors accept an optional `mediaResolver` for authenticated app resources. Temporary URLs are released when a result changes or leaves the document; moving a live surface into a canvas preserves the player. Playback never starts automatically.
 - The host exposes `project` for trusted callers to publish through the canonical store, persistence and viewer events without a model. Application ownership is checked; trusted publication rejects busy sessions so an app can defer it. The HTTP projection path retains its external-action behavior.
+- Integrations expose detached, non-secret `configuration(id)` snapshots for authority checks without key-store probes or server connections. This keeps bounded background status checks on the canonical configuration without repeatedly invoking native credential reads.
 
 No runtime dependency or existing package-export removal. Core/host tests pass; visual verification is recorded with the consuming app.
 
