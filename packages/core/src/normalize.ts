@@ -27,6 +27,7 @@ import { coerce, type JSONSchema, validate } from "./schema.ts";
 /** Keys starting with "_" or "$" are metadata (e.g. "__v__", "$error"), never props. */
 export const isMetaKey = (k: string) => k.startsWith("_") || k.startsWith("$");
 import type { VpsNode } from "./vps.ts";
+import { parseLenient } from "./partial-json.ts";
 
 export interface Repair {
   node?: string;
@@ -269,6 +270,20 @@ export class Normalizer {
     const schema = propsSchema(this.catalog, type);
     if (!def || !schema) return raw;
     let p = singleBraces({ ...raw }, schema) as Record<string, unknown>;
+    // A recorded table wrote rows as "[...], sortable:false" inside one
+    // string. Parse those members in their owning object, accepting only
+    // schema-declared siblings with valid values. Explicit siblings win.
+    for (const [key, value] of Object.entries(p)) {
+      const sub = schema.properties?.[key];
+      if (!sub || sub.literal || typeof value !== "string" || !value.trimStart().startsWith("[") || !(sub.type === "array" || sub.anyOf?.some((branch) => branch.type === "array"))) continue;
+      const parsed = parseLenient(`{${JSON.stringify(key)}:${value}}`);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
+      const members = parsed as Record<string, unknown>, siblings = Object.keys(members).filter((name) => name !== key);
+      if (!Array.isArray(members[key]) || !siblings.length || siblings.some((name) => !schema.properties?.[name] || validate(schema.properties[name]!, members[name]).length)) continue;
+      const list = sub.type === "array" ? sub : sub.anyOf!.find((branch) => branch.type === "array")!;
+      if (validate(list, members[key]).length) continue;
+      p = { ...members, ...p, [key]: members[key] };
+    }
     for (const [k, v] of Object.entries(presets ?? {})) if (p[k] === undefined) p[k] = v;
     p = bindBarePointers(schema, p) as Record<string, unknown>;
     p = coerce(schema, p, isBinding) as Record<string, unknown>;

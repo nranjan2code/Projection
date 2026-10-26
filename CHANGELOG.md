@@ -3,6 +3,11 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: serialized list members
+
+- Schema-declared array props recover valid sibling settings written after a list inside its JSON string. The existing parser reads the owning object; only declared, type-valid siblings are accepted, and explicit settings win. Literal source and ordinary scalar row data are unchanged. This prevents a trailing table setting from becoming an extra displayed row.
+- Exact retained local research update plus scope/collision/literal guards pass. 287 framework tests/replay gate and typecheck pass; no dependency or scenario-specific fact repair.
+
 ## 2026-10-26: caller constraints during surface correction
 
 - Optional public `validateEdits` on `runAgent` and host execution checks canonical surface snapshots after each surface-edit batch. Bounded issue feedback accompanies component diagnostics before the next generation, preserving the same budgets and final completion validation. The callback cannot accept work or change external authority; malformed decisions fail closed. Existing clients are unchanged.
