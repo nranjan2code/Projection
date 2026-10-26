@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-26: schema-constrained tool batches
+
+- Opt-in `toolEncoding: constrained|auto|native` on the agent/host decodes a typed `{reply,calls}` batch through providers advertising constrained output, then uses the existing tool dispatcher. This closes the gap where strict native tool schemas were only guidance and local corrections kept serializing malformed nested trees. Surface calls use flat, component-typed nodes and child IDs; multiple independent surfaces and integration calls remain possible.
+- A complete batch is parsed and validated before any call is emitted. Truncation, invalid/unknown calls and size overflow dispatch nothing; retries, request accounting, tool budgets, cancellation and approvals remain in the existing bounded run. At most eight calls per batch, 512 KB decoded text and a default 6,000 output-token bound. Native encoding remains the default; auto opts into grammar support when advertised and otherwise retains native calls. No extra agent loop, dependency, IPC, permission or semantic-acceptance claim.
+
 ## 2026-10-26: explicit correction deletion
 
 - Correction guidance names the existing node-removal and data JSON Patch removal operations. Omitting a value from merged data preserves it; a recorded review correction omitted an unwanted date and therefore left it intact. No deletion is inferred or silently applied.

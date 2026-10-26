@@ -1,3 +1,4 @@
+import { schemaToolEvents } from "./schema-tools.ts";
 // The agent loop: stream a turn from any provider, project vak_* tool calls
 // progressively into surfaces, run user tools, feed results back, repeat.
 
@@ -64,6 +65,8 @@ export interface RunOptions {
   tools?: AgentTool[];
   /** "strict" unions per component, or "compact" (smaller schemas). Tools generation only. */
   schemaMode?: "strict" | "compact";
+  /** Opt-in schema-decoded tool batches when supported; all calls keep the same authority/budgets. */
+  toolEncoding?: "native" | "constrained" | "auto";
   /**
    * How the model produces UI:
    * - "tools": native tool calling, with engine repair and diagnostics fed back
@@ -377,14 +380,17 @@ async function constrainedLoop(opts: RunOptions, run: ResolvedRun, view: () => M
 
 async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message[], publisher: SurfacePublisher): Promise<RunResult> {
   const catalog = run.catalog;
-  const vakSpecs: ToolSpec[] = toolDefinitions(catalog, { mode: opts.schemaMode ?? "compact", authoring: run.authoring }).map((t) => ({
+  const encoded = opts.toolEncoding === "constrained" || opts.toolEncoding === "auto" && opts.provider.capabilities?.constrainedOutput === true;
+  if (encoded && !opts.provider.capabilities?.constrainedOutput) throw new Error("Provider does not support schema-decoded tool batches");
+  const authoring = encoded ? "flat" : run.authoring;
+  const vakSpecs: ToolSpec[] = toolDefinitions(catalog, { mode: opts.schemaMode ?? "compact", authoring }).map((t) => ({
     name: t.name,
     description: t.description,
     inputSchema: t.inputSchema,
   }));
   const userTools = new Map((opts.tools ?? []).map((t) => [t.spec.name, t]));
   const tools = [...vakSpecs, ...(opts.tools ?? []).map((t) => t.spec)];
-  const system = buildSystem(opts, run);
+  const system = buildSystem(opts, { ...run, authoring });
   const runId = `run_${Date.now().toString(36)}_${++runCounter}`;
   const { emit, store } = opts;
   const maxSteps = run.maxSteps;
@@ -415,16 +421,9 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
     let native: unknown;
 
     try {
-      for await (const ev of opts.provider.stream({
-        model: opts.model,
-        system,
-        messages: view(),
-        tools: closing ? vakSpecs : tools,
-        maxTokens: run.maxTokens,
-        effort: opts.effort,
-        extra: opts.extra,
-        signal: opts.signal,
-      })) {
+      const request: ChatRequest = { model: opts.model, system, messages: view(), tools: closing ? vakSpecs : tools, maxTokens: run.maxTokens, effort: opts.effort, extra: opts.extra, signal: opts.signal };
+      const events = encoded ? schemaToolEvents(opts.provider, request, `${runId}_${steps}_${rounds}`) : opts.provider.stream(request);
+      for await (const ev of events) {
         switch (ev.type) {
           case "text":
             text += ev.delta;

@@ -197,3 +197,5 @@ Apps live in their own repositories and consume the framework one way: they impo
 
 
 Trusted apps may supply `validateEdits` to in-process host/agent execution: after a surface-edit batch, canonical snapshots are checked and bounded issues are sent before the next generation, alongside component diagnostics. This avoids correcting a local component in a way that contradicts the caller's output contract. The callback returns only issues; it grants no external permission or acceptance. `validateCompletion` remains the final completion gate. No extra provider request or separate execution loop is introduced.
+
+Opt-in `toolEncoding: "constrained"` uses the provider’s schema decoder for a `{reply, calls}` envelope within the existing tool loop. A complete typed batch validates before dispatch, with flat render nodes and ID-based children. It supports multiple surfaces and integration calls through the same authority/budgets; it differs from the single-render constrained projection mode. `"auto"` uses grammar support when advertised and native calls otherwise; native remains the default. Shape guarantees do not verify source facts or permission.
