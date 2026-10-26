@@ -10,6 +10,7 @@ import {
   CONSTRAINED_INSTRUCTIONS,
   formatDiagnostics,
   namedComponents,
+  namedPresets,
   narrow,
   walk,
   withTier,
@@ -144,9 +145,18 @@ export function buildSystem(opts: RunOptions, run: ResolvedRun = resolveRun(opts
   // 4B rich-component runs substituted familiar layouts and lost fields even
   // with the full catalog present. When the user explicitly requests a catalog
   // component, put its actual contract last; no benchmark names or facts enter it.
-  const requested = namedComponents(run.catalog, lastRequest(opts)).map((name) => [name, run.catalog.components[name]!] as const);
+  // Named exactly, or by an alias that sets props ("a slider" is input kind range).
+  const request = lastRequest(opts);
+  // "Use the steps component" is the strongest naming: then only those count.
+  const explicit = namedComponents(run.catalog, request, { explicit: true });
+  const names = new Set(explicit.length ? explicit : [...namedComponents(run.catalog, request), ...namedComponents(run.catalog, request, { aliases: true }).filter((n) => namedPresets(run.catalog, request, n).length)]);
+  const requested = [...names].map((name) => [name, run.catalog.components[name]!] as const);
   if (requested.length) {
-    parts.push("Requested components: use these exact types, with every supplied item and verbatim labels, captions and source. Do not replace them with other components.\n" + requested.map(([name, def]) => `type: ${name}. ${def.hint ?? ""} Props schema (supply values): ${JSON.stringify(toWireSchema(def.props))}`).join("\n"));
+    parts.push("Requested components: use these exact types, with every supplied item and verbatim labels, captions and source. Do not replace them with other components.\n" + requested.map(([name, def]) => {
+      // "a stacked bar chart" asks for chart with kind stacked: say so.
+      const presets = namedPresets(run.catalog, request, name).map((p) => Object.entries(p).map(([k, v]) => `props.${k}: ${JSON.stringify(v)}`).join(", "));
+      return `type: ${name}${presets.length ? ` with ${presets.join(" or ")}` : ""}. ${def.hint ?? ""} Props schema (supply values): ${JSON.stringify(toWireSchema(def.props))}`;
+    }).join("\n"));
   }
   if (opts.completion === "response") parts.push("Publishing a surface is progress, not the end of this run. Continue any remaining requested tool work and outputs. Before finishing, compare the published surface IDs and component types with the request: sections or nodes within one surface are not separate surfaces. Finish with a short text response without tool calls when the requested work is ready for review, or explain what input or access is missing. Tool responses and a rendered interface alone are not proof of an external effect.");
   return parts.join("\n\n");

@@ -898,7 +898,10 @@ export class SurfaceStore {
     const canSubmit = nodes.some((n) => this.role(n) === "form" || (this.role(n) === "action" && typeof n.props?.action === "string" && n.props.action));
     if (canSubmit) return [];
     const toggles = new Set(nodes.map((n) => n.props?.visibleIf).filter((v): v is string => typeof v === "string").map((v) => v.replace(/^\{|\}$/g, "")));
-    const stranded = nodes.filter((n) => typeof n.props?.bind === "string" && !toggles.has(n.props.bind as string));
+    // A component whose bind is optional keeps its own state there (a board's
+    // card moves) and needs no submit; inputs declare bind as required.
+    const collects = (type: string) => this.catalog.components[type]?.props.required?.includes("bind") ?? true;
+    const stranded = nodes.filter((n) => typeof n.props?.bind === "string" && !toggles.has(n.props.bind as string) && collects(n.type));
     if (!stranded.length) return [];
     const forms = Object.entries(this.catalog.components).filter(([, d]) => d.role === "form").map(([name]) => name);
     const actions = Object.entries(this.catalog.components).filter(([, d]) => d.role === "action").map(([name]) => name);

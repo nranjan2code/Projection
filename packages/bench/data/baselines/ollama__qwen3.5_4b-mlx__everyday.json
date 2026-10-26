@@ -1,0 +1,181 @@
+{
+  "benchVersion": 3,
+  "slice": "everyday",
+  "planned": 20,
+  "finished": 20,
+  "provider": "ollama",
+  "model": "qwen3.5:4b-mlx",
+  "fingerprint": "61aa3858e9d3022e8fca725550089addd9289c4446f33bd09dfd12f95f2a6792",
+  "config": {
+    "generation": "tools",
+    "tier": "core",
+    "examples": true,
+    "authoring": "inline"
+  },
+  "commit": "5529995-dirty",
+  "at": "2026-10-26T04:02:12.478Z",
+  "summary": {
+    "runs": 20,
+    "complete": {
+      "value": 0.75,
+      "lo": 0.5312991206074114,
+      "hi": 0.8881382993000237,
+      "n": 20
+    },
+    "score": {
+      "value": 0.9482142857142858,
+      "lo": 0.9025877716293326,
+      "hi": 0.993840799799239,
+      "n": 20
+    },
+    "byCategory": {
+      "planning": {
+        "runs": 6,
+        "complete": {
+          "value": 0.6666666666666666,
+          "lo": 0.29999331299474324,
+          "hi": 0.9032285897864654,
+          "n": 6
+        },
+        "score": {
+          "value": 0.9166666666666666,
+          "lo": 0.7955376495703169,
+          "hi": 1,
+          "n": 6
+        }
+      },
+      "dashboard": {
+        "runs": 4,
+        "complete": {
+          "value": 0.75,
+          "lo": 0.3006418400969081,
+          "hi": 0.954412739704631,
+          "n": 4
+        },
+        "score": {
+          "value": 0.9642857142857143,
+          "lo": 0.8942869999999999,
+          "hi": 1,
+          "n": 4
+        }
+      },
+      "form": {
+        "runs": 2,
+        "complete": {
+          "value": 1,
+          "lo": 0.3423802239546494,
+          "hi": 1,
+          "n": 2
+        },
+        "score": {
+          "value": 1,
+          "lo": 1,
+          "hi": 1,
+          "n": 2
+        }
+      },
+      "information": {
+        "runs": 4,
+        "complete": {
+          "value": 1,
+          "lo": 0.5101091596030786,
+          "hi": 0.9999999999999999,
+          "n": 4
+        },
+        "score": {
+          "value": 1,
+          "lo": 1,
+          "hi": 1,
+          "n": 4
+        }
+      },
+      "comparison": {
+        "runs": 2,
+        "complete": {
+          "value": 0.5,
+          "lo": 0.09453120463920084,
+          "hi": 0.9054687953607992,
+          "n": 2
+        },
+        "score": {
+          "value": 0.9285714285714286,
+          "lo": 0.788574,
+          "hi": 1,
+          "n": 2
+        }
+      },
+      "interaction": {
+        "runs": 2,
+        "complete": {
+          "value": 0.5,
+          "lo": 0.09453120463920084,
+          "hi": 0.9054687953607992,
+          "n": 2
+        },
+        "score": {
+          "value": 0.875,
+          "lo": 0.6300045,
+          "hi": 1,
+          "n": 2
+        }
+      }
+    },
+    "byScenario": {
+      "meal-calendar": {
+        "runs": 2,
+        "complete": 1,
+        "score": 0.9375
+      },
+      "job-board": {
+        "runs": 2,
+        "complete": 1,
+        "score": 0.8125
+      },
+      "budget-progress": {
+        "runs": 2,
+        "complete": 2,
+        "score": 1
+      },
+      "survey-inputs": {
+        "runs": 2,
+        "complete": 2,
+        "score": 1
+      },
+      "stacked-spend": {
+        "runs": 2,
+        "complete": 1,
+        "score": 0.9285714285714286
+      },
+      "faq-accordion": {
+        "runs": 2,
+        "complete": 2,
+        "score": 1
+      },
+      "phone-compare": {
+        "runs": 2,
+        "complete": 1,
+        "score": 0.9285714285714286
+      },
+      "egg-timer": {
+        "runs": 2,
+        "complete": 1,
+        "score": 0.875
+      },
+      "file-tree": {
+        "runs": 2,
+        "complete": 2,
+        "score": 1
+      },
+      "launch-gantt": {
+        "runs": 2,
+        "complete": 2,
+        "score": 1
+      }
+    },
+    "medianMs": 11308,
+    "usage": {
+      "input": 72708,
+      "output": 4746
+    }
+  }
+}

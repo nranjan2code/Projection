@@ -130,14 +130,45 @@ export function withTier(catalog: Catalog, tier: "core" | "extended", keep: Iter
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// A name counts as a noun the request asks for: "the X component", after an
+// article or determiner ("a board", "two timers"; not "my", which names the
+// user's data rather than a format: "my to-do list"), right after
+// a leading imperative ("Show progress bars"), or as a several-word name
+// opening the request ("Stacked bar chart of…"). A lone opening word is often
+// a verb ("Compare these hotels"), and a name in passing prose ("how to track
+// progress") is not a request for it. Plurals count.
+const VERB = "^\\s*(?:(?:please|can you|could you)\\s+)?(?:show|make|build|create|draw|give|add|render|display|plot|list|set up|start|put)(?:\\s+me)?\\s+(?:(?!(?:my|your|our)\\b)[\\w-]+\\s+){0,2}";
+const phrase = (token: string, explicit = false) => {
+  if (explicit) return new RegExp(`\\b${token}s?\\s+component\\b|\\bcomponent\\s+(?:named\\s+)?${token}s?\\b`, "i");
+  const re = new RegExp(`\\b${token}s?\\s+component\\b|\\bcomponent\\s+(?:named\\s+)?${token}s?\\b|\\b(?:a|an|the|some|these|those|two|three|four|five|\\d+)\\s+(?:[\\w-]+\\s+){0,3}${token}s?\\b|${VERB}${token}s?\\b`, "i");
+  const opening = new RegExp(`^\\s*(${token})s?\\b`, "i");
+  return { test: (text: string) => re.test(text) || /[\s-]/.test(opening.exec(text)?.[1] ?? "") };
+};
+
+/**
+ * The presets of a component's aliases the request uses: "a stacked bar
+ * chart" → [{kind: "stacked"}], "a slider and a time picker" for input →
+ * [{kind: "range"}, {kind: "time"}]. An alias inside a longer matching one
+ * ("bar chart" in "stacked bar chart") is not counted separately.
+ */
+export function namedPresets(catalog: Catalog, request: string, name: string): Record<string, unknown>[] {
+  const loose = (n: string) => [...n].map(escape).join("[\\s-]?");
+  const hits = (catalog.components[name]?.aliases ?? [])
+    .filter((a): a is Exclude<ComponentAlias, string> => typeof a !== "string" && phrase(loose(a.name)).test(request))
+    .sort((x, y) => y.name.length - x.name.length);
+  // A longer matching name elsewhere wins too: "a star rating" is input's starrating, not progress's rating.
+  const others = Object.entries(catalog.components).flatMap(([other, d]) => (other === name ? [] : (d.aliases ?? []).map((x) => (typeof x === "string" ? x : x.name)).filter((n) => phrase(loose(n)).test(request))));
+  const kept = hits.filter((a, i) => !hits.slice(0, i).some((b) => b.name.includes(a.name)) && !others.some((n) => n.length > a.name.length && n.includes(a.name)));
+  return [...new Map(kept.map((a) => [JSON.stringify(a.props), a.props])).values()];
+}
+
 /**
  * Components a request names: "the timeline component", "a component named
  * map", "a graph", "as an interactive graph view". With `aliases`, other names
  * count too, written as one word or several ("an org chart" for orgchart).
+ * With `explicit`, only "the X component" / "a component named X" count.
  */
-export function namedComponents(catalog: Catalog, request: string, opts: { aliases?: boolean } = {}): string[] {
-  const phrase = (token: string) =>
-    new RegExp(`\\b${token}\\s+component\\b|\\bcomponent\\s+(?:named\\s+)?${token}\\b|\\b(?:a|an|the)\\s+(?:[\\w-]+\\s+){0,3}${token}\\b`, "i");
+export function namedComponents(catalog: Catalog, request: string, opts: { aliases?: boolean; explicit?: boolean } = {}): string[] {
   const all = (name: string, def: ComponentDef) => [name, ...(def.aliases ?? []).map((a) => (typeof a === "string" ? a : a.name))];
   // An alias written as one word ("orgchart") also matches its spaced or hyphenated form.
   const loose = (n: string) => [...n].map(escape).join("[\\s-]?");
@@ -147,7 +178,7 @@ export function namedComponents(catalog: Catalog, request: string, opts: { alias
       // (orgchart), not chart.
       const longer = Object.entries(catalog.components).flatMap(([other, d]) => (other === name ? [] : all(other, d).filter((n) => n.length > name.length && n.includes(name))));
       const text = longer.reduce((t, n) => t.replace(new RegExp(`\\b${loose(n)}\\b`, "gi"), " "), request);
-      return (opts.aliases ? all(name, def) : [name]).some((n) => phrase(opts.aliases ? loose(n) : escape(n)).test(text));
+      return (opts.aliases ? all(name, def) : [name]).some((n) => phrase(opts.aliases ? loose(n) : escape(n), opts.explicit).test(text));
     })
     .map(([name]) => name);
 }

@@ -209,6 +209,98 @@ export const SCENARIOS: Scenario[] = [
       expect: [count("graph"), prop("graph", ["nodes", "length"], 3), prop("graph", ["edges", "length"], 2), text("Asha"), text("Ravi"), text("Meera"), text("manages")],
     }],
   },
+  // Everyday components (2026-10-26), phrased as people ask; the request names
+  // the component, so small models keep it in their vocabulary.
+  {
+    id: "meal-calendar",
+    category: "planning",
+    intent: "A calendar holding three supplied meals on their dates and times.",
+    turns: [{
+      say: "Put my meal plan on a calendar: 2026-11-02 19:00 Pasta; 2026-11-03 08:00 Oatmeal; 2026-11-04 19:30 Curry.",
+      expect: [count("calendar"), prop("calendar", ["events", "length"], 3), prop("calendar", ["events", "0", "date"], "2026-11-02"), prop("calendar", ["events", "0", "start"], "19:00"), text("Pasta"), text("Oatmeal"), text("Curry")],
+    }],
+  },
+  {
+    id: "job-board",
+    category: "planning",
+    intent: "A board with stages Applied, Interview, Offer and three companies in their stages.",
+    turns: [{
+      say: "Make a kanban board for my job hunt with columns Applied, Interview, Offer. Acme is in Interview, Globex and Initech are in Applied.",
+      expect: [count("board"), prop("board", ["columns", "length"], 3), prop("board", ["cards", "length"], 3), text("Acme"), text("Globex"), text("Initech"), text("Offer")],
+    }],
+  },
+  {
+    id: "budget-progress",
+    category: "dashboard",
+    intent: "Progress bars for two supplied budgets with their spent and limit amounts.",
+    turns: [{
+      say: "Show progress bars for my budgets: Food $420 of $600, Fun $90 of $150.",
+      expect: [count("progress", 2), text("Food"), text("Fun"), text("420"), text("600"), text("150")],
+    }],
+  },
+  {
+    id: "survey-inputs",
+    category: "form",
+    intent: "A form with a time picker, a 0-10 slider and a star rating, all bound and submittable.",
+    turns: [{
+      say: "Make a short feedback form with a time picker for the visit time, a slider from 0 to 10 for wait time, and a star rating for service.",
+      expect: [count("form"), anyOf(prop("input", ["kind"], "time"), count("date")), prop("input", ["kind"], "range"), prop("input", ["kind"], "rating"), actionable, bound],
+    }],
+  },
+  {
+    id: "stacked-spend",
+    category: "dashboard",
+    intent: "A stacked bar chart of two supplied categories over three months.",
+    turns: [{
+      say: "Stacked bar chart of my spending: Rent 30, 30, 32 and Food 12, 14, 11 for Jan, Feb, Mar.",
+      expect: [count("chart"), prop("chart", ["kind"], "stacked"), prop("chart", ["series", "length"], 2), text("Rent"), text("Food"), text("Mar")],
+    }],
+  },
+  {
+    id: "faq-accordion",
+    category: "information",
+    intent: "An accordion FAQ with the two supplied questions and answers.",
+    turns: [{
+      say: "Make an FAQ accordion: Can I get a refund? Yes, within 30 days. Do you ship abroad? Yes, to 40 countries.",
+      expect: [count("accordion"), text("refund"), text("30 days"), text("abroad"), text("40 countries")],
+    }],
+  },
+  {
+    id: "phone-compare",
+    category: "comparison",
+    intent: "A side-by-side comparison of two supplied phones with pros and cons and the pick highlighted.",
+    turns: [{
+      say: "Compare these two phones with pros and cons and highlight the best pick: Pixel 9, $699, great camera, runs warm; iPhone 16, $799, long updates, pricey. Pixel 9 is the best pick.",
+      expect: [count("compare"), prop("compare", ["options", "length"], 2), prop("compare", ["options", "0", "best"], true), text("Pixel 9"), text("iPhone 16"), text("camera")],
+    }],
+  },
+  {
+    id: "egg-timer",
+    category: "interaction",
+    intent: "A timer labelled for eggs set to six minutes thirty seconds.",
+    turns: [{
+      say: "Give me a timer for soft-boiled eggs, 6 minutes 30 seconds.",
+      expect: [count("timer"), prop("timer", ["duration"], 390), text("egg")],
+    }],
+  },
+  {
+    id: "file-tree",
+    category: "information",
+    intent: "A tree of the supplied files nested under their folders.",
+    turns: [{
+      say: "Show this project as a file tree: src/app/main.ts, src/app/util.ts, src/lib/db.ts, README.md.",
+      expect: [count("tree"), text("main.ts"), text("util.ts"), text("db.ts"), text("README.md")],
+    }],
+  },
+  {
+    id: "launch-gantt",
+    category: "planning",
+    intent: "A Gantt roadmap of three supplied phases with their start and end dates.",
+    turns: [{
+      say: "Make a Gantt chart: Design 2026-11-01 to 2026-11-14; Build 2026-11-10 to 2026-12-10; Launch 2026-12-15 to 2026-12-16.",
+      expect: [count("gantt"), prop("gantt", ["tasks", "length"], 3), prop("gantt", ["tasks", "0", "start"], "2026-11-01"), text("Design"), text("Build"), text("Launch")],
+    }],
+  },
   {
     id: "delivery-steps",
     category: "planning",

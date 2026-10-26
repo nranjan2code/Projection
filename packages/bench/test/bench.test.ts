@@ -24,8 +24,8 @@ test("mean interval and the significance rule", () => {
   assert.equal(significantlyWorse(wilson(14, 20), wilson(16, 20)), false, "noise is not a regression");
 });
 
-test("scenario set: 37, unique ids, every category, multi-turn flows act on the UI", () => {
-  assert.equal(SCENARIOS.length, 37);
+test("scenario set: 47, unique ids, every category, multi-turn flows act on the UI", () => {
+  assert.equal(SCENARIOS.length, 47);
   assert.equal(new Set(SCENARIOS.map((s) => s.id)).size, SCENARIOS.length);
   assert.deepEqual(new Set(SCENARIOS.map((s) => s.category)), new Set(["comparison", "dashboard", "form", "planning", "information", "interaction"]));
   assert.ok(SCENARIOS.filter((s) => s.turns.length > 1).length >= 8);

@@ -309,7 +309,7 @@ const boardCard = props(
     note: str({ aliases: ["description", "details", "body", "subtitle"] }),
     tag: str({ aliases: ["label", "category", "priority", "assignee", "owner"] }),
   },
-  ["title"],
+  // Not required: a {column} fragment must stay a record to rejoin its card.
 );
 const compareOption = props(
   {
@@ -334,6 +334,7 @@ const ganttTask = props(
   ["title", "start"],
 );
 
+type Rec = Record<string, unknown>;
 const records = (v: unknown) => (Array.isArray(v) ? v : []).map((x) => (typeof x === "string" ? { title: x } : x && typeof x === "object" ? (x as Record<string, unknown>) : undefined)).filter((x): x is Record<string, unknown> => x !== undefined);
 const coerceAll = (schema: JSONSchema, v: unknown) => records(v).map((r) => coerce(schema, r) as Record<string, unknown>);
 const iso = (v: unknown): string | undefined => {
@@ -399,7 +400,16 @@ function finalizeBoard(p: Record<string, unknown>): Record<string, unknown> {
       addCol(text(o.id) || text(o.title), text(o.title) || text(o.id));
     }
   }
-  const cards = coerceAll(boardCard, p.cards).map((c, i) => {
+  // A card split in two ({title}, {column}) is one card: a record holding only
+  // a stage joins the card before it that has none.
+  const parts = coerceAll(boardCard, p.cards);
+  const merged: Rec[] = [];
+  for (const c of parts) {
+    const prev = merged.at(-1);
+    if (prev && !text(c.title) && text(c.column) && !text(prev.column)) merged[merged.length - 1] = { ...prev, column: c.column };
+    else merged.push(c);
+  }
+  const cards = merged.map((c, i) => {
     const col = text(c.column);
     const column = (col && (byKey.get(col.toLowerCase()) ?? addCol(col))) || cols[0]?.id || addCol("To do")!;
     return { ...c, id: text(c.id) || `c${i + 1}`, title: text(c.title) || `Card ${i + 1}`, column };
@@ -421,11 +431,16 @@ function finalizeProgress(p: Record<string, unknown>): Record<string, unknown> {
 function finalizeCompare(p: Record<string, unknown>): Record<string, unknown> {
   const best = text(p.best).toLowerCase();
   const list = (v: unknown) => (Array.isArray(v) ? v : [v]).flatMap((x) => text(x).split(/\s*[;\n]\s*/)).filter(Boolean);
-  const options = coerceAll(compareOption, p.options).map((o) => {
+  const options = coerceAll(compareOption, p.options).map((o): Rec => {
     const name = text(o.name) || text(o.title);
     const specs = o.specs && typeof o.specs === "object" && !Array.isArray(o.specs) ? Object.fromEntries(Object.entries(o.specs as object).map(([k, v]) => [k, text(v) || (typeof v === "boolean" ? (v ? "Yes" : "No") : "")])) : undefined;
     return { ...o, name, pros: list(o.pros), cons: list(o.cons), ...(specs ? { specs } : {}), ...(o.price !== undefined ? { price: text(o.price) } : {}), best: o.best === true || (best !== "" && name.toLowerCase() === best) };
   });
+  // No pick marked, but one option's own text calls it the pick ("note": "Best pick").
+  if (!options.some((o) => o.best)) {
+    const said = options.filter((o) => /\b(best (pick|choice|option|buy)|recommended|our pick|top pick|winner)\b/i.test(`${text(o.note)} ${o.name}`));
+    if (said.length === 1) said[0]!.best = true;
+  }
   return { ...p, options };
 }
 
@@ -687,6 +702,7 @@ export const basicCatalog = defineCatalog(
     },
     chart: {
       description: "Chart.",
+      hint: "kind: bar, stacked (parts of each total), line, area, pie, scatter (x/y points), heatmap (dated values or a grid), radar (scores on axes)",
       props: props(
         {
           kind: oneOf(["bar", "stacked", "line", "area", "pie", "scatter", "heatmap", "radar"], {
@@ -1055,7 +1071,7 @@ export const basicCatalog = defineCatalog(
           // "textarea") retype the node instead of failing the enum.
           kind: oneOf(["text", "email", "number", "tel", "url", "time", "range", "rating", "file"], {
             aliases: ["inputType", "format"],
-            enumAliases: { phone: "tel", telephone: "tel", integer: "number", link: "url", string: "text", slider: "range", stars: "rating", upload: "file", attachment: "file", clock: "time" },
+            enumAliases: { phone: "tel", telephone: "tel", integer: "number", link: "url", string: "text", slider: "range", stars: "rating", upload: "file", attachment: "file", clock: "time", bar: "range", meter: "range", gauge: "range" },
             namesComponent: true,
           }),
           min: num({ aliases: ["minimum", "from"] }),

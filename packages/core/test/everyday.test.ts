@@ -95,3 +95,14 @@ test("form inputs: time, range and rating are read from typed answers within bou
   assert.deepEqual(readField(s!, "4 stars"), { value: 4 });
   assert.deepEqual(readField(s!, "6"), { error: "Please send a number from 1 to 5" });
 });
+
+test("4B recorded shapes: split board cards rejoin, a bound bar progress is a slider, a note naming the best pick marks it", () => {
+  const b = render({ type: "board", props: { columns: ["Applied", "Interview"], cards: [{ title: "Acme" }, { column: "Interview" }, { title: "Globex", column: "Applied" }] } });
+  assert.deepEqual((b.root.props.cards as Record<string, unknown>[]).map((c) => [c.title, c.column]), [["Acme", "Interview"], ["Globex", "Applied"]]);
+  const store = new SurfaceStore(basicCatalog);
+  store.render({ surface: "f", nodes: [{ id: "root", type: "form", children: ["w"] }, { id: "w", type: "progress", props: { label: "Wait", bind: "/f/wait", kind: "bar", max: 10 } }] } as never);
+  const w = store.resolve("f")!.root!.children[0]!;
+  assert.deepEqual([w.type, w.props.kind], ["input", "range"]);
+  const c = render({ type: "compare", props: { options: [{ name: "Pixel 9", note: "Best pick" }, { name: "iPhone 16" }] } });
+  assert.deepEqual((c.root.props.options as Record<string, unknown>[]).map((o) => o.best), [true, false]);
+});
