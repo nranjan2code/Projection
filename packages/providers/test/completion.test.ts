@@ -60,7 +60,7 @@ test("failed completion checks remain bounded and cannot publish an unverified f
   const events: AgentEvent[] = [];
   const provider: Provider = { id: "checked", async *stream() { yield { type: "text", delta: "Unsupported claim" }; yield { type: "done", stop: "end" }; } };
   const result = await runAgent({ provider, model: "m", store: new SurfaceStore(basicCatalog), messages: [{ role: "user", content: "Work" }], completion: "response", maxSteps: 2, validateCompletion: () => ["Evidence missing"], emit: (event) => events.push(event) });
-  assert.equal(result.stop, "max_steps");
+  assert.equal(result.stop, "validation_stalled");
   assert.equal(events.some((e) => e.type === "text_delta"), false);
 });
 
@@ -101,7 +101,46 @@ test("replacement prose cannot bypass failed checks and malformed review decisio
     const events: AgentEvent[] = [];
     const provider: Provider = { id: "review", async *stream() { yield { type: "text", delta: "Unsupported assertion" }; yield { type: "done", stop: "end" }; } };
     const result = await runAgent({ provider, model: "m", store: new SurfaceStore(basicCatalog), messages: [{ role: "user", content: "Work" }], completion: "response", maxSteps: 2, validateCompletion: () => decision as never, emit: (event) => events.push(event) });
-    assert.equal(result.stop, decision?.issues instanceof Array && decision.issues.length ? "max_steps" : "error");
+    assert.equal(result.stop, decision?.issues instanceof Array && decision.issues.length ? "validation_stalled" : "error");
     assert.equal(events.some((event) => event.type === "text_delta"), false);
   }
+});
+
+
+test("unchanged failed completion stops after one repair opportunity despite a larger budget", async () => {
+  let requests = 0;
+  const provider: Provider = { id: "stalled", async *stream() {
+    requests++; yield { type: "text", delta: "Still claiming success without edits" }; yield { type: "done", stop: "end" };
+  } };
+  const result = await runAgent({ provider, model: "m", store: new SurfaceStore(basicCatalog), messages: [{ role: "user", content: "Work" }], completion: "response", maxSteps: 12, validateCompletion: () => ["Required output missing"], emit: () => {} });
+  assert.equal(result.stop, "validation_stalled"); assert.equal(requests, 2);
+});
+
+
+test("revision-only rewrites do not keep a rejected candidate alive", async () => {
+  const store = new SurfaceStore(basicCatalog);
+  const args = { surface: "partial", nodes: [{ id: "root", type: "text", props: { content: "Unchanged" } }] };
+  store.apply("vak_render", args);
+  let requests = 0;
+  const provider: Provider = { id: "rewrite", async *stream() {
+    if (++requests === 2) {
+      yield { type: "tool_start", id: "rewrite", name: "vak_render" };
+      yield { type: "tool_args", id: "rewrite", delta: JSON.stringify(args) };
+      yield { type: "tool_end", id: "rewrite" }; yield { type: "done", stop: "tool_use" }; return;
+    }
+    yield { type: "text", delta: "Ready" }; yield { type: "done", stop: "end" };
+  } };
+  const result = await runAgent({ provider, model: "m", store, messages: [{ role: "user", content: "Work" }], completion: "response", maxSteps: 12, validateCompletion: () => ["Missing evidence"], emit: () => {} });
+  assert.equal(result.stop, "validation_stalled"); assert.equal(requests, 3);
+  assert.equal(store.snapshot("partial")!.nodes[0]!.props?.content, "Unchanged");
+});
+
+
+test("response-aware completion checks can improve prose while surface issues stay unchanged", async () => {
+  let requests = 0;
+  const provider: Provider = { id: "prose", async *stream() {
+    yield { type: "text", delta: `revision ${++requests}` }; yield { type: "done", stop: "end" };
+  } };
+  const result = await runAgent({ provider, model: "m", store: new SurfaceStore(basicCatalog), messages: [{ role: "user", content: "Work" }], completion: "response", maxSteps: 4, validateCompletion: ({ response }) => ({ issues: response === "revision 3" ? [] : ["Answer incomplete"], response: "Ready for review." }), emit: () => {} });
+  assert.equal(result.stop, "end"); assert.equal(requests, 3);
 });

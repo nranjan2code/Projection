@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { schemaToolEvents } from "./schema-tools.ts";
 // The agent loop: stream a turn from any provider, project vak_* tool calls
 // progressively into surfaces, run user tools, feed results back, repeat.
@@ -403,6 +404,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
   let steps = 0;
   let rounds = 0;
   let closing = false;
+  let rejectedCandidate: string | undefined;
   const failed = new Set<string>();
   const end = (stop: string): RunResult => {
     const result: RunResult = { stop, ...(stop === "max_steps" ? { limit: "steps" as const } : closing ? { limit: "tools" as const } : {}) };
@@ -482,6 +484,13 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
         }
         if (!Array.isArray(issues) || issues.some((issue) => typeof issue !== "string")) throw new Error("Invalid completion-check result");
         if (issues.length) {
+          // A real task repeated final prose without changing rejected output.
+          // Ignore revision-only churn; one unchanged repair attempt is enough.
+          const candidate = createHash("sha256").update(JSON.stringify({
+            surfaces: store.list().map((surface) => { const { version, ...content } = store.snapshot(surface.id)!; return content; }), issues, response: text,
+          })).digest("hex");
+          if (candidate === rejectedCandidate) return end("validation_stalled");
+          rejectedCandidate = candidate;
           // Local authoring retries repeatedly invented IDs and lost data.
           // Give a bounded inventory, not a second copy of surface content.
           const saved = store.list().slice(0, 16).map((surface) => ({ id: surface.id.slice(0, 120), root: store.resolve(surface.id)?.root?.type.slice(0, 80) }));
