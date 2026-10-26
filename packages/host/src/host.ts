@@ -139,13 +139,13 @@ export interface HostTurn {
   continue?: boolean;
   think?: boolean;
   schemaMode?: string;
-  toolEncoding?: "native" | "constrained" | "auto";
   generation?: string;
   effort?: string;
   history?: number;
 }
 
 export interface HostRunOptions {
+  surfaceSubmission?: boolean;
   validateCompletion?: CompletionCheck;
   validateEdits?: SurfaceCheck;
   completion?: "projection" | "response";
@@ -546,7 +546,7 @@ export function createHost(opts: HostOptions): VakHost {
         maxSteps: controls.maxSteps,
         toolRounds: controls.toolRounds,
         maxTokens: controls.maxTokens,
-        toolEncoding: body.toolEncoding,
+        surfaceSubmission: controls.surfaceSubmission,
         schemaMode: body.schemaMode === "strict" ? "strict" : "compact",
         // Grammar-constrained output cannot call other tools; integrations need tool calling.
         generation: tools.length || controls.completion === "response" ? "tools" : body.generation === "tools" || body.generation === "constrained" ? body.generation : "auto",

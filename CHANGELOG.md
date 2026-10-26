@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-27: transactional multi-surface authoring
+
+- Trusted `surfaceSubmission` mode offers one `vak_submit` change set with inline replacements, canonical-ID patches and explicit removal. Bounded recursive compilation generates IDs and preserves inline collection templates. Candidate structure and completion checks run before a synchronous canonical commit; rejected, stale, incomplete and mixed external-operation batches publish nothing. Accepted submissions finish without an extra generation. Ordinary progressive chat remains unchanged.
+- **Breaking:** removed the unused experimental `toolEncoding` option and schema-call envelope. Apps use the trusted `HostRunOptions.surfaceSubmission` instead; HTTP/model arguments cannot enable it. Native decoding plus strict JSON parsing and recursive catalog validation are used; no recursive grammar guarantee is claimed.
+
 ## 2026-10-27: stop unchanged completion repairs
 
 - A failed completion gets one repair opportunity. If the canonical surface content, original response and check issues are unchanged at the next completion attempt, stop with `validation_stalled`; revision-only churn does not count as progress. Preserve partial outputs and withhold rejected prose. Existing request/time bounds still apply.
