@@ -3,6 +3,10 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: activate a control by key
+
+- `<vak-surface>` gains `activate(key)` (additive): the same submit, validation, busy state and `vak-action` event as a click, for targets that answer without a pointer. Pair it with `agenda` option `source` keys.
+
 ## 2026-10-26: answers in words
 
 - New `@vak/core` exports (additive): `agenda` lists what a surface waits for (decisions with their options and distinguishing values, forms with their fields); `resolveAnswer` reads a spoken or typed answer deterministically (yes/no/cancel/repeat/back, option names, ordinals, comparisons such as "the cheapest", number words, relative dates, spoken email); `answerSchema`/`readModelAnswer` bound what a model may fill for an unresolved answer; `fillAnswer` and `actOn` write values and submit through `SurfaceStore`, so an answer and a click produce identical actions; `question`/`readBack` give the spoken text. App-supplied approvals resolve only to an unmixed consent that names the change, never from a model. English words first.

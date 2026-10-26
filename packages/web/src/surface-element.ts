@@ -117,6 +117,18 @@ export class VakSurfaceElement extends HTMLElement {
     this.refresh();
   }
 
+  /**
+   * Activate a control by key, as a click would: the same submit, validation,
+   * busy state and `vak-action` event. For targets that answer without a
+   * pointer (voice, keyboard shortcuts): `agenda` in @vak/core names the keys.
+   * True when an action was sent.
+   */
+  activate(key: string): boolean {
+    if (this.#busyKey) return false;
+    this.#act(key);
+    return this.#busyKey === key;
+  }
+
   /** The action owner finished, rejected or queued the submission without a surface update. */
   releaseAction(): void {
     this.#busyKey = undefined;
