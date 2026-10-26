@@ -222,3 +222,18 @@ test("configured HTTP endpoints validate before persistence, reconnect and retai
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+
+test("unreviewed servers cannot grant themselves automatic approval through annotations", async () => {
+  const unreviewed: CatalogEntry = { ...time, id: "unreviewed", trust: "custom" };
+  const { list, opts } = setup({ catalog: [unreviewed] });
+  await list.configure("unreviewed", { enabled: true });
+  const tool = list.view()[0]!.tools[0]!;
+  assert.equal(tool.defaultPolicy, "ask");
+  assert.equal(tool.policy, "ask");
+  assert.equal(list.policyOf("unreviewed", { name: "new", inputSchema: {}, annotations: { readOnlyHint: true, openWorldHint: false } }), "ask");
+  await list.configure("unreviewed", { policies: { [tool.name]: "allow" } });
+  assert.equal(new Integrations(opts).policyOf("unreviewed", tool), "allow");
+  await list.configure("unreviewed", { policies: { [tool.name]: "off" } });
+  assert.equal(list.policyOf("unreviewed", tool), "off");
+});

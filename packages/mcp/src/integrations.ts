@@ -209,7 +209,12 @@ export class Integrations {
   }
 
   policyOf(id: string, tool: McpToolInfo): ToolPolicy {
-    return this.state(id).policies[tool.name] ?? (defaultDecision(tool) === "allow" ? "allow" : "ask");
+    return this.state(id).policies[tool.name] ?? this.defaultPolicy(id, tool);
+  }
+
+  private defaultPolicy(id: string, tool: McpToolInfo): ToolPolicy {
+    // An unreviewed server controls its annotations; they cannot grant consent.
+    return this.entry(id).trust === "custom" ? "ask" : defaultDecision(tool) === "allow" ? "allow" : "ask";
   }
 
   view(): IntegrationView[] {
@@ -229,7 +234,7 @@ export class Integrations {
         missing,
         status: !installed ? "not-installed" : missing.length ? "needs-setup" : !st.enabled ? "off" : error ? "error" : "ready",
         error,
-        tools: (st.tools ?? []).map((t) => ({ ...t, policy: this.policyOf(e.id, t), defaultPolicy: defaultDecision(t) === "allow" ? "allow" : "ask" })),
+        tools: (st.tools ?? []).map((t) => ({ ...t, policy: this.policyOf(e.id, t), defaultPolicy: this.defaultPolicy(e.id, t) })),
         calls: (this.calls.get(e.id) ?? []).slice(-30).reverse(),
       };
     });
