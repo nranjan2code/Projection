@@ -1072,7 +1072,15 @@ export class SurfaceStore {
       const schema = propsSchema(this.catalog, n.type);
       if (!schema) return;
       const props = coerce(schema, n.props) as Record<string, unknown>;
-      for (const e of validate(schema, props)) {
+      const errors = validate(schema, props);
+      // Scalar formatting within a real list is harmless (e.g. numeric
+      // ratings shown as text). Coercing a whole bound scalar to an array
+      // only in this lint copy, though, hid an empty table in the projector.
+      const shape = (value: unknown) => Array.isArray(value) ? "array" : value && typeof value === "object" ? "object" : "scalar";
+      for (const error of validate(schema, n.props)) {
+        if (bound.has(error.path) && shape(getAt(props, error.path)) !== shape(getAt(n.props, error.path)) && !errors.some((e) => e.path === error.path)) errors.push(error);
+      }
+      for (const e of errors) {
         const at = [...bound.keys()].find((b) => e.path === b || e.path.startsWith(`${b}/`));
         // No value at all is lintUnbound's report (a path the data lacks).
         if (at === undefined || getAt(props, at) === undefined) continue;

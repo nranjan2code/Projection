@@ -8,6 +8,8 @@ Application completion checks and MCP result observation added 2026-10-26: trust
 
 Rejected tool-syntax recovery added 2026-10-26: Ollama's HTTP 500 generated-tool XML parser rejection is typed as `ToolGenerationError`. Tool runs retry only before any text/call, through the same bounded loop and provider admission. Prior tool receipts remain; partial streams, cancellation and other errors do not replay. 248 tests/replay gate and typecheck pass. This closes a premature-abort cause, not output authoring or factual correctness; Vakyartha evaluates the affected local comparison separately and retains the results in its EVALUATION.md.
 
+Authoring/data fidelity repairs added 2026-10-26: replayed the retained local comparison through SurfaceStore before changing code. Keyless member groups no longer become extra inputs; explicit stringified list bindings survive coercion as live references; bound container shape mismatches are diagnosed without breaking numeric lists. Prompts teach exact data initialization and patch-based correction, with bounded ID/root inventories on completion failures. Explicit render/empty-list replacement semantics stay intact. 255 tests/replay gate and typecheck pass. Raw numeric mistakes are preserved for truthful evaluation, not rewritten; local app outcome reports determine remaining work.
+
 Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](SPECS.md).
 
 ## Handover prompt (paste into a new session)

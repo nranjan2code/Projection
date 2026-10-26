@@ -277,7 +277,24 @@ class Parser {
       // belongs, inside an array, means this object's "}" was omitted and
       // the array's next element begins. Leave it to the array (read as a
       // key, its members overwrote this object's and lost the field).
-      if (c === "{" && this.enclosedBy("[")) return obj;
+      if (c === "{" && this.enclosedBy("[")) {
+        // Local 4B authoring: `"props": {...}, {"placeholder":"..."}}`.
+        // A keyless member group followed by this object's own closer belongs
+        // to it. Without that extra closer, or with colliding identity keys,
+        // keep the omitted-closer reading so sibling nodes remain independent.
+        const previous = lastKey === undefined ? undefined : obj[lastKey];
+        if (previous && typeof previous === "object" && !Array.isArray(previous)) {
+          const sub = new Parser(this.s.slice(this.i), this.final);
+          const fragment = sub.value();
+          sub.skip();
+          if (!sub.sawTruncation && fragment && typeof fragment === "object" && !Array.isArray(fragment) && this.s[this.i + sub.i] === "}" && Object.keys(fragment).length && Object.keys(fragment).every((key) => !(key in obj))) {
+            Object.assign(obj, fragment);
+            this.i += sub.i;
+            continue;
+          }
+        }
+        return obj;
+      }
       let key = this.key();
       if (key === MISSING) {
         this.incomplete.add(obj);

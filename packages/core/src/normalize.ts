@@ -71,7 +71,15 @@ function singleBraces(v: unknown, schema?: JSONSchema): unknown {
  */
 function bindBarePointers(schema: JSONSchema, v: unknown): unknown {
   if (schema.literal) return v;
-  if (typeof v === "string") return POINTER.test(v) && validate(schema, v).length > 0 ? `{${v}}` : v;
+  if (typeof v === "string") {
+    // Local 4B comparison wrote rows as "[{/data/options}]". Parsing it
+    // as JSON first destroys the explicit pointer into a blank record cell.
+    // Only a declared array/binding prop may unwrap this exact spelling;
+    // missing or scalar targets still go through normal binding diagnostics.
+    const wrapped = /^\[\s*(\{\/[A-Za-z0-9_~.\-/]+\})\s*\]$/.exec(v.trim());
+    if (wrapped && schema.anyOf?.some((branch) => branch.type === "array") && schema.anyOf.some((branch) => branch.type === "string" && branch.pattern && validate(branch, wrapped[1]).length === 0)) return wrapped[1];
+    return POINTER.test(v) && validate(schema, v).length > 0 ? `{${v}}` : v;
+  }
   const branch = schema.anyOf?.find((b) => (Array.isArray(v) ? b.type === "array" : b.type === "object" || b.properties !== undefined));
   const s = branch ?? schema;
   if (Array.isArray(v)) return s.items ? v.map((x) => bindBarePointers(s.items!, x)) : v;

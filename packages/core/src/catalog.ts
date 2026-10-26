@@ -262,10 +262,10 @@ export function toolDefinitions(catalog: Catalog, opts: ToolOptions = {}): ToolD
       inputSchema: {
         type: "object",
         properties: {
-          surface: { type: "string", description: "stable id for this UI, reuse it to replace" },
+          surface: { type: "string", description: "stable id for this UI; reuse only for a complete replacement including all data; correct parts with vak_update" },
           title: { type: "string" },
           nodes: { type: "array", items: nodeSchema(catalog, mode, false, opts.authoring), minItems: 1 },
-          data: { type: "object", description: "data model; props bind into it with {/path}" },
+          data: { type: "object", description: "complete data model; props bind with {/path}; initialize supplied input values at their exact bind paths" },
         },
         required: ["surface", "nodes"],
       },
@@ -400,6 +400,9 @@ export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts
     "- Put values in data and bind them: \"{/path}\" inside any string. A string that is only \"{/path}\" keeps the raw value.",
     "- Repeat a node per list item with children: {\"each\": \"/items\", \"template\": \"tplId\"}; inside the template use relative paths like \"{name}\"; for a list of plain values, \"{.}\" is the item.",
     "- Inputs use bind: \"/form/field\". A form's submit is an action name.",
+    "- Initialize every supplied input value in data at its exact bind path; props.value and placeholders do not initialize a bound control. Preserve numeric values and units exactly; never rescale supplied amounts.",
+    "- vak_render replaces the entire surface, including data. For corrections use vak_update with existing surface/node IDs and change only the affected props/data. Omitted fields survive a patch; an explicit empty array replaces a list. Do not create new IDs for retries.",
+    "- Separate requested outputs need separate vak_render calls with distinct stable surface IDs. Keep requested source/sample labels visible in the surface title or content.",
     "- Put data in the surface's data field (vak_update: ops, or an object to merge), not inside nodes.",
     "- When the user acts on your UI you get a message starting with \"[ui action]\" holding {action, surface, data}.",
     "  Always answer it visibly: update that surface (vak_update) or render the next step. Never leave an action without feedback.",

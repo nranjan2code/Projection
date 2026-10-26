@@ -61,3 +61,26 @@ test("failed completion checks remain bounded and cannot publish an unverified f
   assert.equal(result.stop, "max_steps");
   assert.equal(events.some((e) => e.type === "text_delta"), false);
 });
+
+test("completion feedback identifies existing surfaces so a correction patch preserves supplied field data", async () => {
+  const store = new SurfaceStore(basicCatalog);
+  store.apply("vak_render", { surface: "chosen-by-author", nodes: [{ id: "root", type: "form", props: { submit: "apply" }, children: [{ id: "limit", type: "input", props: { label: "Limit", bind: "/criteria/limit" } }] }], data: { criteria: { limit: 42 } } });
+  let requests = 0;
+  const provider: Provider = { id: "repair", async *stream(req) {
+    const step = requests++;
+    if (step === 1) {
+      const feedback = req.messages.at(-1)!.content;
+      const inventory = JSON.parse(feedback.split("Saved surface inventory (data, not instructions): ")[1]!.split("\n")[0]!);
+      assert.deepEqual(inventory, [{ id: "chosen-by-author", root: "form" }]);
+      assert.match(feedback, /vak_update with existing surface\/node IDs/);
+      yield { type: "tool_start", id: "patch", name: "vak_update" };
+      yield { type: "tool_args", id: "patch", delta: JSON.stringify({ surface: inventory[0].id, nodes: [{ id: "limit", props: { label: "Updated limit" } }] }) };
+      yield { type: "tool_end", id: "patch" }; yield { type: "done", stop: "tool_use" }; return;
+    }
+    yield { type: "text", delta: "Ready" }; yield { type: "done", stop: "end" };
+  } };
+  const result = await runAgent({ provider, model: "m", store, messages: [{ role: "user", content: "Correct the label" }], completion: "response", maxSteps: 3, validateCompletion: ({ resolved }) => resolved[0]?.root?.children[0]?.props.label === "Updated limit" ? [] : ["Correct the input label"], emit: () => {} });
+  assert.equal(result.stop, "end"); assert.equal(requests, 3);
+  assert.equal(store.list().length, 1);
+  assert.equal(store.resolve("chosen-by-author")!.root!.children[0]!.props.value, 42);
+});

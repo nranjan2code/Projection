@@ -3,6 +3,13 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: preserve authoring structure and correction data
+
+- Real local 4B property fragments such as `"props": {...}, {"placeholder":"..."}}` stay on their node when the extra closer and disjoint keys establish a keyless member group. Normal sibling/anonymous nodes and colliding keys keep their prior readings. This removes unintended inferred inputs without guessing missing data.
+- A stringified explicit list binding such as `"[{/data/options}]"` is normalized before JSON coercion, only for schema-declared array/binding props. It retains the pointer and follows later data changes; literal source and row-cell arrays stay unchanged. Missing/scalar targets are diagnosed. Bound container mismatches no longer pass because of lint-only coercion; harmless scalar formatting inside real lists remains supported.
+- Authoring guidance initializes supplied controls at exact data bind paths, preserves numbers/units and requested labels, uses separate calls/IDs for separate outputs and patches existing surfaces for corrections. Completion feedback includes a bounded ID/root-type inventory. Render remains a complete replacement; explicit empty arrays and omitted replacement data are not silently restored.
+- 255 tests/replay gate and typecheck pass, including verbatim retained calls, streamed convergence, update/replacement semantics and a same-run correction preserving initialized data. No dependency or public signature changes. Real outcome reliability is evaluated separately by the consuming app.
+
 ## 2026-10-26: bounded recovery from rejected tool syntax
 
 - Ollama's HTTP 500 generated-tool XML syntax rejection becomes a public `ToolGenerationError`. The tool runner retries only before receiving text or a tool call; partial streams, cancellation and unrelated HTTP failures still stop normally. Each retry starts a new provider invocation through existing admission/accounting wrappers and consumes the existing step/time/request limits. There is no adapter-level retry or replay of prior calls.

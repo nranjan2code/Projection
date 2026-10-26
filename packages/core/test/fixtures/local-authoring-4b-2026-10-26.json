@@ -1,0 +1,32 @@
+[
+  {
+    "sequence": 2,
+    "id": "call_afv2donl",
+    "name": "vak_render",
+    "arguments": "{\"surface\":\"options-table\",\"title\":\"Service Comparison\",\"nodes\":[{\"data\":{\"options\":[{\"cost_per_seat\":300,\"monthly_cost\":\"1200\",\"name\":\"Atlas\",\"recommendation\":\"\",\"seats\":4},{\"cost_per_seat\":225,\"monthly_cost\":1800,\"name\":\"Birch\",\"recommendation\":\"\",\"seats\":8}]},\"id\":\"root\",\"props\":{\"columns\":[{\"align\":\"start\",\"key\":\"name\",\"label\":\"Option\"},{\"align\":\"center\",\"key\":\"monthly_cost\",\"label\":\"Monthly Cost\"},{\"align\":\"center\",\"key\":\"seats\",\"label\":\"Seats\"},{\"align\":\"center\",\"key\":\"cost_per_seat\",\"label\":\"Cost Per Seat\"},{\"align\":\"start\",\"key\":\"recommendation\",\"label\":\"Recommendation\"}],\"rows\":\"[{/data/options}]\",\"searchable\":true,\"sortable\":true},\"type\":\"table\"}]}"
+  },
+  {
+    "sequence": 6,
+    "id": "call_b9y71rp9",
+    "name": "vak_render",
+    "arguments": "{\"surface\":\"criteria-form-surface\",\"title\":\"Filter Selection Criteria\",\"nodes\":\"[{\\\"id\\\":\\\"form_wrapper\\\",\\\"type\\\":\\\"stack\\\",\\\"children\\\":[{\\\"id\\\":\\\"budget_field\\\",\\\"type\\\":\\\"input\\\",\\\"props\\\":{\\\"bind\\\":\\\"/criterion/budget_amount\\\",\\\"label\\\":\\\"Monthly Budget Amount (USD)\\\"},{\\\"placeholder\\\":\\\"Enter budget limit\\\"}},{\\\"id\\\":\\\"seats_field\\\",\\\"type\\\":\\\"input\\\",\\\"props\\\":{\\\"bind\\\":\\\"/criterion/required_seats\\\",\\\"label\\\":\\\"Minimum Seats Required\\\"},{\\\"placeholder\\\":\\\"Enter seat minimum\\\"}},{\\\"id\\\":\\\"submit_btn\\\",\\\"type\\\":\\\"button\\\",\\\"props\\\":{\\\"action\\\":\\\"apply_filters\\\",\\\"label\\\":\\\"Apply Filters\\\"}}]}]\"}"
+  },
+  {
+    "sequence": 7,
+    "id": "call_685891b6",
+    "name": "vak_render",
+    "arguments": "{\"surface\":\"comparison-table-surf\",\"title\":\"Options Comparison Table\",\"nodes\":\"[{\\\"id\\\":\\\"root\\\",\\\"type\\\":\\\"table\\\",\\\"props\\\":{\\\"columns\\\":[{\\\"key\\\":\\\"name\\\",\\\"label\\\":\\\"Option Name\\\"},{\\\"key\\\":\\\"monthly_cost\\\",\\\"label\\\":\\\"Monthly Cost\\\"},{\\\"key\\\":\\\"seats\\\",\\\"label\\\":\\\"Seats\\\"},{\\\"key\\\":\\\"cost_per_seat\\\",\\\"label\\\":\\\"Cost Per Seat\\\"}],\\\"rows\\\":\\\"/options_data\\\",\\\"searchable\\\":true,\\\"sortable\\\":true},\\\"children\\\"}]\",\"data\":\"{\\\"options_data\\\":[{\\\"name\\\":\\\"Atlas\\\",\\\"monthly_cost\\\":12,\\\"seats\\\":4,\\\"cost_per_seat\\\":3},{\\\"name\\\":\\\"Birch\\\",\\\"monthly_cost\\\":18,\\\"seats\\\":8,\\\"cost_per_seat\\\":2.25}]}}\"}"
+  },
+  {
+    "sequence": 8,
+    "id": "call_58tm5hrg",
+    "name": "vak_render",
+    "arguments": "{\"surface\":\"criteria-form-surf\",\"title\":\"Selection Criteria Form\",\"nodes\":\"[{\\\"id\\\":\\\"root\\\",\\\"type\\\":\\\"form\\\",\\\"props\\\":{\\\"submit\\\":\\\"evaluate_choices\\\"},\\\"children\\\":[{\\\"id\\\":\\\"budget_input\\\",\\\"type\\\":\\\"input\\\",\\\"props\\\":{\\\"bind\\\":\\\"/criterion/budget\\\",\\\"label\\\":\\\"Monthly Budget Limit\\\"},{\\\"placeholder\\\":\\\"Enter budget amount\\\"}},{\\\"id\\\":\\\"seats_input\\\",\\\"type\\\":\\\"input\\\",\\\"props\\\":{\\\"bind\\\":\\\"/criterion/seats\\\",\\\"label\\\":\\\"Minimum Seats Required\\\"},{\\\"placeholder\\\":\\\"Enter seat requirement\\\"}},{\\\"id\\\":\\\"action_btn\\\",\\\"type\\\":\\\"button\\\",\\\"props\\\":{\\\"action\\\":\\\"evaluate_choices\\\",\\\"label\\\":\\\"Evaluate\\\"}}]}}]\"}"
+  },
+  {
+    "sequence": 10,
+    "id": "call_tne82lp0",
+    "name": "vak_render",
+    "arguments": "{\"surface\":\"criteria-form-surf\",\"title\":\"Selection Criteria Form\",\"nodes\":\"[{\\\"id\\\":\\\"root\\\",\\\"type\\\":\\\"form\\\",\\\"props\\\":{\\\"submit\\\":\\\"evaluate\\\"},\\\"children\\\":[{\\\"id\\\":\\\"budget_field\\\",\\\"type\\\":\\\"input\\\",\\\"props\\\":{\\\"bind\\\":\\\"/criterion/budget\\\",\\\"label\\\":\\\"Monthly Budget (USD)\\\"},{\\\"placeholder\\\":\\\"Enter budget\\\"}},{\\\"id\\\":\\\"seats_field\\\",\\\"type\\\":\\\"input\\\",\\\"props\\\":{\\\"bind\\\":\\\"/criterion/seats\\\",\\\"label\\\":\\\"Minimum Seats Needed\\\"},{\\\"placeholder\\\":\\\"Enter seat count\\\"}}]}]\"}"
+  }
+]
