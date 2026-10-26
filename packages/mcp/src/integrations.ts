@@ -107,6 +107,7 @@ export interface IntegrationView {
 }
 
 export interface IntegrationsOptions {
+  observe?: (request: { session: string; server: string; tool: string; args: Record<string, unknown> }, result: { text: string; isError?: boolean }) => void;
   /** The app's data folder; the layout under it is described at the top of this file. */
   dataDir: string;
   /** What the app offers. Servers the user adds are kept in the saved state. */
@@ -416,6 +417,7 @@ export class Integrations {
       out.push(
         ...agentTools(this.source(e.id), this.state(e.id).tools!, {
           server: e.id,
+          observe: (tool, args, result) => this.opts.observe?.({ session, server: e.id, tool, args }, result),
           label: e.name,
           policy: (t) => (allowed.has(`${e.id}:${t.name}`) && this.policyOf(e.id, t) === "ask" ? "allow" : this.policyOf(e.id, t)),
           approve: async (req, emit, signal) => {

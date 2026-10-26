@@ -18,6 +18,8 @@ import {
   projectionResponseSchema,
   projectText,
   type SurfaceStore,
+  type SurfaceSnapshot,
+  type ResolvedSurface,
   SurfacePublisher,
   type Usage,
   systemPrompt,
@@ -38,7 +40,11 @@ export interface AgentTool {
   execute(args: Record<string, unknown>, ctx: { signal?: AbortSignal; emit?: (e: AgentEvent) => void; callId?: string }): Promise<string> | string;
 }
 
+export type CompletionCheck = (result: { surfaces: readonly SurfaceSnapshot[]; resolved: readonly ResolvedSurface[]; response: string }) => readonly string[] | Promise<readonly string[]>;
+
 export interface RunOptions {
+  /** Trusted application check; rejected prose stays private, feedback stays in this bounded run. */
+  validateCompletion?: CompletionCheck;
   provider: Provider;
   model: string;
   store: SurfaceStore;
@@ -120,6 +126,7 @@ export function resolveRun(opts: RunOptions): ResolvedRun {
   const requested = opts.generation && opts.generation !== "auto" ? opts.generation : (opts.plan?.generation ?? opts.generation);
   if (opts.completion !== undefined && opts.completion !== "projection" && opts.completion !== "response") throw new Error("Unknown completion policy");
   if (opts.completion === "response" && requested === "constrained") throw new Error("Response completion requires tool generation");
+  if (opts.validateCompletion && opts.completion !== "response") throw new Error("Completion validation requires response completion");
   const generation = generationMode({ ...opts, generation: requested });
   return {
     catalog,
@@ -364,7 +371,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
       switch (ev.type) {
         case "text":
           text += ev.delta;
-          emit({ type: "text_delta", delta: ev.delta });
+          if (!opts.validateCompletion) emit({ type: "text_delta", delta: ev.delta });
           break;
         case "tool_start": {
           const call = { id: ev.id, name: ev.name, arguments: "", stream: VAK_TOOLS.has(ev.name) ? new ToolCallStream(store, ev.name) : undefined };
@@ -400,6 +407,15 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
     });
 
     if (calls.length === 0) {
+      if (opts.validateCompletion) {
+        const issues = await opts.validateCompletion({ surfaces: opts.store.list().map((surface) => opts.store.snapshot(surface.id)!), resolved: opts.store.list().map((surface) => opts.store.resolve(surface.id)).filter((surface): surface is ResolvedSurface => Boolean(surface)).map((surface) => structuredClone(surface)), response: text });
+        if (!Array.isArray(issues) || issues.some((issue) => typeof issue !== "string")) throw new Error("Invalid completion-check result");
+        if (issues.length) {
+          opts.messages.push({ role: "user", content: "[engine] Completion checks failed. Correct the saved outputs before finishing. These checks do not authorize any external operation.\n" + issues.slice(0, 16).map((issue) => issue.slice(0, 1200)).join("\n") });
+          continue;
+        }
+        if (text) emit({ type: "text_delta", delta: text });
+      }
       emit({ type: "run_end", stop: lastStop, usage });
       return { stop: lastStop };
     }

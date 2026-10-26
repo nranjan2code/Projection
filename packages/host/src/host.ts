@@ -22,6 +22,7 @@ import path from "node:path";
 import { basicCatalog, type AgentEvent, type Catalog, encodeSse, formatDiagnostics, projectText, type SurfaceSnapshot, SurfaceStore, type VpsAction } from "@vak/core";
 import {
   actionMessage,
+  type CompletionCheck,
   calibrate,
   CALIBRATION_CASES,
   choosePlan,
@@ -134,6 +135,7 @@ export interface HostTurn {
 }
 
 export interface HostRunOptions {
+  validateCompletion?: CompletionCheck;
   completion?: "projection" | "response";
   signal?: AbortSignal;
   emit?: (event: AgentEvent) => void;
@@ -441,6 +443,7 @@ export function createHost(opts: HostOptions): VakHost {
       emit,
       instructions: controls.instructions ?? instructions(),
       completion: controls.completion,
+      validateCompletion: controls.validateCompletion,
       maxSteps: controls.maxSteps,
       maxTokens: controls.maxTokens,
       schemaMode: body.schemaMode === "strict" ? "strict" : "compact",

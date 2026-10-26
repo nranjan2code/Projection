@@ -4,6 +4,8 @@ Response-completion API added 2026-10-26: `runAgent` / `host.run` accept opt-in 
 
 Wrapped-list binding repair added 2026-10-26 from real local-agent research: known absolute array references inside singleton arrays become canonical list bindings only where the schema permits them. Literal/missing/scalar/relative cases remain unchanged. 240 tests including replay gate and typecheck pass.
 
+Application completion checks and MCP result observation added 2026-10-26: trusted in-process callbacks support bounded same-run correction and real tool-result evidence; rejected final prose is withheld. Default behavior unchanged. 243 tests and typecheck pass.
+
 Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](SPECS.md).
 
 ## Handover prompt (paste into a new session)

@@ -30,6 +30,8 @@ export interface ApprovalRequest {
 }
 
 export interface McpToolsOptions {
+  /** Successful transport result, before untrusted-text wrapping; never a permission grant. */
+  observe?: (tool: string, args: Record<string, unknown>, result: { text: string; isError?: boolean }) => void;
   /** Id used in tool names and the call log (e.g. "files"). */
   server: string;
   label: string;
@@ -70,6 +72,7 @@ export function agentTools(source: ToolSource | McpClient, tools: McpToolInfo[],
         }
         try {
           const res = await source.callTool(t.name, args, ctx.signal);
+          opts.observe?.(t.name, structuredClone(args), { text: res.text, isError: res.isError });
           opts.record?.({ at, server: opts.server, tool: t.name, args, decision, ok: !res.isError, ms: Date.now() - started, preview: res.text.slice(0, 300) });
           return untrusted(opts.label, res.isError ? `error: ${res.text}` : res.text);
         } catch (err) {

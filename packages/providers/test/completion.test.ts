@@ -35,3 +35,29 @@ test("response completion retains step limits and rejects constrained-only respo
   assert.equal((await runAgent({ ...options, generation: "constrained" })).stop, "error");
   assert.equal(requests, 2);
 });
+
+test("a trusted completion check feeds failures back inside the run and withholds rejected prose", async () => {
+  let requests = 0;
+  const provider: Provider = { id: "checked", async *stream() {
+    const step = requests++;
+    if (step === 1) {
+      yield { type: "tool_start", id: "repair", name: "vak_render" };
+      yield { type: "tool_args", id: "repair", delta: JSON.stringify({ surface: "required", nodes: [{ id: "root", type: "text", props: { content: "Result" } }] }) };
+      yield { type: "tool_end", id: "repair" }; yield { type: "done", stop: "tool_use" }; return;
+    }
+    yield { type: "text", delta: step === 0 ? "Everything is already verified" : "Ready for review." };
+    yield { type: "done", stop: "end" };
+  } };
+  const events: AgentEvent[] = [];
+  const result = await runAgent({ provider, model: "m", store: new SurfaceStore(basicCatalog), messages: [{ role: "user", content: "Produce the required output" }], completion: "response", maxSteps: 4, validateCompletion: ({ surfaces }) => surfaces.some((s) => s.id === "required") ? [] : ["Missing required surface"], emit: (event) => events.push(event) });
+  assert.equal(result.stop, "end"); assert.equal(requests, 3);
+  assert.equal(events.filter((e) => e.type === "text_delta").map((e) => e.delta).join(""), "Ready for review.");
+});
+
+test("failed completion checks remain bounded and cannot publish an unverified final claim", async () => {
+  const events: AgentEvent[] = [];
+  const provider: Provider = { id: "checked", async *stream() { yield { type: "text", delta: "Unsupported claim" }; yield { type: "done", stop: "end" }; } };
+  const result = await runAgent({ provider, model: "m", store: new SurfaceStore(basicCatalog), messages: [{ role: "user", content: "Work" }], completion: "response", maxSteps: 2, validateCompletion: () => ["Evidence missing"], emit: (event) => events.push(event) });
+  assert.equal(result.stop, "max_steps");
+  assert.equal(events.some((e) => e.type === "text_delta"), false);
+});

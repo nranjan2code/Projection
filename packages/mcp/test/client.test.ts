@@ -99,3 +99,14 @@ test("pages are read as text: no scripts or styles, links kept", () => {
   assert.match(text, /Hello there \(https:\/\/x\.example\/a\)/);
   assert.doesNotMatch(text, /alert|x\{\}/);
 });
+
+test("result observation sees transport status only after permission and cannot turn denied calls into evidence", async () => {
+  let calls = 0;
+  const seen: { text: string; isError?: boolean }[] = [];
+  const source = { callTool: async () => { calls++; return { text: "An actual source excerpt", isError: true }; } };
+  const tools = [{ name: "read", inputSchema: { type: "object" } }];
+  const denied = agentTools(source, tools, { server: "s", label: "S", policy: () => "ask", approve: async () => "deny", observe: (_tool, _args, result) => seen.push(result) });
+  await denied[0]!.execute({}, {}); assert.equal(calls, 0); assert.equal(seen.length, 0);
+  const allowed = agentTools(source, tools, { server: "s", label: "S", policy: () => "allow", approve: async () => "deny", observe: (_tool, _args, result) => seen.push(result) });
+  await allowed[0]!.execute({}, {}); assert.equal(calls, 1); assert.equal(seen[0]!.isError, true);
+});
