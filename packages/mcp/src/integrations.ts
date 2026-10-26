@@ -67,7 +67,7 @@ export interface CatalogEntry {
   source:
     | { kind: "builtin"; server: () => BuiltinServer }
     | { kind: "npm"; package: string; version: string; bin: string; args?: (config: Record<string, unknown>, dir: string) => string[]; env?: (dir: string) => Record<string, string> }
-    | { kind: "http"; url: string }
+    | { kind: "http"; url: string | ((config: Record<string, unknown>) => string) }
     | { kind: "stdio"; command: string; args: string[] };
   config: ConfigField[];
 }
@@ -220,7 +220,7 @@ export class Integrations {
       const error = this.errors.get(e.id);
       const { source, ...rest } = e;
       return {
-        entry: { ...rest, sourceKind: source.kind, version: source.kind === "npm" ? source.version : undefined, package: source.kind === "npm" ? source.package : undefined, url: source.kind === "http" ? source.url : undefined, command: source.kind === "stdio" ? [source.command, ...source.args].join(" ") : undefined },
+        entry: { ...rest, sourceKind: source.kind, version: source.kind === "npm" ? source.version : undefined, package: source.kind === "npm" ? source.package : undefined, url: source.kind === "http" && typeof source.url === "string" ? source.url : undefined, command: source.kind === "stdio" ? [source.command, ...source.args].join(" ") : undefined },
         installed,
         version: st.installed,
         enabled: st.enabled,
@@ -279,7 +279,7 @@ export class Integrations {
     if (!name) throw new Error("name required");
     const id = `custom-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`.slice(0, 48);
     if (this.entries().some((e) => e.id === id)) throw new Error(`${name} already exists`);
-    let source: CatalogEntry["source"];
+    let source: { kind: "http"; url: string } | { kind: "stdio"; command: string; args: string[] };
     if (input.url) {
       const u = new URL(input.url);
       // A remote server gets your data and maybe a token: https only (or this machine).
@@ -313,12 +313,17 @@ export class Integrations {
     const st = this.state(id);
     let restart = false;
     if (change.config) {
+      const config = { ...st.config };
       for (const f of e.config) {
         if (!(f.key in change.config)) continue;
         const v = change.config[f.key];
-        if (f.kind === "folders") st.config[f.key] = checkFolders(v);
-        else if (f.kind === "text") st.config[f.key] = String(v ?? "").trim();
+        if (f.kind === "folders") config[f.key] = checkFolders(v);
+        else if (f.kind === "text") config[f.key] = String(v ?? "").trim();
       }
+      // Validate tenant-specific endpoints before persisting or restarting a working connection.
+      if (e.source.kind === "http" && typeof e.source.url === "function" &&
+          e.config.filter((f) => f.required && f.kind === "text").every((f) => config[f.key])) e.source.url(structuredClone(config));
+      st.config = config;
       restart = true;
     }
     for (const [key, value] of Object.entries(change.secrets ?? {})) {
@@ -371,7 +376,7 @@ export class Integrations {
     } else if (e.source.kind === "stdio") {
       c = new McpClient({ name: e.name, log, transport: { kind: "stdio", command: e.source.command, args: e.source.args, env, sandboxDir: home } });
     } else {
-      c = new McpClient({ name: e.name, log, transport: { kind: "http", url: (e.source as { url: string }).url, headers } });
+      c = new McpClient({ name: e.name, log, transport: { kind: "http", url: typeof e.source.url === "function" ? e.source.url(structuredClone(st.config)) : e.source.url, headers } });
     }
     this.clients.set(id, c);
     return c;

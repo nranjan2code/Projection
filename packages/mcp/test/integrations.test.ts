@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -161,5 +163,62 @@ test("a server whose installed folder vanished does not fail the turn for the ot
     assert.match(view.error ?? "", /not installed/);
   } finally {
     await list.stopAll();
+  }
+});
+
+
+test("configured HTTP endpoints validate before persistence, reconnect and retain header secrets", async () => {
+  const requests: { url: string; token?: string }[] = [];
+  const server = createServer((req, res) => {
+    let body = "";
+    req.on("data", (d) => body += d);
+    req.on("end", () => {
+      if (!body) return void res.writeHead(202).end();
+      const msg = JSON.parse(body);
+      requests.push({ url: req.url!, token: req.headers.authorization });
+      if (!("id" in msg)) return void res.writeHead(202).end();
+      const result = msg.method === "initialize"
+        ? { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "tenant", version: "0" } }
+        : { tools: [{ name: "query", inputSchema: { type: "object" }, annotations: { openWorldHint: true } }] };
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const entry: CatalogEntry = { ...time, id: "tenant", source: { kind: "http", url: (config) => {
+    assert.equal(config.token, undefined, "resolver never receives secrets");
+    if (typeof config.endpoint !== "string" || !config.endpoint.startsWith(base + "/")) throw new Error("invalid endpoint");
+    return config.endpoint;
+  } }, config: [
+    { key: "endpoint", label: "Endpoint", kind: "text", required: true },
+    { key: "token", label: "Token", kind: "secret", required: true, header: { name: "authorization", format: "Bearer {value}" } },
+  ] };
+  const { list, opts } = setup({ catalog: [entry] });
+  try {
+    assert.deepEqual(list.view()[0]!.missing, ["Endpoint", "Token"]);
+    await list.configure("tenant", { config: { endpoint: base + "/first" }, secrets: { token: "test-token" }, enabled: true });
+    assert.equal(list.view()[0]!.status, "ready");
+    assert.equal(list.view()[0]!.tools[0]!.policy, "ask");
+    assert.ok(requests.every((r) => r.url === "/first" && r.token === "Bearer test-token"));
+    const count = requests.length;
+    await assert.rejects(list.configure("tenant", { config: { endpoint: "https://wrong.example/mcp" } }), /invalid endpoint/);
+    assert.equal(list.configuration("tenant").config.endpoint, base + "/first");
+    assert.equal(requests.length, count);
+    await list.configure("tenant", { config: { endpoint: base + "/second" } });
+    assert.ok(requests.slice(count).every((r) => r.url === "/second"));
+    assert.doesNotMatch(JSON.stringify(list.view()), /test-token/);
+    assert.equal(JSON.stringify(list.view()).includes('"source"'), false);
+    await list.stopAll();
+    const again = new Integrations(opts);
+    try {
+      await again.refresh("tenant");
+      assert.equal(requests.at(-1)!.url, "/second");
+      await again.configure("tenant", { config: { endpoint: "" } });
+      assert.equal(again.view()[0]!.status, "needs-setup");
+    } finally { await again.stopAll(); }
+  } finally {
+    await list.stopAll();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });

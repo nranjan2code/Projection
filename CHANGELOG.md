@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-26: configurable remote integration endpoints
+
+- HTTP catalog sources accept a URL resolver over detached non-secret configuration, alongside existing fixed URLs. Resolvers validate configuration before it is saved or a working connection is stopped, and resolve again when connecting. Functions are never serialized into integration views; saved user-added servers keep their fixed URLs. This supports workspace-specific servers without another runtime, adapter or dependency.
+- Regression coverage verifies bearer headers, endpoint changes/reconnection, invalid-edit preservation, restart and missing setup. All 324 tests and typecheck pass. Additive public API.
+
 ## 2026-10-26: media projection and local playback
 
 - A dedicated `media` component renders images, audio and video with captions and optional transcripts. Audio/video controls are local, keyboard accessible and discoverable through the existing voice agenda; `activate` never sends playback to a model or tool. Text/channel lowering preserves descriptions and transcripts without exposing private asset URIs.
