@@ -244,7 +244,7 @@ export interface ToolOptions {
 const childrenSchema = (authoring: Authoring): JSONSchema => ({
   anyOf: [
     authoring === "inline"
-      ? { type: "array", items: { anyOf: [{ type: "object", description: "a child node {id, type, props, children}" }, { type: "string" }] }, description: "child nodes, in order (ids of template nodes allowed)" }
+      ? { type: "array", items: { anyOf: [{ type: "object", properties: { id: { type: "string" }, type: { type: "string" }, props: { type: "object" }, children: { anyOf: [{ type: "array" }, { type: "object" }] } }, required: ["id", "type"], additionalProperties: false, description: "a child node {id, type, props, children}; no anonymous wrappers" }, { type: "string" }] }, description: "child nodes, in order (ids of template nodes allowed)" }
       : { type: "array", items: { type: "string" }, description: "ids of child nodes, in order" },
     {
       type: "object",
@@ -310,13 +310,13 @@ export function toolDefinitions(catalog: Catalog, opts: ToolOptions = {}): ToolD
     },
     {
       name: TOOL_UPDATE,
-      description: "Change part of an existing surface: patch nodes by id and/or patch data with JSON Patch ops.",
+      description: "Change part of an existing surface: patch nodes by id and/or patch data with JSON Patch ops. For children, send existing node IDs, not a rewritten nested tree; keep all children that should remain.",
       inputSchema: {
         type: "object",
         properties: {
           surface: { type: "string" },
           title: { type: "string" },
-          nodes: { type: "array", items: nodeSchema(catalog, "compact", true, opts.authoring) },
+          nodes: { type: "array", items: nodeSchema(catalog, "compact", true, "flat") },
           data: {
             description: "JSON Patch ops, or an object deep-merged into the data model",
             anyOf: [

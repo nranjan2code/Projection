@@ -922,13 +922,21 @@ export class SurfaceStore {
    */
   private lintSubmittable(state: SurfaceState): Diagnostic[] {
     const nodes = [...state.nodes.values()];
-    const canSubmit = nodes.some((n) => this.role(n) === "form" || (this.role(n) === "action" && typeof n.props?.action === "string" && n.props.action));
-    if (canSubmit) return [];
+    // Recorded file-report corrections left inputs beside an empty form.
+    // Only the actual submission scope covers them; a form elsewhere on the
+    // surface does not collect their values (use the same path as a click).
+    const covered = new Set<string>();
+    const resolved = this.resolve(state.id)?.root;
+    if (resolved) walk(resolved, (node) => {
+      if (this.role(node) !== "form" && !(this.role(node) === "action" && typeof node.props.action === "string" && node.props.action)) return;
+      const scope = this.submitScope(state.id, node.key)?.scope;
+      if (scope) walk(scope, (child) => { if (child.bindPath) covered.add(child.id); });
+    });
     const toggles = new Set(nodes.map((n) => n.props?.visibleIf).filter((v): v is string => typeof v === "string").map((v) => v.replace(/^\{|\}$/g, "")));
     // A component whose bind is optional keeps its own state there (a board's
     // card moves) and needs no submit; inputs declare bind as required.
     const collects = (type: string) => this.catalog.components[type]?.props.required?.includes("bind") ?? true;
-    const stranded = nodes.filter((n) => typeof n.props?.bind === "string" && !toggles.has(n.props.bind as string) && collects(n.type));
+    const stranded = nodes.filter((n) => typeof n.props?.bind === "string" && !covered.has(n.id) && !toggles.has(n.props.bind as string) && collects(n.type));
     if (!stranded.length) return [];
     const forms = Object.entries(this.catalog.components).filter(([, d]) => d.role === "form").map(([name]) => name);
     const actions = Object.entries(this.catalog.components).filter(([, d]) => d.role === "action" && !d.choices).map(([name]) => name);
@@ -936,7 +944,7 @@ export class SurfaceStore {
       severity: "error",
       surface: state.id,
       node: stranded[0]!.id,
-      message: `inputs ${stranded.map((n) => `"${n.id}"`).join(", ")} collect values but nothing submits them: put them in a ${forms.join("/") || "form"} or add a ${actions.join("/") || "button"} with an action`,
+      message: `inputs ${stranded.map((n) => `"${n.id}"`).join(", ")} collect values but nothing submits them: put them in a ${forms.join("/") || "form"} or add a ${actions.join("/") || "button"} with an action. A sibling form does not submit these inputs. Patch the intended parent's children with existing input IDs; keep the input nodes and their bound data`,
     }];
   }
 

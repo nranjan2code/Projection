@@ -96,3 +96,18 @@ test("the prompt says when to answer in plain text, not only when to render", ()
   assert.match(prompt, /Surfaces earlier in the conversation are not a reason to render again/);
   assert.match(CONSTRAINED_INSTRUCTIONS, /null when the reply is conversation or a short plain answer/);
 });
+
+test("inline child objects declare identity; correction children use existing IDs", () => {
+  const [render, update] = toolDefinitions(basicCatalog, { mode: "strict", authoring: "inline" });
+  const child = { id: "field", type: "input", props: { label: "Amount", bind: "/amount" } };
+  const call = { surface: "s", nodes: [{ id: "root", type: "form", children: [child] }] };
+  assert.deepEqual(validate(render!.inputSchema, call), []);
+  assert.ok(validate(render!.inputSchema, { ...call, nodes: [{ ...call.nodes[0], children: [{ children: [child] }] }] }).length);
+  assert.ok(validate(render!.inputSchema, { ...call, nodes: [{ ...call.nodes[0], children: JSON.stringify([child]) }] }).length);
+  assert.deepEqual(validate(update!.inputSchema, { surface: "s", nodes: [{ id: "root", children: ["field"] }] }), []);
+  assert.ok(validate(update!.inputSchema, { surface: "s", nodes: [{ id: "root", children: [child] }] }).length);
+});
+
+test("table authoring distinguishes automatic column sums from custom summary rows", () => {
+  assert.match(systemPrompt(basicCatalog), /custom summary row.*totals: false/);
+});

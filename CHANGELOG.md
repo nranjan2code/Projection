@@ -1,5 +1,12 @@
 # Changelog
 
+## 2026-10-26: correction scope and bounded structural feedback
+
+- Input submission lint follows the same resolved form/action scope as a click. An unrelated or empty sibling form no longer hides stranded inputs; errors name the existing IDs to patch. This also prevents a scope-breaking correction from replacing a usable published form. Exact local file-report edits are retained as regression fixtures; no facts or surfaces are synthesized.
+- Inline child schemas require node identity, and update schemas describe child IDs for small edge corrections. Runtime ingestion still accepts valid nested calls. Caller edit failures include a bounded inventory of current parent edges and bindings to support patches without a full rewrite. No new dependency or public signature change.
+- Table guidance distinguishes automatic column sums (which replace the last total row) from caller-specified custom summary rows, which keep totals disabled.
+- Replay correction: one historical job-application clean-render score drops from 1.0 to 0.8 because two fields are outside its form and are omitted on submit. The defect and explicit baseline reason are retained; other recordings retain their gates.
+
 ## 2026-10-26: dual-stack public fetch lookup
 
 - `pinnedFetch` returns the checked DNS result using the callback shape requested by Node: an address list for dual-stack lookup, a single address/family otherwise. This fixes real public image fetches failing with `Invalid IP address: undefined` on Node 24 without a second DNS lookup or weakened private-address checks. Regression checks exercise both callback shapes offline.

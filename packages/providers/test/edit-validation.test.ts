@@ -22,6 +22,8 @@ test("caller constraints accompany component diagnostics before the next authori
     assert.ok(req.messages.some((message) => message.role === "tool" && message.content.includes("nothing submits")));
     assert.ok(req.messages.at(-1)!.content.includes("The evidence output must contain no editable controls"));
     assert.ok(req.messages.at(-1)!.content.includes("grant no authority"));
+    assert.ok(req.messages.at(-1)!.content.includes("Current parent edges and input bindings"));
+    assert.ok(req.messages.at(-1)!.content.includes('"children"'));
     yield { type: "text", delta: "Review required" }; yield { type: "done", stop: "end" };
   } };
   const result = await runAgent({ provider, model: "test", store, messages: [{ role: "user", content: "Work" }], completion: "response", maxSteps: 2, validateEdits: ({ resolved }) => {
