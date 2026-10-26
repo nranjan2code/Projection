@@ -957,15 +957,20 @@ export const basicCatalog = defineCatalog(
     compare: {
       tier: "extended",
       description: "Options side by side, the best one highlighted.",
-      hint: "for shopping and which-should-I-pick questions; props.options is [{name, pros, cons, specs: {feature: value}, price?, note?}]; props.best names the pick",
+      hint: "for shopping and which-should-I-pick questions; props.options is [{name, pros, cons, specs: {feature: value}, price?, note?}]; props.best names the pick; props.action (e.g. book_hotel) puts a button on each option that sends you {option: name}",
       props: props(
         {
           options: listOr({ type: "array", items: compareOption }, { aliases: ["items", "choices", "products", "candidates", "alternatives"] }),
           best: str({ description: "name of the recommended option", aliases: ["winner", "pick", "recommended", "recommendation", "choice"] }),
+          action: str({ description: "action name sent with the chosen option", aliases: ["onSelect", "onChoose", "onPick", "select", "event"] }),
+          actionLabel: str({ description: "each option's button text (default Choose)", aliases: ["buttonLabel", "cta", "buttonText", "selectLabel"] }),
+          payload: { description: "sent back with the action, beside option", aliases: ["data", "params"] },
         },
         ["options"],
       ),
       finalize: finalizeCompare,
+      role: "action",
+      choices: "options",
       aliases: ["comparison", "proscons", "prosandcons", "versus", "vs", "comparisontable", "decision"],
     },
     timer: {

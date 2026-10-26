@@ -105,7 +105,8 @@ function passes(check: Check, ctx: CheckContext): boolean {
     case "actionable": {
       let ok = false;
       walkTree(root, (node) => {
-        if (node.type === "form" || (node.type === "button" && typeof node.props.action === "string" && node.props.action)) ok = true;
+        // A comparison with an action has a pick button on each option.
+        if (node.type === "form" || ((node.type === "button" || node.type === "compare") && typeof node.props.action === "string" && node.props.action)) ok = true;
       });
       return ok;
     }

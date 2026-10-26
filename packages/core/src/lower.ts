@@ -139,8 +139,10 @@ export function lowerNode(n: ResolvedNode): ResolvedNode {
     case "compare": {
       const opts = list(p.options);
       const specKeys = [...new Set(opts.flatMap((o) => Object.keys((o.specs as object) ?? {})))];
+      // Each option's pick button is the node's own choice control (`key#i`), so chat buttons submit through the engine.
+      const pick = (o: Record<string, unknown>, i: number): ResolvedNode[] => (p.action ? [{ ...n, key: `${n.key}#${i}`, id: `${n.id}-pick-${i}`, type: "button", children: [], props: { label: `${s(p.actionLabel) || "Choose"} ${s(o.name)}`, action: s(p.action), style: o.best ? "primary" : "secondary" } }] : []);
       const sections = opts.map((o, i): ResolvedNode => ({
-        ...n, key: `${n.key}/${i}`, id: `${n.id}-${i}`, type: "section", children: [],
+        ...n, key: `${n.key}/${i}`, id: `${n.id}-${i}`, type: "section", children: pick(o, i),
         props: {
           title: `${o.best ? "★ " : ""}${s(o.name)}${o.price ? ` — ${s(o.price)}` : ""}${o.best ? " (best pick)" : ""}`,
           description: [...(o.pros as string[] ?? []).map((x) => `✓ ${x}`), ...(o.cons as string[] ?? []).map((x) => `✗ ${x}`), ...(o.note ? [s(o.note)] : [])].join("\n\n"),

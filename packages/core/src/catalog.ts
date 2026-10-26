@@ -43,6 +43,13 @@ export interface ComponentDef {
    */
   role?: "form" | "action";
   /**
+   * With role "action": the list prop whose items are each choosable on their
+   * own (a comparison's options). Control `<node key>#<index>` submits the
+   * node's action with `{option: <item name>}` added to its payload, so every
+   * projector can draw one button per item.
+   */
+  choices?: string;
+  /**
    * "core": always offered. "extended": offered only to models the policy
    * judges capable of using a larger vocabulary well. Defaults to "core".
    */

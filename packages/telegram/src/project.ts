@@ -82,7 +82,7 @@ export function projectTelegram(
   tokenFor: (key: string, kind: Control["kind"]) => string,
   opts: ProjectOptions = {},
 ): TelegramProjection {
-  // Timeline, steps, code, map and gallery as lists, text and images.
+  // Rich components (lower.ts) as lists, tables, text and images.
   surface = lowerSurface(surface);
   const controls: Control[] = [];
   const control = (key: string, kind: Control["kind"], label: string) => {

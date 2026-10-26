@@ -448,12 +448,13 @@ export function renderAccordion(p: Rec, ctx: WidgetCtx, md: (text: unknown) => H
 
 // --- compare ---------------------------------------------------------------
 
-export function renderCompare(p: Rec, md: (text: unknown) => HTMLElement): HTMLElement {
+/** `pick(i)` sends the node's action for option i; buttons appear only when the model gave an action. */
+export function renderCompare(p: Rec, md: (text: unknown) => HTMLElement, pick?: (i: number) => void, busy?: string): HTMLElement {
   const opts = recs(p.options);
   const box = h("div", "cmp");
   const cards = h("div", "cmp-cards");
   cards.style.setProperty("--n", String(Math.max(1, Math.min(opts.length, 4))));
-  for (const o of opts) {
+  opts.forEach((o, i) => {
     const c = h("article", `cmp-card${o.best ? " best" : ""}`);
     if (o.best) c.append(h("span", "cmp-badge", "Best pick"));
     c.append(h("h4", undefined, str(o.name)));
@@ -466,8 +467,15 @@ export function renderCompare(p: Rec, md: (text: unknown) => HTMLElement): HTMLE
       c.append(ul);
     }
     if (o.note) c.append(md(o.note));
+    if (pick && str(p.action)) {
+      const b = btn(`${str(p.actionLabel) || "Choose"}`, `${str(p.actionLabel) || "Choose"} ${str(o.name)}`, `btn ${o.best ? "primary" : "secondary"} cmp-pick`);
+      b.disabled = busy !== undefined;
+      if (busy === String(i)) b.textContent = "…";
+      b.onclick = () => pick(i);
+      c.append(b);
+    }
     cards.append(c);
-  }
+  });
   box.append(cards);
   const keys = [...new Set(opts.flatMap((o) => Object.keys((o.specs as object | undefined) ?? {})))];
   if (keys.length) {

@@ -404,7 +404,11 @@ tr:last-child td { border-bottom: 0; }
 .cmp-card { position: relative; padding: 14px; background: var(--vak-surface); border: 1px solid var(--vak-border); border-radius: var(--vak-radius); }
 .cmp-card.best { border: 2px solid var(--vak-success); box-shadow: 0 0 0 4px color-mix(in srgb, var(--vak-success) 14%, transparent); }
 .cmp-badge { position: absolute; top: -10px; right: 12px; font-size: 0.74rem; font-weight: 700; padding: 2px 10px; border-radius: 10px; background: var(--vak-success); color: var(--vak-surface); }
+.cmp-card { display: flex; flex-direction: column; }
 .cmp-card h4 { margin: 0 0 4px; font-size: 1rem; }
+/* Pick buttons line up at the bottom of cards of unequal length. */
+.cmp-pick { margin-top: auto; align-self: stretch; }
+.cmp-card:has(> .cmp-pick) > :nth-last-child(2) { margin-bottom: 12px; }
 .cmp-price { font-weight: 700; font-size: 1.1rem; margin-bottom: 6px; }
 .cmp-pc { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: 0.88rem; }
 .cmp-pc li::before { display: inline-block; width: 1.3em; font-weight: 700; }

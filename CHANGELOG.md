@@ -3,6 +3,12 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: pick buttons on comparisons
+
+- `compare` takes `action` (and `actionLabel`, `payload`): each option gets its own button that sends the action with `{option: <name>}`. "Compare hotels and let me book one" can now answer with a comparison instead of cards.
+- General engine capability: a `role: "action"` component may declare `choices: "<list prop>"`; control `<node key>#<index>` submits the node's action for that item. Lowering turns each choice into an ordinary button with that key, so the web, Telegram, Discord, Slack and text all submit through `SurfaceStore.submit` with no per-channel code.
+- Bench: comparison checks accept a `compare` alongside cards or a table, and a compare with an action counts as something the user can act on. 267 tests/replay gate and typecheck pass; checked in WebKit.
+
 ## 2026-10-26: everyday components on the local 4B
 
 - Bench slice `everyday`: 10 scenarios, one per new component group, phrased as people ask. Default 4B plan (core tier), 2 runs each: first run 50% complete / 86% of checks; after the fixes below, 75–85% complete / 95–97% across three recorded runs (saved baseline: 75% / 95%). Calendar, accordion, timer, tree and gantt were already reliable; board, progress, inputs, stacked charts and compare were the gaps.

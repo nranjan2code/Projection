@@ -176,7 +176,7 @@ export class VakSurfaceElement extends HTMLElement {
       node.error,
       this.#errors[node.key],
       node.type === "tabs" ? [this.#tabs.get(node.key), node.children.map((c) => str(c.props.title))] : 0,
-      this.#busyKey === node.key,
+      this.#busyKey === node.key || this.#busyKey?.startsWith(`${node.key}#`),
     ]);
     let built = this.#cache.get(node.key);
     if (!built || built.sig !== sig) {
@@ -394,7 +394,7 @@ export class VakSurfaceElement extends HTMLElement {
       case "accordion":
         return renderAccordion(p, this.#widget(node), (t) => md(t, "md acc-body"));
       case "compare":
-        return { el: renderCompare(p, (t) => md(t, "md cmp-note")) };
+        return { el: renderCompare(p, (t) => md(t, "md cmp-note"), (i) => this.#act(`${node.key}#${i}`), this.#busyKey?.startsWith(`${node.key}#`) ? this.#busyKey.slice(node.key.length + 1) : undefined) };
       case "timer":
         return { el: renderTimer(p, this.#widget(node)) };
       case "tree":

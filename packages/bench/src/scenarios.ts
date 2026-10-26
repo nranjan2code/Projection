@@ -39,7 +39,8 @@ const bound: Check = { kind: "bound" };
 const changed: Check = { kind: "changed" };
 
 /** Several options side by side: cards, or a table. */
-const options = (n: number): Check => anyOf(count("card", n), count("table"));
+// A comparison component (with its options side by side) answers these as well as cards or a table.
+const options = (n: number): Check => anyOf(count("card", n), count("table"), count("compare"));
 
 export const SCENARIOS: Scenario[] = [
   // --- comparison ----------------------------------------------------------------

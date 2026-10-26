@@ -106,3 +106,16 @@ test("4B recorded shapes: split board cards rejoin, a bound bar progress is a sl
   const c = render({ type: "compare", props: { options: [{ name: "Pixel 9", note: "Best pick" }, { name: "iPhone 16" }] } });
   assert.deepEqual((c.root.props.options as Record<string, unknown>[]).map((o) => o.best), [true, false]);
 });
+
+test("compare with an action: each option is a control of its own on every target", () => {
+  const store = new SurfaceStore(basicCatalog);
+  const diags = store.render({ surface: "h", nodes: [{ id: "root", type: "compare", props: { action: "book_hotel", actionLabel: "Book", payload: { nights: 7 }, options: [{ name: "Ryokan" }, { name: "Hilton", best: true }] } }] } as never);
+  assert.deepEqual(diags.filter((d) => d.severity === "error"), []);
+  const res = store.submit("h", "root#1", "test");
+  assert.deepEqual(res.action?.action, "book_hotel");
+  assert.deepEqual(res.action?.data, { nights: 7, option: "Hilton" });
+  assert.ok(store.submit("h", "root#5", "test").errors.root ?? store.submit("h", "root#5", "test").errors["root#5"]);
+  const text = projectText(store.resolve("h")!);
+  assert.match(text, /\[Button: Book Ryokan → book_hotel\]/);
+  assert.match(text, /\[Button: Book Hilton → book_hotel\]/);
+});

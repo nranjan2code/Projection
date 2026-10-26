@@ -904,7 +904,7 @@ export class SurfaceStore {
     const stranded = nodes.filter((n) => typeof n.props?.bind === "string" && !toggles.has(n.props.bind as string) && collects(n.type));
     if (!stranded.length) return [];
     const forms = Object.entries(this.catalog.components).filter(([, d]) => d.role === "form").map(([name]) => name);
-    const actions = Object.entries(this.catalog.components).filter(([, d]) => d.role === "action").map(([name]) => name);
+    const actions = Object.entries(this.catalog.components).filter(([, d]) => d.role === "action" && !d.choices).map(([name]) => name);
     return [{
       severity: "error",
       surface: state.id,
@@ -1188,9 +1188,10 @@ export class SurfaceStore {
   submitScope(surfaceId: string, sourceId: string): { resolved: ResolvedSurface; source: ResolvedNode; scope?: ResolvedNode } | undefined {
     const resolved = this.resolve(surfaceId);
     if (!resolved?.root) return undefined;
-    const trail = findTrail(resolved.root, sourceId);
+    const choice = this.choice(resolved.root, sourceId);
+    const trail = choice?.trail ?? findTrail(resolved.root, sourceId);
     if (!trail) return undefined;
-    const source = trail[trail.length - 1]!;
+    const source = choice?.source ?? trail[trail.length - 1]!;
     const hasInputs = (n: ResolvedNode) => {
       let found = false;
       walk(n, (c) => (found ||= c.bindPath !== undefined));
@@ -1202,6 +1203,22 @@ export class SurfaceStore {
       ancestors.find((n) => this.role(n) === "form") ??
       (this.role(source) === "action" ? ancestors.find(hasInputs) : undefined);
     return { resolved, source, scope };
+  }
+
+  /** `<key>#<i>`: item i of a node's declared choices, as a control of its own. */
+  private choice(root: ResolvedNode, sourceId: string): { trail: ResolvedNode[]; source: ResolvedNode } | undefined {
+    const m = /^(.*)#(\d+)$/.exec(sourceId);
+    if (!m) return undefined;
+    const trail = findTrail(root, m[1]!);
+    const node = trail?.at(-1);
+    const prop = node ? this.catalog.components[node.type]?.choices : undefined;
+    const items = prop ? node!.props[prop] : undefined;
+    const item = Array.isArray(items) ? items[Number(m[2])] : undefined;
+    if (!trail || !node || item === undefined) return undefined;
+    const o = isObject(item) ? item : {};
+    const option = String(o.name ?? o.title ?? o.label ?? o.id ?? item);
+    const base = isObject(node.props.payload) ? node.props.payload : {};
+    return { trail, source: { ...node, key: sourceId, props: { ...node.props, payload: { ...base, option } } } };
   }
 
   submit(surfaceId: string, sourceId: string, target?: string): SubmitResult {
