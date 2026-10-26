@@ -1,3 +1,5 @@
+MCP HTTP lifecycle (2026-10-26): a live hosted documentation server negotiated 2025-06-18 but the client sent 2025-11-25 afterward. The client now uses the negotiated supported version and clears it plus the session on close/reconnect. HTTP redirects are refused to protect configured credential headers. Tests cover the exact failure and reconnect/redirect behavior.
+
 Unreviewed integration consent (2026-10-26): custom catalog entries and user-added servers default every tool to Ask regardless of annotations; explicit saved policies still apply. View defaults and execution agree. Required for safe downstream catalog imports; no new API or dependency.
 
 Configurable remote endpoints (2026-10-26): HTTP catalog sources may resolve URLs from detached non-secret configuration. Validation happens before saving a complete text configuration, and again before connection. Existing string sources and user-added persisted servers are unchanged; views never serialize resolver functions. Tests cover headers, endpoint changes, rejected edits, restart and missing setup. 324 tests/replay and typecheck pass; no dependencies.

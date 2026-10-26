@@ -81,6 +81,7 @@ export class McpClient {
   private nextId = 1;
   private pending = new Map<number, Pending>();
   private sessionId?: string;
+  private protocolVersion = CLIENT_PROTOCOL;
   private ready?: Promise<void>;
   serverInfo?: { name?: string; version?: string };
 
@@ -123,7 +124,11 @@ export class McpClient {
       protocolVersion: CLIENT_PROTOCOL,
       capabilities: {},
       clientInfo: { name: "vak", version: "0.1.0" },
-    })) as { serverInfo?: { name?: string; version?: string } };
+    })) as { protocolVersion?: string; serverInfo?: { name?: string; version?: string } };
+    // Servers can negotiate an earlier supported version. The initialized
+    // notification and every later HTTP request must use that agreement.
+    if (init.protocolVersion && ![CLIENT_PROTOCOL, "2025-06-18", "2025-03-26", "2024-11-05"].includes(init.protocolVersion)) throw new McpError(`${this.name}: unsupported protocol version ${init.protocolVersion}`);
+    this.protocolVersion = init.protocolVersion ?? CLIENT_PROTOCOL;
     this.serverInfo = init.serverInfo;
     await this.notify("notifications/initialized", {});
   }
@@ -159,6 +164,8 @@ export class McpClient {
     this.child?.kill();
     this.child = undefined;
     this.ready = undefined;
+    this.sessionId = undefined;
+    this.protocolVersion = CLIENT_PROTOCOL;
   }
 
   // --- JSON-RPC ---------------------------------------------------------------
@@ -197,10 +204,12 @@ export class McpClient {
     }
     const res = await fetch(t.url, {
       method: "POST",
+      // A redirected endpoint must not forward user-configured secret headers.
+      redirect: "error",
       headers: {
         "content-type": "application/json",
         accept: "application/json, text/event-stream",
-        "mcp-protocol-version": CLIENT_PROTOCOL,
+        "mcp-protocol-version": this.protocolVersion,
         ...(this.sessionId ? { "mcp-session-id": this.sessionId } : {}),
         ...t.headers,
       },

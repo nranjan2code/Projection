@@ -110,3 +110,34 @@ test("result observation sees transport status only after permission and cannot 
   const allowed = agentTools(source, tools, { server: "s", label: "S", policy: () => "allow", approve: async () => "deny", observe: (_tool, _args, result) => seen.push(result) });
   await allowed[0]!.execute({}, {}); assert.equal(calls, 1); assert.equal(seen[0]!.isError, true);
 });
+
+
+test("HTTP uses the negotiated protocol, resets sessions on reconnect and refuses redirects", async () => {
+  let initialized = false, initializations = 0, redirected = 0;
+  const server = createServer((req, res) => {
+    if (req.url === "/redirected") { redirected++; res.writeHead(500).end(); return; }
+    if (req.url === "/redirect") { res.writeHead(307, {location:"/redirected"}).end(); return; }
+    let body="";req.on("data",d=>body+=d);req.on("end",()=>{
+      const msg=JSON.parse(body);
+      if(msg.method==="initialize") {
+        initializations++; initialized=false;
+        assert.equal(req.headers["mcp-session-id"],undefined);
+        assert.equal(req.headers["mcp-protocol-version"],"2025-11-25");
+        return void res.writeHead(200,{"content-type":"application/json","mcp-session-id":`session-${initializations}`}).end(JSON.stringify({jsonrpc:"2.0",id:msg.id,result:{protocolVersion:"2025-06-18",serverInfo:{name:"legacy",version:"1"},capabilities:{tools:{}}}}));
+      }
+      assert.equal(req.headers["mcp-protocol-version"],"2025-06-18");
+      assert.equal(req.headers["mcp-session-id"],`session-${initializations}`);
+      if(msg.method==="notifications/initialized"){initialized=true;res.writeHead(202).end();return;}
+      assert.ok(initialized);
+      res.writeHead(200,{"content-type":"application/json"}).end(JSON.stringify({jsonrpc:"2.0",id:msg.id,result:{tools:[]}}));
+    });
+  });
+  await new Promise<void>(r=>server.listen(0,"127.0.0.1",r));
+  const url=`http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const c=new McpClient({name:"negotiated",transport:{kind:"http",url:url+"/mcp"}});
+  const redirect=new McpClient({name:"redirect",transport:{kind:"http",url:url+"/redirect",headers:{"X-Api-Key":"fixture"}}});
+  try {
+    await c.listTools();c.close();await c.listTools();assert.equal(initializations,2);
+    await assert.rejects(redirect.listTools());assert.equal(redirected,0);
+  } finally { c.close();redirect.close();server.closeAllConnections();server.close(); }
+});

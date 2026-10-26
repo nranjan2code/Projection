@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-26: negotiated MCP HTTP lifecycle
+
+- The MCP client uses the server-negotiated supported protocol version on initialized and subsequent HTTP requests; reconnect clears the prior session/version. This fixes a real hosted connection returning HTTP 400 after a successful older-version handshake. Redirects fail closed so custom credential headers cannot be forwarded elsewhere. Regression checks cover negotiation, session reset and redirect refusal.
+
 ## 2026-10-26: unreviewed integration consent
 
 - Integrations marked custom default every tool to Ask, including newly discovered read-only tools. Server-controlled annotations cannot grant consent; explicit saved Allow/Off policies remain effective across restarts. Views report the same default used for execution. No dependency or public API addition.
