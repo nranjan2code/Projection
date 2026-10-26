@@ -1252,7 +1252,9 @@ export class SurfaceStore {
     const o = isObject(item) ? item : {};
     const option = String(o.name ?? o.title ?? o.label ?? o.id ?? item);
     const base = isObject(node.props.payload) ? node.props.payload : {};
-    return { trail, source: { ...node, key: sourceId, props: { ...node.props, payload: { ...base, option } } } };
+    // The action names the item ("root#1"), so a host that submits it again
+    // (from a client's action, or across a process) reaches the same choice.
+    return { trail, source: { ...node, key: sourceId, id: `${node.id}#${m[2]}`, props: { ...node.props, payload: { ...base, option } } } };
   }
 
   submit(surfaceId: string, sourceId: string, target?: string): SubmitResult {

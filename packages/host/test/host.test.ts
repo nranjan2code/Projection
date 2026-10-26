@@ -4,9 +4,9 @@ import { createServer, request, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
-import { readSse } from "@vak/core";
+import { readSse, type SurfaceSnapshot } from "@vak/core";
 import { ProfileCache, type Provider, type ProviderEntry, type ProviderEvent } from "@vak/providers";
-import { createHost, type HostOptions, type SessionSummary, type SessionView, type VakHost } from "@vak/host";
+import { createHost, keepVersions, type HostOptions, type SessionSummary, type SessionView, type VakHost } from "@vak/host";
 
 /** A provider that says one sentence and renders one surface (a clean projection ends the turn). */
 function scripted(): Provider {
@@ -413,4 +413,32 @@ test("POST /api/sessions/:id/stop cancels a running turn", async () => {
   } finally {
     server.close();
   }
+});
+
+test("each reply keeps its surfaces as it left them, so a rewrite in place has a way back", async () => {
+  let title = "Search";
+  const p: Provider = { ...scripted(), async *stream() {
+    yield { type: "tool_start", id: title, name: "vak_render" };
+    yield { type: "tool_args", id: title, delta: JSON.stringify({ surface: "flow", title, nodes: [{ id: "root", type: "text", props: { text: title } }] }) };
+    yield { type: "tool_end", id: title };
+    yield { type: "done", stop: "tool_use" };
+  } };
+  const { host, server } = await serve({}, p);
+  const input = { session: "versions", provider: "scripted", model: "m" };
+  try {
+    await host.run({ ...input, message: "Find" });
+    title = "Results";
+    await host.run({ ...input, message: "Show results" });
+    const view = await host.view("versions");
+    const versions = view.timeline.flatMap((t) => (t.kind === "assistant" ? t.versions ?? [] : []));
+    assert.deepEqual(versions.map((v) => [v.id, v.title]), [["flow", "Search"], ["flow", "Results"]]);
+    assert.equal(view.surfaces[0]!.title, "Results");
+  } finally { server.close(); }
+});
+
+test("only the newest ten versions of a surface keep their copy", () => {
+  const snap = (n: number) => ({ id: "s", title: String(n), version: n, nodes: [], data: {} }) as unknown as SurfaceSnapshot;
+  const timeline = Array.from({ length: 12 }, (_, i) => ({ kind: "assistant" as const, text: "", surfaces: ["s"], notes: [], status: "", at: "", versions: [snap(i)] }));
+  keepVersions(timeline);
+  assert.deepEqual(timeline.map((t) => t.versions?.[0]?.version), [undefined, undefined, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
 });

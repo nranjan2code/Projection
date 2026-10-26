@@ -42,7 +42,7 @@ import {
 export type TimelineEntry =
   | { kind: "user"; text: string; at: string }
   | { kind: "action"; action: string; at: string }
-  | { kind: "assistant"; text: string; surfaces: string[]; notes: { name: string; result: string }[]; status: string; error?: boolean; at: string; used?: { name: string; ok: boolean }[]; stop?: string; limit?: "steps" | "tools" };
+  | { kind: "assistant"; text: string; surfaces: string[]; notes: { name: string; result: string }[]; status: string; error?: boolean; at: string; used?: { name: string; ok: boolean }[]; stop?: string; limit?: "steps" | "tools"; versions?: SurfaceSnapshot[] };
 
 export interface SessionSummary {
   id: string;
@@ -300,7 +300,7 @@ export function createHost(opts: HostOptions): VakHost {
       created: s.created,
       updated: s.updated,
       messages: s.messages,
-      timeline: s.timeline,
+      timeline: keepVersions(s.timeline),
       surfaces: s.store.list().map((st) => s.store.snapshot(st.id)!),
       external: [...s.external],
     };
@@ -486,6 +486,10 @@ export function createHost(opts: HostOptions): VakHost {
     if (!reply.error) reply.status = `${entry.id} · ${body.model} · ${secs}s${result.limit === "steps" ? " · step limit" : result.limit === "tools" ? " · tool budget" : ""}`;
     reply.stop = result.stop;
     if (result.limit) reply.limit = result.limit;
+    // Each surface as this reply left it: a later reply that rewrites it in
+    // place would otherwise leave no way back to what this one showed.
+    const versions = reply.surfaces.flatMap((id) => s.store.snapshot(id) ?? []);
+    if (versions.length) reply.versions = versions;
     s.timeline.push(reply);
     s.updated = now();
     await record(s.id, s.messages.slice(from));
@@ -783,4 +787,24 @@ export function createHost(opts: HostOptions): VakHost {
       return true;
     },
   };
+}
+
+/** The newest VERSIONS_KEPT versions of each surface; older replies keep their text without the copy. */
+const VERSIONS_KEPT = 10;
+export function keepVersions(timeline: TimelineEntry[]): TimelineEntry[] {
+  const seen = new Map<string, number>();
+  for (let i = timeline.length - 1; i >= 0; i--) {
+    const t = timeline[i]!;
+    if (t.kind !== "assistant" || !t.versions) continue;
+    const kept = t.versions.filter((v) => {
+      const n = (seen.get(v.id) ?? 0) + 1;
+      seen.set(v.id, n);
+      return n <= VERSIONS_KEPT;
+    });
+    if (kept.length !== t.versions.length) {
+      if (kept.length) t.versions = kept;
+      else delete t.versions;
+    }
+  }
+  return timeline;
 }

@@ -114,6 +114,8 @@ test("compare with an action: each option is a control of its own on every targe
   const res = store.submit("h", "root#1", "test");
   assert.deepEqual(res.action?.action, "book_hotel");
   assert.deepEqual(res.action?.data, { nights: 7, option: "Hilton" });
+  assert.equal(res.action?.source, "root#1");
+  assert.deepEqual(store.submit("h", res.action!.source, "test").action?.data, { nights: 7, option: "Hilton" });
   assert.ok(store.submit("h", "root#5", "test").errors.root ?? store.submit("h", "root#5", "test").errors["root#5"]);
   const text = projectText(store.resolve("h")!);
   assert.match(text, /\[Button: Book Ryokan → book_hotel\]/);
