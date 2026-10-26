@@ -10,6 +10,8 @@ Rejected tool-syntax recovery added 2026-10-26: Ollama's HTTP 500 generated-tool
 
 Authoring/data fidelity repairs added 2026-10-26: replayed the retained local comparison through SurfaceStore before changing code. Keyless member groups no longer become extra inputs; explicit stringified list bindings survive coercion as live references; bound container shape mismatches are diagnosed without breaking numeric lists. Prompts teach exact data initialization and patch-based correction, with bounded ID/root inventories on completion failures. Explicit render/empty-list replacement semantics stay intact. 255 tests/replay gate and typecheck pass. Raw numeric mistakes are preserved for truthful evaluation, not rewritten; local app outcome reports determine remaining work.
 
+Trusted completion acknowledgement added 2026-10-26: `CompletionCheck` may return the existing issue array or `{issues, response?}`. Successful checks can replace emitted final prose without forcing a stylistic generation retry; raw provider prose remains diagnostic data. Failed/malformed checks still withhold final text. This followed a real comparison where exact final wording alone caused retries and later lost columns. 257 tests/replay gate and typecheck pass in an isolated checkout; no dependencies or existing-signature break.
+
 Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](SPECS.md).
 
 ## Handover prompt (paste into a new session)

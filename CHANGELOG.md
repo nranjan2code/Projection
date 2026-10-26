@@ -3,6 +3,11 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: trusted completion acknowledgement
+
+- `CompletionCheck` can additionally return `{issues, response?}`. Existing issue arrays remain valid. After successful substantive checks, a trusted application may replace the emitted final prose with a neutral acknowledgement, retaining raw provider prose in conversation/transcript data for diagnosis. Rejected or malformed decisions emit no final text.
+- This avoids retrying valid output solely to change a final sentence, a real local comparison failure that consumed budget and led to destructive rewrites. Replacement text cannot bypass issues, grant permission or accept a product task. No extra provider request is made for the acknowledgement. 257 tests/replay gate and typecheck pass in an isolated checkout.
+
 ## 2026-10-26: preserve authoring structure and correction data
 
 - Real local 4B property fragments such as `"props": {...}, {"placeholder":"..."}}` stay on their node when the extra closer and disjoint keys establish a keyless member group. Normal sibling/anonymous nodes and colliding keys keep their prior readings. This removes unintended inferred inputs without guessing missing data.
