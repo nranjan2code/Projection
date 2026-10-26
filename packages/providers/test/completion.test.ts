@@ -32,7 +32,9 @@ test("response completion retains step limits and rejects constrained-only respo
   const options = { provider, model: "m", store: new SurfaceStore(basicCatalog), messages: [{ role: "user" as const, content: "Work" }], completion: "response" as const, emit: () => {} };
   assert.equal((await runAgent({ ...options, maxSteps: 2 })).stop, "max_steps");
   assert.equal(requests, 2);
-  assert.equal((await runAgent({ ...options, generation: "constrained" })).stop, "error");
+  // Options the caller got wrong reject before the loop: a {stop:"error"}
+  // result would read as a model failure and invite a pointless retry.
+  await assert.rejects(runAgent({ ...options, generation: "constrained" }), /Response completion requires tool generation/);
   assert.equal(requests, 2);
 });
 

@@ -2,7 +2,7 @@
 // They speak the same McpToolInfo + callTool shape as an MCP server, so the
 // policy, approval and untrusted-output handling are the same.
 
-import { isPublicHttpsUrl } from "@vak/providers";
+import { isPublicHttpsUrl, pinnedFetch } from "@vak/providers";
 import type { McpToolInfo } from "./client.ts";
 
 export interface BuiltinServer {
@@ -48,12 +48,17 @@ export function htmlText(html: string, base: string): { title: string; text: str
   return { title, text };
 }
 
+/** The part of `fetch` used here; pinnedFetch provides it too and cannot be rebound. */
+export type SafeFetcher = (url: string, init: { method?: string; headers?: Record<string, string>; redirect?: "manual" | "follow" | "error"; credentials?: "omit" | "same-origin" | "include"; signal?: AbortSignal; maxBytes?: number }) => Promise<Response>;
+
 /**
  * GET an https page for the model. Each hop of a redirect is checked like the
  * first (a public URL redirecting to 169.254.169.254 is the classic SSRF), the
- * body is capped, and no cookies or credentials are ever sent.
+ * body is capped, and no cookies or credentials are ever sent. The default
+ * fetcher dials the address the check resolved, so a second DNS answer cannot
+ * point the connection somewhere else (rebinding).
  */
-export async function safeFetch(raw: string, signal?: AbortSignal, fetcher: typeof fetch = fetch, check: (u: string) => Promise<boolean> = isPublicHttpsUrl): Promise<{ url: string; type: string; body: string }> {
+export async function safeFetch(raw: string, signal?: AbortSignal, fetcher: SafeFetcher = pinnedFetch, check: (u: string) => Promise<boolean> = isPublicHttpsUrl): Promise<{ url: string; type: string; body: string }> {
   let url = raw;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     if (!(await check(url))) throw new Error(`refused: ${url} is not a public https address`);
@@ -62,6 +67,9 @@ export async function safeFetch(raw: string, signal?: AbortSignal, fetcher: type
       credentials: "omit",
       headers: { "user-agent": "vak-fetch/0.1 (+https://github.com/nranjan2code/Projection)", accept: "text/html, text/plain, application/json;q=0.9, */*;q=0.1" },
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+      // Truncating below is normal for a long page; the transport cap only
+      // stops a body this loop would discard anyway, so it is generous.
+      maxBytes: MAX_BYTES + 1_000_000,
     });
     if (res.status >= 300 && res.status < 400 && res.headers.get("location")) {
       url = new URL(res.headers.get("location")!, url).href;
@@ -92,7 +100,7 @@ export async function safeFetch(raw: string, signal?: AbortSignal, fetcher: type
   throw new Error("too many redirects");
 }
 
-export function webFetchServer(opts: { fetcher?: typeof fetch; check?: (u: string) => Promise<boolean> } = {}): BuiltinServer {
+export function webFetchServer(opts: { fetcher?: SafeFetcher; check?: (u: string) => Promise<boolean> } = {}): BuiltinServer {
   return {
     tools: [
       {

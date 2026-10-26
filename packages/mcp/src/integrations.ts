@@ -411,26 +411,35 @@ export class Integrations {
     for (const e of this.entries()) {
       const st = this.saved.integrations[e.id];
       if (!st?.enabled || this.missing(e, st).length || (e.source.kind === "npm" && !st.installed)) continue;
-      if (!st.tools) await this.refresh(e.id);
-      if (!this.state(e.id).tools?.length || this.errors.has(e.id)) continue;
-      const allowed = this.chatAllowed.get(session) ?? new Set<string>();
-      out.push(
-        ...agentTools(this.source(e.id), this.state(e.id).tools!, {
-          server: e.id,
-          observe: (tool, args, result) => this.opts.observe?.({ session, server: e.id, tool, args }, result),
-          label: e.name,
-          policy: (t) => (allowed.has(`${e.id}:${t.name}`) && this.policyOf(e.id, t) === "ask" ? "allow" : this.policyOf(e.id, t)),
-          approve: async (req, emit, signal) => {
-            const d = await this.opts.approve(req, emit, signal);
-            if (d === "allow-chat") {
-              allowed.add(`${e.id}:${req.tool}`);
-              this.chatAllowed.set(session, allowed);
-            }
-            return d === "deny" ? "deny" : "allow";
-          },
-          record: (r) => this.record(e.id, r),
-        }),
-      );
+      try {
+        if (!st.tools) await this.refresh(e.id);
+        if (!this.state(e.id).tools?.length || this.errors.has(e.id)) continue;
+        const allowed = this.chatAllowed.get(session) ?? new Set<string>();
+        out.push(
+          ...agentTools(this.source(e.id), this.state(e.id).tools!, {
+            server: e.id,
+            observe: (tool, args, result) => this.opts.observe?.({ session, server: e.id, tool, args }, result),
+            label: e.name,
+            policy: (t) => (allowed.has(`${e.id}:${t.name}`) && this.policyOf(e.id, t) === "ask" ? "allow" : this.policyOf(e.id, t)),
+            approve: async (req, emit, signal) => {
+              const d = await this.opts.approve(req, emit, signal);
+              if (d === "allow-chat") {
+                allowed.add(`${e.id}:${req.tool}`);
+                this.chatAllowed.set(session, allowed);
+              }
+              return d === "deny" ? "deny" : "allow";
+            },
+            record: (r) => this.record(e.id, r),
+          }),
+        );
+      } catch (err) {
+        // One broken server must not fail the whole turn. Its folder can go
+        // missing after installation (moved, cleaned by a sync tool), which
+        // `source` reports as "not installed"; the settings screen then shows
+        // it like a failed start instead of the chat refusing to answer.
+        this.errors.set(e.id, (err as Error).message);
+        this.log(`${e.name}: ${(err as Error).message}`);
+      }
     }
     return out;
   }

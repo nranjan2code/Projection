@@ -3,6 +3,19 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: review pass — saved chats, session files, streaming and SSRF
+
+**Breaking:** `runAgent` (`@vak/providers`) now rejects when the caller's own options are wrong — an unknown completion policy, `completion: "response"` without tool generation, a completion check without response completion. It used to resolve `{ stop: "error" }`, which looked like a model failure and invited a retry that could never succeed; a caller now gets the mistake and its stack. Apps that tested for that result must catch the rejection. `host.run` still ends the turn as an `error` event and records it.
+
+- **A saved chat keeps no tool output.** SECURITY.md promised it and host did not: `role: "tool"` messages were written to `.vak/sessions/*.json` verbatim. They are now saved as `[tool output not saved]`, keeping the call id so a reloaded history is still a valid tool_call/tool_result pair. The live session and the diagnostic transcript keep the real output.
+- **Session files cannot collide.** An id with `/` or other unsafe characters was saved under the sanitized name, so `x/y` and `x_y` shared one file: opening one showed the other's messages and deleting one deleted both. Such ids now get a short hash suffix (`x_y-<12 hex>.json`); safe ids keep their name, and a chat saved under the old name is adopted (moved) only when the file's own `id` says it is that chat, so the other id's file is never stolen or deleted.
+- **Streaming is no longer quadratic.** A 400-node, 36 KB render took 7.3 s at 8-character deltas because each delta reparsed and rebuilt the whole surface. Parsing and applying are now batched (a fraction of the document, a quarter more nodes, a text chunk scaled by node count); the same render takes 44 ms, while a single long text node still updates as it streams.
+- **SSRF covers IPv6 translation and DNS rebinding.** `isPublicAddress` now reads the IPv4 an IPv6 address carries — NAT64 (`64:ff9b::/96`, `64:ff9b:1::/48`), 6to4 (`2002::/16`), IPv4-compatible (`::a.b.c.d`), mapped (`::ffff:a.b.c.d`), Teredo — and `pinnedFetch` dials the address the check just resolved, so a second DNS answer cannot point at loopback. The web-fetch tool and Telegram's media check use it.
+- **One broken integration no longer fails the turn.** A server whose installed folder vanished (moved, cleaned by a sync tool) threw while the tool list was built, so no reply could be produced. `toolsFor` now records the error for the settings screen and keeps the healthy servers' tools.
+- **A turn never ends silently.** A failure before the model was asked (a throwing app callback, an unusable provider) now emits `error` and `run_end`, so a client that waits for the end of the run is not left hanging.
+- **Locale numbers are read as written.** "1.234,56" is 1234.56 and "12,50" is 12.5, not 1.23456 and 1250, in "cheapest"/"most expensive" comparisons and number form fields; "1,234" is still a thousand. A comparison now looks at the deciding value on any option, not only the keys the first option happened to carry.
+- **First tests for `@vak/web`**: markdown escaping and safe links, chart and graph normalization, MathML output, run against a minimal DOM stub in node.
+
 ## 2026-10-26: per-item actions name their item; answers in seven languages
 
 - `store.submit`: a button repeated per item whose payload names no item (`name`, `id`, `title`, `option`, `item`) now sends `item` with its card's heading, so the model knows which card was chosen. Payloads that name the item are unchanged.

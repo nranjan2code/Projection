@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { test } from "node:test";
@@ -126,4 +126,25 @@ test("folder settings must be specific, absolute and existing", () => {
   mkdirSync(inside);
   assert.deepEqual(checkFolders(`${inside}\n${inside}/`, home), [inside]);
   for (const bad of ["relative/path", "/", "/etc", home, path.join(home, "missing")]) assert.throws(() => checkFolders(bad, home));
+});
+
+test("a server whose installed folder vanished does not fail the turn for the others", async () => {
+  const { dataDir, list } = setup({ enabledAtFirstRun: ["time"] });
+  try {
+    await list.install("echo");
+    await list.configure("echo", { enabled: true, secrets: { token: "t0k" } });
+    await list.refresh("time");
+    // A move or a sync tool can remove the folder while the saved state still
+    // says the server is installed and its tools are known. The next turn
+    // must still have the healthy servers' tools.
+    await list.stop("echo");
+    rmSync(path.join(dataDir, "integrations/echo/pkg"), { recursive: true, force: true });
+    const tools = await list.toolsFor("s");
+    assert.ok(tools.some((t) => t.spec.name.startsWith("time")), "the healthy server still provides tools");
+    const view = list.view().find((v) => v.entry.id === "echo")!;
+    assert.equal(view.status, "error");
+    assert.match(view.error ?? "", /not installed/);
+  } finally {
+    await list.stopAll();
+  }
 });

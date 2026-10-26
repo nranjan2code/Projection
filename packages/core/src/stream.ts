@@ -12,17 +12,35 @@ export interface StreamTick {
 }
 
 /**
+ * When to look at the streamed document again. Parsing it on every delta is
+ * the other half of the quadratic cost: the parse itself is O(document), so a
+ * 36 KB render was reparsed thousands of times (0.9 ms each at the end) even
+ * though most deltas cannot complete a node. Parse when a bit more has
+ * arrived — a fraction of the document, so early nodes still appear at once
+ * and later ones arrive in a few batches — and the same rule decides when the
+ * store is rebuilt: a quarter more nodes, or a chunk of a growing node.
+ */
+const PARSE_STEP = 48;
+const PARSE_FRACTION = 24;
+const NODE_GROWTH = 0.25;
+const TEXT_CHUNK = 256;
+/** A bigger surface costs more to rebuild, so it settles for coarser text updates. */
+const TEXT_CHUNK_PER_NODE = 8;
+
+/**
  * Feed argument deltas for one tool call. vak_render is applied
- * progressively (each node as soon as its id and type are complete);
- * other tools apply once on `end()`.
+ * progressively (nodes as they complete, batched — see above); other tools
+ * apply once on `end()`.
  */
 export class ToolCallStream {
   readonly tool: string;
   private store: SurfaceStore;
   private text = "";
-  private lastSignature = "";
   private surface?: string;
   private select: (root: unknown) => unknown;
+  private parsedBytes = 0;
+  private appliedNodes = 0;
+  private appliedBytes = 0;
 
   /**
    * `select` picks the tool arguments out of the streamed document, for when
@@ -42,6 +60,10 @@ export class ToolCallStream {
   push(delta: string): StreamTick {
     this.text += delta;
     if (this.tool !== TOOL_RENDER) return { changed: false };
+    if (this.text.length - this.parsedBytes < Math.max(PARSE_STEP, this.parsedBytes / PARSE_FRACTION)) {
+      return { surface: this.surface, changed: false };
+    }
+    this.parsedBytes = this.text.length;
     const r = parsePartial(this.text);
     const args = this.select(r.value);
     if (args === null || typeof args !== "object" || Array.isArray(args)) return { changed: false };
@@ -56,10 +78,11 @@ export class ToolCallStream {
     });
     if (nodes.length === 0) return { surface: a.surface, changed: false };
 
-    // Only re-apply when something visible moved: node count or text length.
-    const signature = `${nodes.length}:${this.text.length}`;
-    if (signature === this.lastSignature) return { surface: a.surface, changed: false };
-    this.lastSignature = signature;
+    const moreNodes = nodes.length >= this.appliedNodes + Math.max(1, Math.floor(this.appliedNodes * NODE_GROWTH));
+    const moreText = this.text.length - this.appliedBytes >= TEXT_CHUNK + TEXT_CHUNK_PER_NODE * nodes.length;
+    if (!moreNodes && !moreText) return { surface: a.surface, changed: false };
+    this.appliedNodes = nodes.length;
+    this.appliedBytes = this.text.length;
     this.surface = a.surface;
     this.store.render(
       { surface: a.surface, title: typeof a.title === "string" ? a.title : undefined, nodes: nodes as never, data: a.data as never },

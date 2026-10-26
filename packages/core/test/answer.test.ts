@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type AgendaItem, actOn, agenda, answerSchema, fillAnswer, question, readBack, readModelAnswer, resolveAnswer, spokenDate, spokenNumbers } from "../src/answer.ts";
+import { type AgendaItem, type AnswerOption, actOn, agenda, answerSchema, fillAnswer, pickOption, question, readBack, readModelAnswer, readSpoken, resolveAnswer, spokenDate, spokenNumbers } from "../src/answer.ts";
 import { basicCatalog } from "../src/basic-catalog.ts";
 import { SurfaceStore } from "../src/surface.ts";
 
@@ -212,4 +212,29 @@ test("answers in the other languages read aloud, with negation always winning", 
   assert.equal(r(write, "oui"), "unknown", "a change still needs its word in any language");
   assert.equal(r(write, "oui, write"), "yes");
   assert.ok(AGREEMENT_WORDS.has("oui") && AGREEMENT_WORDS.has("ja") && !AGREEMENT_WORDS.has("write"));
+});
+
+test("a comparison uses a value from any option, not only the first one's keys", () => {
+  // A model writing a table often gives the first row only what it must
+  // ("size") and later rows the value that decides the comparison ("price").
+  const options: AnswerOption[] = [
+    { label: "Studio", source: "", values: { size: "40 m²" } },
+    { label: "Loft", source: "", values: { price: "€1,200" } },
+    { label: "House", source: "", values: { price: "€980" } },
+  ];
+  assert.deepEqual(pickOption(options, "the cheapest"), { kind: "choose", index: 2 });
+  assert.deepEqual(pickOption(options, "the most expensive"), { kind: "choose", index: 1 });
+});
+
+test("numbers are read the way their locale writes them", () => {
+  const options = (prices: string[]): AnswerOption[] => prices.map((price, i) => ({ label: `Option ${i + 1}`, source: "", values: { price } }));
+  // Grouping dot and decimal comma: 1,234.56 — not 1.23456, and 12,50 is not 1250.
+  const locale = options(["1.234,56", "12,50", "1,200"]);
+  assert.deepEqual(pickOption(locale, "cheapest"), { kind: "choose", index: 1 });
+  assert.deepEqual(pickOption(locale, "most expensive"), { kind: "choose", index: 0 });
+  // A form field takes the same reading.
+  const field = { key: "amount", bindPath: "/s/amount", type: "input", label: "Amount", required: false, checks: [], kind: "number" };
+  assert.deepEqual(readSpoken(field, "1.234,56"), { value: 1234.56 });
+  assert.deepEqual(readSpoken(field, "12,50"), { value: 12.5 });
+  assert.deepEqual(readSpoken(field, "1,234"), { value: 1234 });
 });

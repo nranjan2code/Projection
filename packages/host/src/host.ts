@@ -15,7 +15,7 @@
 //   GET  /api/sessions/<id>              one conversation: timeline + surfaces
 //   DELETE /api/sessions/<id>, POST /api/reset
 
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { appendFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
@@ -220,8 +220,39 @@ function sameSecret(given: string, expected: string): boolean {
 const MAX_LOADED = 24;
 
 const safeId = (id: string) => id.replace(/[^\w-]/g, "_").slice(0, 120) || "default";
+
+/**
+ * A session id as a file name. Replacing unsafe characters alone is lossy:
+ * `x/y` and `x_y` are two chats and would share one file, so opening the
+ * second would show the first one's messages and deleting one would delete
+ * the other. An id that is already a safe file name keeps it verbatim (saved
+ * chats stay where they were); anything else gets a hash of the full id, so
+ * distinct ids never map to the same file.
+ */
+function fileFor(id: string): string {
+  const safe = safeId(id);
+  if (safe === id && id.length <= 120) return safe;
+  return `${safe.slice(0, 96)}-${createHash("sha256").update(id).digest("hex").slice(0, 12)}`;
+}
+
+/** Where ids that needed a hash were saved before that, so old chats still open. */
+const legacyFileFor = (id: string) => safeId(id);
+
 const now = () => new Date().toISOString();
 const titleOf = (text: string) => (text.length > 60 ? `${text.slice(0, 57).trimEnd()}…` : text);
+
+/**
+ * What a saved chat keeps of a tool's result: that it ran, not what it said.
+ * SECURITY.md promises tool output stays out of saved chats, and it is data
+ * from outside (a fetched page, a file, an API) that may hold a token or
+ * someone's details. The message stays a tool message with its call id, so a
+ * reloaded history is still a valid tool_call/tool_result pair for the
+ * provider; only the text is replaced. The live session keeps the real output.
+ */
+const SAVED_TOOL_OUTPUT = "[tool output not saved]";
+function savedMessages(messages: readonly Message[]): Message[] {
+  return messages.map((m) => (m.role === "tool" ? { ...m, content: SAVED_TOOL_OUTPUT } : m));
+}
 
 export function createHost(opts: HostOptions): VakHost {
   const catalog = opts.catalog ?? basicCatalog;
@@ -251,7 +282,24 @@ export function createHost(opts: HostOptions): VakHost {
   }
 
   // --- sessions ---------------------------------------------------------------
-  const sessionFile = (id: string) => path.join(opts.sessionsDir!, `${safeId(id)}.json`);
+  const sessionFile = (id: string) => path.join(opts.sessionsDir!, `${fileFor(id)}.json`);
+  const legacySessionFile = (id: string) => path.join(opts.sessionsDir!, `${legacyFileFor(id)}.json`);
+
+  /**
+   * Is the file under an id's plain sanitized name really this chat? It can be
+   * another chat's: `x_y` and `x/y` share that name, and once ids had distinct
+   * files the plain name stayed in use for the chat whose id is safe. The saved
+   * session records its id, so the file itself decides — adopting or deleting
+   * it on the strength of the name alone would show or destroy another chat.
+   */
+  async function legacyOwnedBy(id: string): Promise<boolean> {
+    if (legacySessionFile(id) === sessionFile(id)) return false;
+    try {
+      return (JSON.parse(await readFile(legacySessionFile(id), "utf8")) as SavedSession).id === id;
+    } catch {
+      return false;
+    }
+  }
 
   async function session(id: string): Promise<Session> {
     let s = sessions.get(id);
@@ -265,7 +313,18 @@ export function createHost(opts: HostOptions): VakHost {
     s = { id, title: "New chat", created: at, updated: at, messages: [], timeline: [], store: new SurfaceStore(catalog), viewers: new Set(), external: new Set(), inbox: [], waiters: new Set() };
     if (opts.sessionsDir) {
       try {
-        const saved = JSON.parse(await readFile(sessionFile(id), "utf8")) as SavedSession;
+        let saved: SavedSession | undefined;
+        try {
+          saved = JSON.parse(await readFile(sessionFile(id), "utf8")) as SavedSession;
+        } catch (err) {
+          // An id with a slash (or a very long one) was saved under the plain
+          // sanitized name before files got a hash. Read it, then move it.
+          if ((err as NodeJS.ErrnoException).code !== "ENOENT" || !(await legacyOwnedBy(id))) throw err;
+          saved = JSON.parse(await readFile(legacySessionFile(id), "utf8")) as SavedSession;
+          await writeFile(`${sessionFile(id)}.tmp`, JSON.stringify(saved));
+          await rename(`${sessionFile(id)}.tmp`, sessionFile(id));
+          await rm(legacySessionFile(id), { force: true });
+        }
         Object.assign(s, { title: saved.title, created: saved.created, updated: saved.updated, messages: saved.messages, timeline: saved.timeline, external: new Set(saved.external) });
         for (const snap of saved.surfaces) s.store.load(snap);
       } catch {
@@ -299,7 +358,7 @@ export function createHost(opts: HostOptions): VakHost {
       title: s.title,
       created: s.created,
       updated: s.updated,
-      messages: s.messages,
+      messages: savedMessages(s.messages),
       timeline: keepVersions(s.timeline),
       surfaces: s.store.list().map((st) => s.store.snapshot(st.id)!),
       external: [...s.external],
@@ -362,8 +421,14 @@ export function createHost(opts: HostOptions): VakHost {
     if (opts.sessionsDir) {
       await rm(sessionFile(id), { force: true });
       await rm(`${sessionFile(id)}.tmp`, { force: true });
+      // A chat saved before ids got a hash still lives under the plain name —
+      // unless that file belongs to the chat whose id is the plain name.
+      if (await legacyOwnedBy(id)) {
+        await rm(legacySessionFile(id), { force: true });
+        await rm(`${legacySessionFile(id)}.tmp`, { force: true });
+      }
     }
-    if (opts.transcripts) await rm(path.join(opts.transcripts, `${safeId(id)}.jsonl`), { force: true });
+    if (opts.transcripts) await rm(path.join(opts.transcripts, `${fileFor(id)}.jsonl`), { force: true });
   }
 
   /** Each turn's messages and raw tool calls, per session, for diagnosing model output. */
@@ -373,7 +438,7 @@ export function createHost(opts: HostOptions): VakHost {
       await mkdir(opts.transcripts, { recursive: true });
       const at = now();
       const lines = messages.map((m) => JSON.stringify({ at, role: m.role, content: m.content, toolCalls: m.toolCalls, isError: m.isError }));
-      await appendFile(path.join(opts.transcripts, `${safeId(sessionId)}.jsonl`), lines.map((l) => `${l}\n`).join(""));
+      await appendFile(path.join(opts.transcripts, `${fileFor(sessionId)}.jsonl`), lines.map((l) => `${l}\n`).join(""));
     } catch (err) {
       log(`transcript not written: ${(err as Error).message}`);
     }
@@ -450,37 +515,59 @@ export function createHost(opts: HostOptions): VakHost {
     }
 
     // The capability policy picks how to ask this model; explicit options still win.
-    const planned = await planFor(entry.id, body.model);
-    if (planned.plan) {
-      const { generation, tier, examples, authoring, maxSteps, reasons } = planned.plan;
-      emit({ type: "plan", generation, tier, examples, authoring, maxSteps, reasons });
-    }
-
-    const tools = controls.tools ?? (await opts.tools?.({ session: s.id })) ?? [];
     const started = Date.now();
     const from = s.messages.length - 1;
-    const result = await runAgent({
-      plan: planned.plan,
-      provider: entry.make({ think: Boolean(body.think) }),
-      model: body.model,
-      store: s.store,
-      messages: s.messages,
-      emit,
-      instructions: controls.instructions ?? instructions(),
-      completion: controls.completion,
-      validateCompletion: controls.validateCompletion,
-      validateEdits: controls.validateEdits,
-      maxSteps: controls.maxSteps,
-      toolRounds: controls.toolRounds,
-      maxTokens: controls.maxTokens,
-      schemaMode: body.schemaMode === "strict" ? "strict" : "compact",
-      // Grammar-constrained output cannot call other tools; integrations need tool calling.
-      generation: tools.length || controls.completion === "response" ? "tools" : body.generation === "tools" || body.generation === "constrained" ? body.generation : "auto",
-      tools,
-      effort: body.effort === "low" || body.effort === "medium" || body.effort === "high" ? body.effort : undefined,
-      history: typeof body.history === "number" && body.history > 0 ? body.history : undefined,
-      signal: ctrl.signal,
-    });
+    // Only the part before a finished turn is guarded here: once the model has
+    // run, its events (including run_end) are on the wire, and a failure while
+    // saving must not end the same turn a second time.
+    let result: RunResult;
+    try {
+      const planned = await planFor(entry.id, body.model);
+      if (planned.plan) {
+        const { generation, tier, examples, authoring, maxSteps, reasons } = planned.plan;
+        emit({ type: "plan", generation, tier, examples, authoring, maxSteps, reasons });
+      }
+
+      const tools = controls.tools ?? (await opts.tools?.({ session: s.id })) ?? [];
+      result = await runAgent({
+        plan: planned.plan,
+        provider: entry.make({ think: Boolean(body.think) }),
+        model: body.model,
+        store: s.store,
+        messages: s.messages,
+        emit,
+        instructions: controls.instructions ?? instructions(),
+        completion: controls.completion,
+        validateCompletion: controls.validateCompletion,
+        validateEdits: controls.validateEdits,
+        maxSteps: controls.maxSteps,
+        toolRounds: controls.toolRounds,
+        maxTokens: controls.maxTokens,
+        schemaMode: body.schemaMode === "strict" ? "strict" : "compact",
+        // Grammar-constrained output cannot call other tools; integrations need tool calling.
+        generation: tools.length || controls.completion === "response" ? "tools" : body.generation === "tools" || body.generation === "constrained" ? body.generation : "auto",
+        tools,
+        effort: body.effort === "low" || body.effort === "medium" || body.effort === "high" ? body.effort : undefined,
+        history: typeof body.history === "number" && body.history > 0 ? body.history : undefined,
+        signal: ctrl.signal,
+      });
+    } catch (err) {
+      // A turn can fail before the model is asked: an enabled integration whose
+      // folder was removed (Integrations.source throws "not installed"), a
+      // provider that cannot be constructed, options the caller got wrong.
+      // Every failure ends on the stream. A client that waits for run_end
+      // otherwise hangs on a turn that has already ended.
+      const message = (err as Error).message;
+      log(`[chat] ${entry.id}/${body.model} → failed before the model: ${message}`);
+      emit({ type: "error", message });
+      emit({ type: "run_end", stop: "error" });
+      reply.stop = "error";
+      s.timeline.push(reply);
+      s.updated = now();
+      await record(s.id, s.messages.slice(from));
+      await save(s, broadcast);
+      return { stop: "error" };
+    }
     const secs = ((Date.now() - started) / 1000).toFixed(1);
     log(`[chat] ${entry.id}/${body.model} → ${result.stop} in ${secs}s`);
     if (!reply.error) reply.status = `${entry.id} · ${body.model} · ${secs}s${result.limit === "steps" ? " · step limit" : result.limit === "tools" ? " · tool budget" : ""}`;
@@ -546,6 +633,14 @@ export function createHost(opts: HostOptions): VakHost {
       else for (const viewer of s.viewers) viewer(e);
     };
     try { await executeTurn({ ...body, session: s.id } as HostTurn, s, ctrl, { emit }, false); }
+    catch (err) {
+      // Whatever escaped the turn still ends on the stream, so no client is
+      // left waiting for a run_end that will never come.
+      if (!ended) {
+        emit({ type: "error", message: (err as Error).message });
+        emit({ type: "run_end", stop: "error" });
+      }
+    }
     finally {
       if (s.busy === ctrl) s.busy = undefined;
       s.pending = undefined;

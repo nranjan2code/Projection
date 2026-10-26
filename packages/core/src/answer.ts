@@ -248,6 +248,36 @@ function intent(w: string): Resolution | undefined {
 // ---------------------------------------------------------------------------
 // Resolving
 
+/**
+ * A number as the person who wrote it writes numbers. "¥1,234" is a thousand
+ * and "1.234,56" is one thousand two hundred thirty-four and a half, but a
+ * plain comma rule reads the first as 1.234 and the second as 1.23456; "12,50"
+ * (a decimal comma) becomes 1250. So: when both separators appear the rightmost
+ * is the decimal one and the other groups; a lone comma with one or two digits
+ * after it is a decimal comma, with three it is grouping; several dots group.
+ * Prices written in any locale reach comparisons and form fields this way.
+ */
+function readNumber(said: string): number | undefined {
+  const found = /-?\d[\d.,]*/.exec(said)?.[0];
+  if (!found) return undefined;
+  const negative = found.startsWith("-");
+  const digits = negative ? found.slice(1) : found;
+  const dot = digits.lastIndexOf(".");
+  const comma = digits.lastIndexOf(",");
+  let decimalAt = -1;
+  if (dot >= 0 && comma >= 0) decimalAt = Math.max(dot, comma);
+  else if (comma >= 0) {
+    const parts = digits.split(",");
+    // "12,50" is twelve and a half; "1,234" is a thousand.
+    decimalAt = parts.length === 2 && (parts[1] ?? "").length <= 2 ? comma : -1;
+  } else if (dot >= 0 && digits.indexOf(".") === dot) decimalAt = dot;
+  const whole = decimalAt >= 0 ? digits.slice(0, decimalAt) : digits;
+  const fraction = decimalAt >= 0 ? digits.slice(decimalAt + 1) : "";
+  const value = Number(`${whole.replace(/[.,]/g, "")}${fraction ? `.${fraction.replace(/[.,]/g, "")}` : ""}`);
+  if (!Number.isFinite(value)) return undefined;
+  return negative ? -value : value;
+}
+
 function numeric(v: unknown, dateLike: boolean): number | undefined {
   if (typeof v === "number") return v;
   if (typeof v !== "string") return undefined;
@@ -255,8 +285,7 @@ function numeric(v: unknown, dateLike: boolean): number | undefined {
     const t = Date.parse(v);
     if (!Number.isNaN(t)) return t;
   }
-  const m = /-?\d[\d,]*(?:\.\d+)?/.exec(v);
-  return m ? Number(m[0].replace(/,/g, "")) : undefined;
+  return readNumber(v);
 }
 
 /** Which option an answer names: by comparison, by ordinal, then by the words only that option's label has. */
@@ -270,7 +299,10 @@ export function pickOption(options: readonly AnswerOption[], said: string): Reso
       if (best.length === 1) return { kind: "choose", index: best[0]! };
       continue;
     }
-    const keys = Object.keys(options[0]!.values).filter((k) => c.key!.test(k));
+    // Any option may carry the value that decides the comparison: a later
+    // option can name "total" where the first only has "price" (or the first
+    // has none at all, as with template copies whose values come from data).
+    const keys = [...new Set(options.flatMap((o) => Object.keys(o.values)))].filter((k) => c.key!.test(k));
     for (const key of keys) {
       const dateLike = /date|day|when|start|depart/i.test(key);
       const vals = options.map((o) => numeric(o.values[key], dateLike));
@@ -319,7 +351,7 @@ export function readSpoken(field: FormField, said: string, now = new Date()): { 
     const from = a ? spokenDate(a, now) : undefined, to = b ? spokenDate(b, now) : undefined;
     t = from && to ? `${from} to ${to}` : t;
   } else if (field.type === "date") t = spokenDate(t, now) ?? t;
-  else if (field.kind === "number" || field.kind === "range" || field.kind === "rating") t = /-?\d+(?:\.\d+)?/.exec(spokenNumbers(t).replace(/,/g, ""))?.[0] ?? t;
+  else if (field.kind === "number" || field.kind === "range" || field.kind === "rating") t = String(numeric(spokenNumbers(t), false) ?? t);
   else if (field.kind === "time") t = spokenNumbers(t).replace(/\b(\d{1,2}) (\d{2})\b/, "$1:$2").replace(/\s*o ?clock/i, "");
   else if (field.kind === "email") {
     // "ada at example dot com, I'm a designer": the address is the part around "at"; the rest is other content.

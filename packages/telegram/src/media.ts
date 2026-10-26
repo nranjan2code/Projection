@@ -4,7 +4,7 @@
 // itself must not become a way into the bot host's network (SSRF): only https,
 // only hostnames that resolve exclusively to public addresses.
 
-import { isPublicHttpsUrl } from "@vak/providers";
+import { isPublicHttpsUrl, pinnedFetch } from "@vak/providers";
 
 export { isPublicAddress, isPublicHttpsUrl } from "@vak/providers";
 
@@ -30,7 +30,9 @@ export class MediaVerifier {
     if (!(await isPublicHttpsUrl(url))) return false;
     // No redirects: a redirect could point somewhere the host check never saw.
     const attempt = async (method: "HEAD" | "GET") => {
-      const res = await fetch(url, { method, redirect: "manual", signal: AbortSignal.timeout(this.timeoutMs) });
+      // Dial the address the check resolved (no second DNS answer to swap),
+      // and stop after the headers: the body is a whole image and unused.
+      const res = await pinnedFetch(url, { method, headOnly: true, signal: AbortSignal.timeout(this.timeoutMs) });
       await res.body?.cancel();
       return res;
     };

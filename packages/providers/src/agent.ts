@@ -280,9 +280,14 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
       emit(event);
     },
   };
+  // Options the caller got wrong (an unknown completion policy, "constrained"
+  // on a provider that cannot guarantee it, completion checks without response
+  // completion) are a bug in the app, not a failed run: retrying cannot help,
+  // and reporting {stop:"error"} hides them as model failures. Throw instead,
+  // before the loop starts, so the caller sees the mistake and its stack.
+  const run = resolveRun(opts);
+  const view = historyView(opts);
   try {
-    const run = resolveRun(opts);
-    const view = historyView(opts);
     return run.generation === "constrained" ? await constrainedLoop(opts, run, view, publisher) : await toolsLoop(opts, run, view, publisher);
   } catch (err) {
     if (opts.signal?.aborted) {
