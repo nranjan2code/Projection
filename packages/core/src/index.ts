@@ -15,6 +15,7 @@ export * from "./sse.ts";
 export * from "./text-projector.ts";
 export * from "./markdown.ts";
 export * from "./chat.ts";
+export * from "./answer.ts";
 export * from "./interact.ts";
 export * from "./lower.ts";
 export * from "./markdown-projector.ts";

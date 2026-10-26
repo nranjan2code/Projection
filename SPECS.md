@@ -120,8 +120,11 @@ In MCP there is also `vak_wait_action`.
 | Markdown | `@vak/core` | `projectMarkdown`: GitHub-flavoured; pipe tables, alerts as `> [!NOTE]`; labels escaped |
 | Terminal | `@vak/core` | `projectAnsi`: colour, boxes, width-fitted tables; every escape sequence from model text stripped |
 | Email | `@vak/email` | `projectEmail` → `{subject, html, text}`: one 600 px table column, inline styles; controls become one "Open to respond" link |
+| Answers (voice and any conversational target) | `@vak/core` | `agenda`, `resolveAnswer`, `fillAnswer`, `actOn`: what a surface waits for, answered in words, submitted as the same `VpsAction` a click sends |
 
 Shared chat logic lives in `core/chat.ts`: form fields, reading typed answers, tables and charts as text. Every projector keeps within its platform limits and cuts with a note rather than send something the platform rejects. Model text is always escaped; only `https`/`mailto` links survive.
+
+**Answers (`core/answer.ts`).** A conversational target (voice first) works on meaning, not widgets. `agenda(store, surface)` lists what a surface is waiting for: *decisions* (sibling buttons, a node's declared `choices`, per-item template buttons), each option with its control and the values that tell options apart; and *forms* (a form, or an action whose nearest container holds bound inputs), with `formFields`. Apps add *approvals* in the same shape; the framework never decides one. `resolveAnswer(item, text)` is deterministic: yes/no/cancel/repeat/back words, option names, ordinals, comparisons against declared values ("the cheapest", "the earliest", "the best"), and field values said aloud (number words, relative dates, spoken email). An approval that changes something needs its operation word ("allow the write"); mixed or unclear answers resolve to `unknown`, never to consent. `answerSchema(item)` is the only shape a model may return for an unresolved non-approval answer, and `readModelAnswer` runs it through the same field reading and checks. `fillAnswer` writes values with `setValue`, so every target shows them; `actOn` calls `store.submit`, so a spoken answer and a click produce identical actions. `question` and `readBack` give the spoken text.
 
 ## 6. Telegram bot
 
