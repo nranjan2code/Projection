@@ -439,7 +439,7 @@ export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts
     "- Put values in data and bind them: \"{/path}\" inside any string. A string that is only \"{/path}\" keeps the raw value.",
     "- Repeat a node per list item with children: {\"each\": \"/items\", \"template\": \"tplId\"}; inside the template use relative paths like \"{name}\"; for a list of plain values, \"{.}\" is the item.",
     "- Inputs use bind: \"/form/field\". A form's submit is an action name.",
-    "- Initialize every supplied input value in data at its exact bind path; props.value and placeholders do not initialize a bound control. Preserve numeric values and units exactly; never rescale supplied amounts.",
+    "- Initialize every supplied input value in data at its exact bind path; props.value and placeholders do not initialize a bound control. Preserve numeric values and units exactly; never rescale supplied amounts. Leave unspecified input values blank; do not invent defaults for missing facts or add populated fields the user did not request.",
     "- vak_render replaces the entire surface, including data. For corrections use vak_update with existing surface/node IDs and change only the affected props/data. Omitted fields survive a patch; an explicit empty array replaces a list. Do not create new IDs for retries.",
     "- Separate requested outputs need separate vak_render calls with distinct stable surface IDs. Keep requested source/sample labels visible in the surface title or content.",
     "- Put data in the surface's data field (vak_update: ops, or an object to merge), not inside nodes.",

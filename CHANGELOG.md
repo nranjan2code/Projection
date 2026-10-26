@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-26: unknown input defaults
+
+- Authoring instructions distinguish supplied initial values from missing facts: unknown inputs stay blank and unrequested populated fields must not be invented. A local report passed arithmetic and layout checks but invented a project deadline in an extra field; this prevention rule preserves blank/user-entered controls without synthesizing data.
+
 ## 2026-10-26: correction scope and bounded structural feedback
 
 - Input submission lint follows the same resolved form/action scope as a click. An unrelated or empty sibling form no longer hides stranded inputs; errors name the existing IDs to patch. This also prevents a scope-breaking correction from replacing a usable published form. Exact local file-report edits are retained as regression fixtures; no facts or surfaces are synthesized.

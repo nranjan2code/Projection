@@ -111,3 +111,7 @@ test("inline child objects declare identity; correction children use existing ID
 test("table authoring distinguishes automatic column sums from custom summary rows", () => {
   assert.match(systemPrompt(basicCatalog), /custom summary row.*totals: false/);
 });
+
+test("input guidance leaves unknown facts blank instead of inventing initial values", () => {
+  assert.match(systemPrompt(basicCatalog), /Leave unspecified input values blank/);
+});
