@@ -76,6 +76,11 @@ function lines(node: ResolvedNode, depth: number, out: string[]): void {
       return put(`[${str(p.tone) || "note"}] ${str(p.title)}${p.title && p.body ? ": " : ""}${str(p.body)}`);
     case "image":
       return put(`[Image: ${str(p.alt) || "untitled"}]`);
+    case "media":
+      put(`[${str(p.kind)}: ${str(p.title) || str(p.alt) || "untitled"}]`);
+      if (p.description) put(str(p.description));
+      if (p.transcript) put(str(p.transcript));
+      return;
     case "divider":
       return put("---");
     case "button":

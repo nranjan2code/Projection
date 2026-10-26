@@ -6,7 +6,7 @@
 
 import type { ResolvedNode, ResolvedSurface } from "./surface.ts";
 
-export const LOWERED = new Set(["timeline", "steps", "code", "map", "gallery", "graph", "calendar", "board", "progress", "accordion", "compare", "timer", "tree", "math", "diff", "gantt"]);
+export const LOWERED = new Set(["timeline", "steps", "code", "map", "gallery", "graph", "calendar", "board", "progress", "accordion", "compare", "timer", "tree", "math", "diff", "gantt", "media"]);
 
 const s = (v: unknown) => (v === undefined || v === null ? "" : String(v));
 const items = (p: Record<string, unknown>) => (Array.isArray(p.items) ? p.items : []) as Record<string, unknown>[];
@@ -73,6 +73,11 @@ export function lowerNode(n: ResolvedNode): ResolvedNode {
   const p = n.props;
   const make = (type: string, props: Record<string, unknown>, children: ResolvedNode[] = []): ResolvedNode => ({ ...n, type, props, children });
   switch (n.type) {
+    case "media": {
+      const src = s(p.src);
+      const publicLink = /^https:\/\/[^\s<>"()]+$/.test(src) ? `[Open ${s(p.kind)}](${src})` : "Media is available in the original app.";
+      return make("section", { title: s(p.title) || `${s(p.kind)} ${s(p.alt)}`.trim(), description: [s(p.description), s(p.transcript), publicLink].filter(Boolean).join("\n\n") });
+    }
     case "timeline":
       return make("list", { items: items(p).map((it) => [it.date ? `**${md(it.date)}**` : "", md(it.title), it.description ? `— ${s(it.description)}` : ""].filter(Boolean).join(" ")) });
     case "steps":

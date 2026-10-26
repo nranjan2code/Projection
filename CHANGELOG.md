@@ -1,5 +1,13 @@
 # Changelog
 
+## 2026-10-26: media projection and local playback
+
+- A dedicated `media` component renders images, audio and video with captions and optional transcripts. Audio/video controls are local, keyboard accessible and discoverable through the existing voice agenda; `activate` never sends playback to a model or tool. Text/channel lowering preserves descriptions and transcripts without exposing private asset URIs.
+- Web projectors accept an optional `mediaResolver` for authenticated app resources. Temporary URLs are released when a result changes or leaves the document; moving a live surface into a canvas preserves the player. Playback never starts automatically.
+- The host exposes `project` for trusted callers to publish through the canonical store, persistence and viewer events without a model. Application ownership is checked; trusted publication rejects busy sessions so an app can defer it. The HTTP projection path retains its external-action behavior.
+
+No runtime dependency or existing package-export removal. Core/host tests pass; visual verification is recorded with the consuming app.
+
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 

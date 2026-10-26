@@ -9,6 +9,7 @@ import { type FormField, formFields, readField } from "./chat.ts";
 import { runChecks } from "./checks.ts";
 import { getAt } from "./pointer.ts";
 import { type ResolvedNode, type SubmitResult, type SurfaceStore } from "./surface.ts";
+import { playbackControls, playbackKey } from "./media.ts";
 
 export interface AnswerOption {
   label: string;
@@ -65,6 +66,8 @@ export function agenda(store: SurfaceStore, surfaceId: string): AgendaItem[] {
 
   const visit = (n: ResolvedNode, trail: ResolvedNode[]) => {
     const c = comp(n);
+    const playback = playbackControls(n);
+    if (playback.length) items.push({ kind: "decision", id: `${surfaceId}:${n.key}:playback`, surface: surfaceId, title: text(n.props.title) || undefined, action: "Playback", options: playback.map((p) => ({ label: p.label, source: p.source, values: {} })) });
     if (c?.role === "form") return addForm(n, n);
     if (c?.role === "action") {
       const list = c.choices ? n.props[c.choices] : undefined;
@@ -452,6 +455,7 @@ export function actOn(store: SurfaceStore, item: AgendaItem, index?: number): Su
   if (item.kind === "approval") return { errors: { [item.id]: ["approvals are decided by the app"] } };
   if (item.kind === "form") return store.submit(item.surface, item.source);
   const option = index === undefined ? undefined : item.options[index];
+  if (option && playbackKey(option.source)) return { errors: { [option.source]: ["Playback is a local projector control; use its activate method"] } };
   return option ? store.submit(item.surface, option.source) : { errors: { [item.id]: ["no option chosen"] } };
 }
 

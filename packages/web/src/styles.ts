@@ -4,6 +4,11 @@
 // are fallbacks, so defaults never mask an app wrapper’s branding.
 
 export const surfaceCss = /* css */ `
+.media { margin: 0; display: grid; gap: 10px; min-width: 0; }
+.media img, .media video { display: block; max-width: 100%; max-height: 65vh; object-fit: contain; }
+.media audio { width: 100%; min-width: 0; }
+.media-controls { display: flex; gap: 6px; flex-wrap: wrap; }
+.media-status:empty { display: none; }
 :host {
   --_vak-font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --_vak-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

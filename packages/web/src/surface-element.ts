@@ -14,6 +14,8 @@ import { normalizeGraph, renderGraph } from "./graph.ts";
 import { texToMathML } from "./math.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { surfaceCss } from "./styles.ts";
+import { playbackKey, type PlaybackCommand } from "@vak/core";
+import { renderMedia, type MediaResolver } from "./media.ts";
 
 export interface VakActionDetail {
   action: VpsAction;
@@ -23,6 +25,9 @@ export interface VakActionDetail {
 
 interface Built {
   el: HTMLElement;
+  release?(): void;
+  activate?(command: PlaybackCommand): boolean;
+  pause?(): void;
   /** Where children go, if the component has any. */
   host?: HTMLElement;
   sig: string;
@@ -86,6 +91,8 @@ function options(raw: unknown): Option[] {
 let uid = 0;
 
 export class VakSurfaceElement extends HTMLElement {
+  /** Resolve private assets with application auth; no credential enters surface data. */
+  mediaResolver?: MediaResolver;
   #store?: SurfaceStore;
   #surfaceId?: string;
   #shadow: ShadowRoot;
@@ -124,10 +131,22 @@ export class VakSurfaceElement extends HTMLElement {
    * True when an action was sent.
    */
   activate(key: string): boolean {
+    const playback = playbackKey(key);
+    if (playback) return this.#cache.get(playback.node)?.activate?.(playback.command) ?? false;
     if (this.#busyKey) return false;
     this.#act(key);
     return this.#busyKey === key;
   }
+
+  /** Barge-in can quiet media through the same local controls. */
+  pauseMedia(): void { for (const built of this.#cache.values()) built.pause?.(); }
+
+  disconnectedCallback(): void {
+    // Moving a live surface into the canvas must preserve its playback state.
+    queueMicrotask(() => { if (!this.isConnected) { for (const built of this.#cache.values()) built.release?.(); this.#cache.clear(); } });
+  }
+
+  connectedCallback(): void { this.refresh(); }
 
   /** The action owner finished, rejected or queued the submission without a surface update. */
   releaseAction(): void {
@@ -162,6 +181,8 @@ export class VakSurfaceElement extends HTMLElement {
     if (!store || !id) return;
     const surface = store.resolve(id);
     if (!surface) {
+      for (const built of this.#cache.values()) built.release?.();
+      this.#cache.clear();
       reconcile(this.#rootEl, []);
       return;
     }
@@ -177,7 +198,7 @@ export class VakSurfaceElement extends HTMLElement {
     const live = new Set<string>();
     if (surface.root) els.push(this.#node(surface.root, live));
     reconcile(this.#rootEl, els);
-    for (const key of this.#cache.keys()) if (!live.has(key) && key !== "$title") this.#cache.delete(key);
+    for (const key of this.#cache.keys()) if (!live.has(key) && key !== "$title") { this.#cache.get(key)?.release?.(); this.#cache.delete(key); }
   }
 
   #node(node: ResolvedNode, live: Set<string>): HTMLElement {
@@ -193,6 +214,7 @@ export class VakSurfaceElement extends HTMLElement {
     ]);
     let built = this.#cache.get(node.key);
     if (!built || built.sig !== sig) {
+      built?.release?.();
       built = { ...this.#build(node), sig };
       const { span, priority } = node.props;
       if (span !== undefined) built.el.classList.add(span === "full" || Number(span) >= 5 ? "span-full" : `span-${Math.max(1, Math.min(4, Number(span) || 1))}`);
@@ -513,6 +535,8 @@ export class VakSurfaceElement extends HTMLElement {
         el.append(body);
         return { el };
       }
+      case "media":
+        return renderMedia(node, this.mediaResolver);
       case "image": {
         const img = h("img", "image");
         if (typeof p.src === "string" && /^(https?:|data:image\/)/.test(p.src)) img.src = p.src;

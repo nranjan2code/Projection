@@ -159,6 +159,8 @@ export interface HostRunOptions {
 }
 
 export interface VakHost {
+  /** Publish through the canonical store, persistence and viewer events. No model work. */
+  project(input: { session: string; tool?: string; args: Record<string, unknown>; external?: boolean }): Promise<{ diagnostics: ReturnType<SurfaceStore["apply"]>; surface: string; text: string; viewers: number; url?: string }>;
   /** Runs on the canonical session/store, independent of any UI connection. Busy sessions reject. */
   run(input: HostTurn, options?: HostRunOptions): Promise<RunResult>;
   /** A detached copy of the canonical view; never exposes mutable session internals. */
@@ -678,15 +680,16 @@ export function createHost(opts: HostOptions): VakHost {
   }
 
   // --- outside agents ---------------------------------------------------------
-  async function handleProject(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const body = await readJson(req);
+  async function project(body: { session: string; tool?: string; args: Record<string, unknown>; external?: boolean }) {
     const sessionId = String(body.session ?? "default");
-    if (detached.has(sessionId) || opts.allowSessionMutation?.(sessionId) === false) return json(res, 409, { error: "session is managed by another execution owner" });
+    if (detached.has(sessionId) || opts.allowSessionMutation?.(sessionId) === false) throw new Error("session is managed by another execution owner");
     const s = await session(sessionId);
+    if (s.busy && body.external === false) throw new Error("session is busy");
     const tool = String(body.tool ?? "vak_render");
+    if (!["vak_render", "vak_update", "vak_remove"].includes(tool)) throw new Error("unknown projection tool");
     const diagnostics = s.store.apply(tool, body.args ?? {});
     const id = String((body.args as { surface?: unknown } | undefined)?.surface ?? "main");
-    s.external.add(id);
+    if (body.external !== false) s.external.add(id);
     const snap = s.store.snapshot(id);
     if (snap && !s.timeline.some((t) => t.kind === "assistant" && t.surfaces.includes(id))) {
       if (!s.timeline.length) s.title = snap.title ?? id;
@@ -697,15 +700,21 @@ export function createHost(opts: HostOptions): VakHost {
     const event: AgentEvent = snap ? { type: "surface", snapshot: snap } : { type: "surface_removed", id };
     for (const v of s.viewers) v(event);
     const resolved = s.store.resolve(id);
-    json(res, 200, {
-      result: formatDiagnostics(diagnostics),
+    return {
       diagnostics,
       viewers: s.viewers.size,
       surface: id,
       // What the user sees, so the caller can verify its own output.
       text: resolved ? projectText(resolved) : "",
       url: opts.viewerUrl?.(sessionId),
-    });
+    };
+  }
+  async function handleProject(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const body = await readJson(req);
+    try {
+      const result = await project({ session: String(body.session ?? "default"), tool: body.tool, args: body.args ?? {} });
+      json(res, 200, { ...result, result: formatDiagnostics(result.diagnostics) });
+    } catch (err) { json(res, 409, { error: (err as Error).message }); }
   }
 
   async function handleActions(res: ServerResponse, url: URL): Promise<void> {
@@ -795,6 +804,7 @@ export function createHost(opts: HostOptions): VakHost {
 
   return {
     run,
+    project,
     view,
     remove: dropSession,
     approve,

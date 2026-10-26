@@ -8,6 +8,21 @@ import { readSse, type SurfaceSnapshot } from "@vak/core";
 import { ProfileCache, type Provider, type ProviderEntry, type ProviderEvent } from "@vak/providers";
 import { createHost, keepVersions, type HostOptions, type SessionSummary, type SessionView, type VakHost } from "@vak/host";
 
+test("trusted projection uses canonical persistence and respects execution ownership without a model", async () => {
+  const { host, server, dir } = await serve({ allowSessionMutation: (id) => id !== "owned" });
+  try {
+    const input = { session: "media", external: false, args: { surface: "clip", nodes: [{ id: "root", type: "media", props: { kind: "audio", src: "media:asset", title: "Narration" } }] } };
+    const result = await host.project(input);
+    assert.deepEqual(result.diagnostics, []);
+    assert.match(result.text, /Narration/);
+    assert.equal((await host.view("media")).surfaces[0]!.id, "clip");
+    const reloaded = createHost({ providers: () => [], profiles: new ProfileCache(path.join(dir, "models.json")), instructions: "", sessionsDir: path.join(dir, "sessions") });
+    assert.equal((await reloaded.view("media")).surfaces[0]!.nodes[0]!.props!.src, "media:asset");
+    await assert.rejects(host.project({ ...input, session: "owned" }), /execution owner/);
+    await assert.rejects(host.project({ ...input, tool: "run_command" }), /unknown projection tool/);
+  } finally { server.close(); }
+});
+
 /** A provider that says one sentence and renders one surface (a clean projection ends the turn). */
 function scripted(): Provider {
   return {

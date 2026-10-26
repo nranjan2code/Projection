@@ -759,6 +759,12 @@ export const basicCatalog = defineCatalog(
       props: props({ src: str({ description: "url", aliases: ["url", "href", "source", "image"] }), alt: str({ aliases: ["caption", "title", "description"] }) }, ["src"]),
       aliases: ["img", "picture", "photo", "figure"],
     },
+    media: {
+      description: "An image, audio recording or video with its description and optional transcript. Audio/video have local playback controls.",
+      hint: "Use a supplied asset URI; never invent a generated file or autoplay it. Describe the asset; a transcript is optional. Playback does not call the model.",
+      props: props({ kind: oneOf(["image", "audio", "video"]), src: str({ description: "Supplied public URL or app-resolved asset URI", aliases: ["url", "source"] }), title: str(), description: str(), transcript: str(), alt: str() }, ["kind", "src"]),
+      aliases: [{ name: "audio", props: { kind: "audio" } }, { name: "video", props: { kind: "video" } }],
+    },
     divider: { description: "Separator line.", props: props({}), tier: "extended", aliases: ["hr", "separator", "rule"] },
     // Richer components (web draws them; other targets get them lowered to
     // lists, text and images by lower.ts). Extended tier: small models keep

@@ -27,6 +27,8 @@ In MCP there is also `vak_wait_action`.
 
 ## 2. Catalog: the single source of truth
 
+Media results use `media {kind: image|audio|video, src, title?, description?, transcript?, alt?}`. The web target supplies local playback controls for audio/video, the voice agenda identifies their activation keys, and text/channel targets lower the content to descriptions and a public link where available. `mediaResolver` is an optional web-element callback for app-owned authenticated resources; credentials never belong in `src`. Playback is not a submitted agent action. Trusted apps can call `host.project` to publish on the canonical session after execution is idle; normal ownership and persistence apply.
+
 `packages/core/src/basic-catalog.ts` defines 26 components with JSON Schema props and vak extensions (timeline, steps, code, map and gallery are extended tier, lowered to basic components for targets that don't draw them: `core/lower.ts`):
 - `aliases`, `enumAliases`, `default`, `format: "markdown"`, `pattern`
 - `literal` on a prop preserves embedded source braces through normalization, lint and resolution; a whole-value binding still loads source from data (used by `code.code`)
