@@ -48,6 +48,8 @@ export interface SessionSummary {
   updated: string;
   /** Lightweight discovery: no messages, surface data or form values. */
   surfaceSummaries?: SurfaceSummary[];
+  /** A turn is running (it keeps running with no window attached). */
+  running?: boolean;
 }
 
 export interface SurfaceSummary { id: string; title?: string; types: string[] }
@@ -59,6 +61,8 @@ function surfaceSummary(s: { id: string; title?: string }, nodes: Iterable<{ typ
 export interface SessionView extends SessionSummary {
   timeline: TimelineEntry[];
   surfaces: SurfaceSnapshot[];
+  /** The reply so far of the running turn, so a reopened chat shows it at once. */
+  pending?: { text: string; surfaces: string[] };
 }
 
 export interface HostOptions {
@@ -101,6 +105,8 @@ interface Session {
   timeline: TimelineEntry[];
   store: SurfaceStore;
   busy?: AbortController;
+  /** The running turn's reply so far. */
+  pending?: Extract<TimelineEntry, { kind: "assistant" }>;
   /** Live viewers (GET /api/events) for projections pushed via /api/project. */
   viewers: Set<(e: AgentEvent) => void>;
   /** Surfaces owned by an outside caller: their actions queue here instead of running the model. */
@@ -337,6 +343,7 @@ export function createHost(opts: HostOptions): VakHost {
     for (const s of sessions.values()) if (s.timeline.length) out.set(s.id, {
       id: s.id, title: s.title, updated: s.updated,
       surfaceSummaries: s.store.list().map((st) => surfaceSummary(st, st.nodes.values())),
+      ...(s.busy ? { running: true } : {}),
     });
     return [...out.values()].sort((a, b) => b.updated.localeCompare(a.updated));
   }
@@ -380,6 +387,7 @@ export function createHost(opts: HostOptions): VakHost {
     if (!entry?.available) throw new Error(`provider ${body.provider} unavailable`);
     if (!body.model) throw new Error("model required");
     const reply: Extract<TimelineEntry, { kind: "assistant" }> = { kind: "assistant", text: "", surfaces: [], notes: [], status: "", at: now() };
+    s.pending = reply;
     const emit = (e: AgentEvent) => {
       // The timeline mirrors what the client draws, so a reopened chat looks the same.
       if (e.type === "text_delta") reply.text += e.delta;
@@ -476,6 +484,7 @@ export function createHost(opts: HostOptions): VakHost {
     try { return await executeTurn(input, s, ctrl, controls, true); }
     finally {
       if (detached.get(s.id) === ctrl) detached.delete(s.id);
+      s.pending = undefined;
       controls.signal?.removeEventListener("abort", abort);
       if (s.busy === ctrl) s.busy = undefined;
     }
@@ -483,7 +492,10 @@ export function createHost(opts: HostOptions): VakHost {
 
   async function view(id: string): Promise<SessionView> {
     const s = await session(id);
-    return structuredClone({ id: s.id, title: s.title, updated: s.updated, timeline: s.timeline, surfaces: s.store.list().map((st) => s.store.snapshot(st.id)!) });
+    return structuredClone({
+      id: s.id, title: s.title, updated: s.updated, timeline: s.timeline, surfaces: s.store.list().map((st) => s.store.snapshot(st.id)!),
+      ...(s.busy ? { running: true, ...(s.pending ? { pending: { text: s.pending.text, surfaces: s.pending.surfaces } } : {}) } : {}),
+    });
   }
 
   async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<void> {
@@ -497,12 +509,24 @@ export function createHost(opts: HostOptions): VakHost {
     s.busy?.abort();
     const ctrl = new AbortController();
     s.busy = ctrl;
-    res.on("close", () => { if (!res.writableFinished) ctrl.abort(); });
+    // The window that started the turn may leave (another chat, a closed
+    // window): the turn keeps running and its events go to the chat's viewers
+    // (/api/events) instead. Stopping is explicit: POST /api/sessions/:id/stop.
+    let attached = true, ended = false;
+    res.on("close", () => { if (!res.writableFinished) attached = false; });
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-    try { await executeTurn({ ...body, session: s.id } as HostTurn, s, ctrl, { emit: (e) => { res.write(encodeSse(e)); } }, false); }
+    const emit = (e: AgentEvent) => {
+      if (e.type === "run_end") ended = true;
+      if (attached) res.write(encodeSse(e));
+      else for (const viewer of s.viewers) viewer(e);
+    };
+    try { await executeTurn({ ...body, session: s.id } as HostTurn, s, ctrl, { emit }, false); }
     finally {
       if (s.busy === ctrl) s.busy = undefined;
+      s.pending = undefined;
       res.end();
+      // Viewers learn the chat changed (title, timeline) when the turn ends.
+      if (!attached && !ended) for (const viewer of s.viewers) viewer({ type: "run_end", stop: ctrl.signal.aborted ? "aborted" : "error" });
     }
   }
 
@@ -702,7 +726,11 @@ export function createHost(opts: HostOptions): VakHost {
         else if (p.startsWith("/api/sessions/")) {
           const id = decodeURIComponent(p.slice("/api/sessions/".length));
           if (m !== "GET" && opts.allowSessionMutation?.(id) === false) { json(res, 409, { error: "session is managed by another execution owner" }); return true; }
-          if (m === "DELETE") {
+          if (m === "POST" && id.endsWith("/stop")) {
+            const busy = sessions.get(id.slice(0, -"/stop".length))?.busy;
+            busy?.abort();
+            json(res, 200, { stopped: Boolean(busy) });
+          } else if (m === "DELETE") {
             if (sessions.get(id)?.busy) { json(res, 409, { error: "session already running" }); return true; }
             await dropSession(id);
             json(res, 200, { ok: true });

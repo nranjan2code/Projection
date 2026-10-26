@@ -331,3 +331,83 @@ test("trusted session removal deletes its transcript without deleting other sess
     assert.equal((await host.view("keep-me")).surfaces.length, 1);
   } finally { server.close(); }
 });
+
+/** Says a word, waits for `gate`, then renders: a turn the test can hold open. */
+function gated(gate: Promise<void>, signals: AbortSignal[] = []): Provider {
+  return {
+    id: "scripted",
+    async describeModel() {
+      return { tools: true, fingerprint: "test", source: "test" };
+    },
+    async *stream(req): AsyncGenerator<ProviderEvent> {
+      if (req.signal) signals.push(req.signal);
+      yield { type: "text", delta: "Working " };
+      await Promise.race([gate, new Promise((_, reject) => req.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true }))]);
+      const args = JSON.stringify({ surface: "kpi", nodes: [{ id: "root", type: "stat", props: { label: "Revenue", value: "$1M" } }] });
+      yield { type: "tool_start", id: "c1", name: "vak_render" };
+      yield { type: "tool_args", id: "c1", delta: args };
+      yield { type: "tool_end", id: "c1" };
+      yield { type: "done", stop: "tool_use" };
+    },
+  };
+}
+
+test("a chat turn outlives the window that started it; viewers follow it; stop is explicit", async () => {
+  let open!: () => void;
+  const gate = new Promise<void>((r) => (open = r));
+  const { base, server } = await serve({}, gated(gate));
+  try {
+    // The window starts a turn, reads the first words, then leaves (switches chat).
+    const ctrl = new AbortController();
+    const res = await fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session: "bg", provider: "scripted", model: "m", message: "Show revenue" }), signal: ctrl.signal });
+    const reader = readSse(res.body!)[Symbol.asyncIterator]();
+    while ((await reader.next()).value?.event !== "text_delta");
+    ctrl.abort();
+    await new Promise((r) => setTimeout(r, 50));
+    const mid = (await (await fetch(`${base}/api/sessions/bg`)).json()) as SessionView;
+    assert.equal(mid.running, true);
+    assert.equal(mid.pending?.text, "Working ");
+    assert.equal(((await (await fetch(`${base}/api/sessions`)).json()) as SessionSummary[]).find((s) => s.id === "bg")?.running, true);
+    // Coming back: a viewer sees the rest of the turn.
+    const events = await fetch(`${base}/api/events?session=bg`);
+    const seen: string[] = [];
+    const follow = (async () => { for await (const m of readSse(events.body!)) { seen.push(m.event ?? ""); if (m.event === "run_end") return; } })();
+    await new Promise((r) => setTimeout(r, 50));
+    open();
+    await follow;
+    assert.ok(seen.includes("surface") && seen.includes("run_end"), seen.join(","));
+    // run_end is sent just before the turn is saved and released.
+    let done = (await (await fetch(`${base}/api/sessions/bg`)).json()) as SessionView;
+    for (let i = 0; done.running && i < 50; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+      done = (await (await fetch(`${base}/api/sessions/bg`)).json()) as SessionView;
+    }
+    assert.equal(done.running, undefined);
+    assert.equal(done.surfaces.length, 1);
+    assert.match((done.timeline.at(-1) as { text: string }).text, /Working/);
+  } finally {
+    server.close();
+  }
+});
+
+test("POST /api/sessions/:id/stop cancels a running turn", async () => {
+  const signals: AbortSignal[] = [];
+  const { base, server } = await serve({}, gated(new Promise(() => {}), signals));
+  try {
+    const res = await fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session: "st", provider: "scripted", model: "m", message: "Hi" }) });
+    const reader = readSse(res.body!)[Symbol.asyncIterator]();
+    while ((await reader.next()).value?.event !== "text_delta");
+    assert.deepEqual(await (await fetch(`${base}/api/sessions/st/stop`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json(), { stopped: true });
+    for (let r = await reader.next(); !r.done; r = await reader.next());
+    assert.equal(signals[0]?.aborted, true);
+    let view = (await (await fetch(`${base}/api/sessions/st`)).json()) as SessionView;
+    for (let i = 0; view.running && i < 50; i++) {
+      await new Promise((r) => setTimeout(r, 10));
+      view = (await (await fetch(`${base}/api/sessions/st`)).json()) as SessionView;
+    }
+    assert.equal(view.running, undefined);
+    assert.deepEqual(await (await fetch(`${base}/api/sessions/st/stop`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" })).json(), { stopped: false });
+  } finally {
+    server.close();
+  }
+});

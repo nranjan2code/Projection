@@ -3,6 +3,13 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: chat turns keep running in the background
+
+- A `/api/chat` turn no longer stops when the window that started it disconnects (the user opened another chat, the window closed). Its events go to the chat's viewers (`/api/events`) instead; if it ends unseen, viewers still get a `run_end`. Several chats can run at once, one turn per chat, as scheduled tasks already could.
+- Stopping is explicit: `POST /api/sessions/:id/stop` (`{stopped}`).
+- `SessionSummary.running` and `SessionView.running` say a turn is in progress, and `SessionView.pending` carries its reply so far (`{text, surfaces}`), so a reopened chat shows the work at once and follows the rest live.
+- **Behaviour change:** clients that relied on closing the stream to cancel must call the stop endpoint. 269 tests pass.
+
 ## 2026-10-26: pick buttons on comparisons
 
 - `compare` takes `action` (and `actionLabel`, `payload`): each option gets its own button that sends the action with `{option: <name>}`. "Compare hotels and let me book one" can now answer with a comparison instead of cards.
