@@ -94,6 +94,7 @@ In MCP there is also `vak_wait_action`.
   - `constrained`: grammar-decoded `{reply, render}`.
 
   A clean projection ends the turn. Compact prompts include nested field schemas and enums. Explicitly requested catalog components have their exact props contract repeated after the examples, using only types available to the model; source, captions, units and ordering must be preserved.
+- **Rejected tool syntax:** providers may throw `ToolGenerationError` when generated tool syntax is rejected before any usable output. Tool runs can correct it within their existing step budget only before any text/tool call was streamed, with a fresh provider invocation so caller admission/accounting applies again. Ollama classifies only its HTTP 500 generated-tool XML syntax rejection. No automatic replay of prior operations or retry of unrelated errors; failed-generation token usage remains unknown without provider measurements.
 - **History window** (`history: N`): the model sees the last N turns (a turn starts at a typed message or a `[ui action]`, so a tool call never loses its result). The window's first message carries a note with each surface still shown: id, title, text view and data. The full history stays saved. Default: everything (bench and replay gate unchanged).
 - **Plan** (`policy.ts`) is `{ generation, tier, examples, authoring, maxSteps }`, each choice with a reason.
   - Declared facts set the default; for tool calling that's `authoring: "inline"`.

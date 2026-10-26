@@ -3,6 +3,12 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: bounded recovery from rejected tool syntax
+
+- Ollama's HTTP 500 generated-tool XML syntax rejection becomes a public `ToolGenerationError`. The tool runner retries only before receiving text or a tool call; partial streams, cancellation and unrelated HTTP failures still stop normally. Each retry starts a new provider invocation through existing admission/accounting wrappers and consumes the existing step/time/request limits. There is no adapter-level retry or replay of prior calls.
+- Recovery feedback preserves prior tool receipts and asks for one well-formed call at a time. Failed generations have unknown token usage when the provider supplies none; request admission still counts them. This does not fix combined outputs, missing values or semantic correctness.
+- 248 tests (including the replay gate) and typecheck pass. Five new tests replay the exact local comparison error and cover classification, bounded retries, preserved receipts, partial-stream refusal, cancellation and ordinary failures.
+
 ## 2026-10-26: application completion checks and MCP result observation
 
 - Opt-in response runs accept a trusted `validateCompletion` callback over read-only snapshots/resolved output and final response. Failed checks feed bounded repair messages into the same run; rejected prose is retained privately for diagnosis, not published as a final answer. Existing step limits/cancellation still apply; default clients are unchanged.

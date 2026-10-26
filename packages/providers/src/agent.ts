@@ -32,7 +32,7 @@ import {
   type VpsAction,
 } from "@vak/core";
 import type { ProjectionPlan } from "./policy.ts";
-import type { ChatRequest, Message, Provider, ToolCall, ToolSpec } from "./types.ts";
+import { ToolGenerationError, type ChatRequest, type Message, type Provider, type ToolCall, type ToolSpec } from "./types.ts";
 
 export interface AgentTool {
   spec: ToolSpec;
@@ -358,45 +358,53 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
     const byId = new Map<string, (typeof calls)[number]>();
     let native: unknown;
 
-    for await (const ev of opts.provider.stream({
-      model: opts.model,
-      system,
-      messages: view(),
-      tools,
-      maxTokens: run.maxTokens,
-      effort: opts.effort,
-      extra: opts.extra,
-      signal: opts.signal,
-    })) {
-      switch (ev.type) {
-        case "text":
-          text += ev.delta;
-          if (!opts.validateCompletion) emit({ type: "text_delta", delta: ev.delta });
-          break;
-        case "tool_start": {
-          const call = { id: ev.id, name: ev.name, arguments: "", stream: VAK_TOOLS.has(ev.name) ? new ToolCallStream(store, ev.name) : undefined };
-          calls.push(call);
-          byId.set(ev.id, call);
-          emit({ type: "tool_start", id: ev.id, name: ev.name });
-          break;
-        }
-        case "tool_args": {
-          const call = byId.get(ev.id);
-          if (!call) break;
-          call.arguments += ev.delta;
-          const tick = call.stream?.push(ev.delta);
-          if (tick?.changed && tick.surface) {
-            const snap = publisher.streaming(tick.surface);
-            if (snap) emit({ type: "surface", snapshot: snap });
+    try {
+      for await (const ev of opts.provider.stream({
+        model: opts.model,
+        system,
+        messages: view(),
+        tools,
+        maxTokens: run.maxTokens,
+        effort: opts.effort,
+        extra: opts.extra,
+        signal: opts.signal,
+      })) {
+        switch (ev.type) {
+          case "text":
+            text += ev.delta;
+            if (!opts.validateCompletion) emit({ type: "text_delta", delta: ev.delta });
+            break;
+          case "tool_start": {
+            const call = { id: ev.id, name: ev.name, arguments: "", stream: VAK_TOOLS.has(ev.name) ? new ToolCallStream(store, ev.name) : undefined };
+            calls.push(call);
+            byId.set(ev.id, call);
+            emit({ type: "tool_start", id: ev.id, name: ev.name });
+            break;
           }
-          break;
+          case "tool_args": {
+            const call = byId.get(ev.id);
+            if (!call) break;
+            call.arguments += ev.delta;
+            const tick = call.stream?.push(ev.delta);
+            if (tick?.changed && tick.surface) {
+              const snap = publisher.streaming(tick.surface);
+              if (snap) emit({ type: "surface", snapshot: snap });
+            }
+            break;
+          }
+          case "done":
+            lastStop = ev.stop;
+            native = ev.native;
+            usage = addUsage(usage, ev.usage);
+            break;
         }
-        case "done":
-          lastStop = ev.stop;
-          native = ev.native;
-          usage = addUsage(usage, ev.usage);
-          break;
       }
+    } catch (err) {
+      // Retry rejected tool syntax as a fresh counted generation, never replay a
+      // partially streamed call (which may already have changed a surface).
+      if (!(err instanceof ToolGenerationError) || opts.signal?.aborted || calls.length || text) throw err;
+      opts.messages.push({ role: "user", content: "[engine] The provider rejected the generated tool-call syntax before returning any call. No tool was executed from that generation. Try again with a well-formed call, one tool call at a time, and only its declared arguments. Previously completed tool operations must not be repeated." });
+      continue;
     }
 
     opts.messages.push({

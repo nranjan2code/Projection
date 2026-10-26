@@ -6,6 +6,8 @@ Wrapped-list binding repair added 2026-10-26 from real local-agent research: kno
 
 Application completion checks and MCP result observation added 2026-10-26: trusted in-process callbacks support bounded same-run correction and real tool-result evidence; rejected final prose is withheld. Default behavior unchanged. 243 tests and typecheck pass.
 
+Rejected tool-syntax recovery added 2026-10-26: Ollama's HTTP 500 generated-tool XML parser rejection is typed as `ToolGenerationError`. Tool runs retry only before any text/call, through the same bounded loop and provider admission. Prior tool receipts remain; partial streams, cancellation and other errors do not replay. 248 tests/replay gate and typecheck pass. This closes a premature-abort cause, not output authoring or factual correctness; Vakyartha evaluates the affected local comparison separately and retains the results in its EVALUATION.md.
+
 Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](SPECS.md).
 
 ## Handover prompt (paste into a new session)

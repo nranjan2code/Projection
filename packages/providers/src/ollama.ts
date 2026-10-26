@@ -4,7 +4,7 @@
 
 import { toWireSchema, type Usage } from "@vak/core";
 import { getJson, postJson, readNdjson } from "./http.ts";
-import { type ChatRequest, type Message, type ModelFacts, parseParameterSize, type Provider, ProviderError, type ProviderEvent, type StopReason } from "./types.ts";
+import { type ChatRequest, type Message, type ModelFacts, parseParameterSize, type Provider, ProviderError, ToolGenerationError, type ProviderEvent, type StopReason } from "./types.ts";
 
 export interface OllamaOptions {
   host?: string;
@@ -85,7 +85,22 @@ export function ollama(opts: OllamaOptions = {}): Provider {
         keep_alive: "30m",
         ...extra,
       };
-      const res = await postJson("ollama", `${host}/api/chat`, {}, body, req.signal, 0);
+      let res: Response;
+      try {
+        res = await postJson("ollama", `${host}/api/chat`, {}, body, req.signal, 0);
+      } catch (err) {
+        // The local comparison transcript hit Ollama's generated-tool XML parser.
+        // Classify only that rejection; the runner owns retries and their budgets.
+        if (req.tools?.length && err instanceof ProviderError && err.status === 500) {
+          const prefix = "ollama: HTTP 500: ";
+          let detail: unknown;
+          try { detail = JSON.parse(err.message.slice(prefix.length)).error; } catch {}
+          if (typeof detail === "string" && /^XML syntax error on line \d+:/.test(detail)) {
+            throw new ToolGenerationError("ollama", `HTTP 500: ${JSON.stringify({ error: detail })}`, 500);
+          }
+        }
+        throw err;
+      }
 
       let stop: StopReason = "end";
       let usage: Usage | undefined;

@@ -108,3 +108,6 @@ export class ProviderError extends Error {
     this.status = status;
   }
 }
+
+/** The provider rejected generated tool syntax before returning any usable call. */
+export class ToolGenerationError extends ProviderError {}
