@@ -74,7 +74,7 @@ test("completion feedback identifies existing surfaces so a correction patch pre
       assert.deepEqual(inventory, [{ id: "chosen-by-author", root: "form" }]);
       assert.match(feedback, /vak_update with existing surface\/node IDs/);
       yield { type: "tool_start", id: "patch", name: "vak_update" };
-      yield { type: "tool_args", id: "patch", delta: JSON.stringify({ surface: inventory[0].id, nodes: [{ id: "limit", props: { label: "Updated limit" } }] }) };
+      yield { type: "tool_args", id: "patch", delta: JSON.stringify({ surface: inventory[0]!.id, nodes: [{ id: "limit", props: { label: "Updated limit" } }] }) };
       yield { type: "tool_end", id: "patch" }; yield { type: "done", stop: "tool_use" }; return;
     }
     yield { type: "text", delta: "Ready" }; yield { type: "done", stop: "end" };
