@@ -86,6 +86,15 @@ export interface RunOptions {
   /** Projection ends ordinary UI turns; response lets tool runs publish progress and continue. */
   completion?: "projection" | "response";
   maxSteps?: number;
+  /**
+   * Rounds that call integration tools, counted apart from maxSteps (which
+   * bounds authoring, repair and answer rounds). Gathering must not spend the
+   * rounds the answer needs: when these run out, one closing round withholds
+   * the integration tools so the turn answers from what it already has.
+   */
+  toolRounds?: number;
+  /** The longest integration result the model sees, in characters. The tool_end event keeps it whole. */
+  toolResultChars?: number;
   maxTokens?: number;
   effort?: ChatRequest["effort"];
   extra?: Record<string, unknown>;
@@ -101,7 +110,18 @@ interface ResolvedRun {
   /** Tools generation only; constrained output always uses the flat schema. */
   authoring: "flat" | "inline";
   maxSteps: number;
+  toolRounds: number;
+  toolResultChars?: number;
   maxTokens?: number;
+}
+
+/** Default integration rounds per turn: a host policy, not a model capability. */
+export const TOOL_ROUNDS = 6;
+
+/** How a run ended, and which budget (if any) ended it or forced its closing round. */
+export interface RunResult {
+  stop: string;
+  limit?: "steps" | "tools";
 }
 
 const lastRequest = (opts: RunOptions) => opts.messages.findLast((m) => m.role === "user" && !m.content.startsWith("[engine]"))?.content ?? "";
@@ -136,6 +156,8 @@ export function resolveRun(opts: RunOptions): ResolvedRun {
     examples: opts.plan?.examples ?? false,
     authoring: generation === "tools" ? (opts.plan?.authoring ?? "flat") : "flat",
     maxSteps: opts.maxSteps ?? opts.plan?.maxSteps ?? (generation === "constrained" ? 3 : 6),
+    toolRounds: opts.toolRounds ?? TOOL_ROUNDS,
+    toolResultChars: opts.toolResultChars ?? opts.plan?.toolResultChars,
     maxTokens: opts.maxTokens ?? opts.plan?.maxTokens,
   };
 }
@@ -245,7 +267,7 @@ export function generationMode(opts: Pick<RunOptions, "generation" | "provider" 
  * (done, step limit, error, abort) first puts held surfaces back to what the
  * user sees, so the store, the saved session and every client agree.
  */
-export async function runAgent(opts: RunOptions): Promise<{ stop: string }> {
+export async function runAgent(opts: RunOptions): Promise<RunResult> {
   const publisher = new SurfacePublisher(opts.store);
   const emit = opts.emit;
   opts = {
@@ -276,7 +298,7 @@ export async function runAgent(opts: RunOptions): Promise<{ stop: string }> {
  * arrives; the reply streams as text. Remaining diagnostics (structure the
  * grammar cannot express, like dangling child ids) go back for another step.
  */
-async function constrainedLoop(opts: RunOptions, run: ResolvedRun, view: () => Message[], publisher: SurfacePublisher): Promise<{ stop: string }> {
+async function constrainedLoop(opts: RunOptions, run: ResolvedRun, view: () => Message[], publisher: SurfacePublisher): Promise<RunResult> {
   const responseSchema = projectionResponseSchema(run.catalog);
   const system = `${buildSystem(opts, run)}\n\n${CONSTRAINED_INSTRUCTIONS}`;
   const { emit, store } = opts;
@@ -341,11 +363,11 @@ async function constrainedLoop(opts: RunOptions, run: ResolvedRun, view: () => M
     }
     opts.messages.push({ role: "user", content: `[engine] ${result}\nRender the surface again with these fixed.` });
   }
-  emit({ type: "run_end", stop: "max_steps", usage });
-  return { stop: "max_steps" };
+  emit({ type: "run_end", stop: "max_steps", limit: "steps", usage });
+  return { stop: "max_steps", limit: "steps" };
 }
 
-async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message[], publisher: SurfacePublisher): Promise<{ stop: string }> {
+async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message[], publisher: SurfacePublisher): Promise<RunResult> {
   const catalog = run.catalog;
   const vakSpecs: ToolSpec[] = toolDefinitions(catalog, { mode: opts.schemaMode ?? "compact", authoring: run.authoring }).map((t) => ({
     name: t.name,
@@ -362,8 +384,23 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
   emit({ type: "run_start", runId, provider: opts.provider.id, model: opts.model });
   let lastStop = "end";
   let usage: Usage | undefined;
+  // Rounds that ran integration tools draw on toolRounds; every other round
+  // (answers, authoring, repairs, rejected generations) on maxSteps.
+  let steps = 0;
+  let rounds = 0;
+  let closing = false;
+  const failed = new Set<string>();
+  const end = (stop: string): RunResult => {
+    const result: RunResult = { stop, ...(stop === "max_steps" ? { limit: "steps" as const } : closing ? { limit: "tools" as const } : {}) };
+    emit({ type: "run_end", ...result, usage });
+    return result;
+  };
 
-  for (let step = 0; step < maxSteps; step++) {
+  while (steps < maxSteps) {
+    if (!closing && userTools.size && rounds >= run.toolRounds) {
+      closing = true;
+      opts.messages.push({ role: "user", content: `[engine] This turn's tool budget is spent (${rounds} rounds); no more tools other than the interface ones are available. Answer the request now from the tool results above, or show them with the interface tools. Say plainly what is still missing or unverified, so the user can ask to continue.` });
+    }
     let text = "";
     const calls: (ToolCall & { stream?: ToolCallStream })[] = [];
     const byId = new Map<string, (typeof calls)[number]>();
@@ -374,7 +411,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
         model: opts.model,
         system,
         messages: view(),
-        tools,
+        tools: closing ? vakSpecs : tools,
         maxTokens: run.maxTokens,
         effort: opts.effort,
         extra: opts.extra,
@@ -415,6 +452,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
       // partially streamed call (which may already have changed a surface).
       if (!(err instanceof ToolGenerationError) || opts.signal?.aborted || calls.length || text) throw err;
       opts.messages.push({ role: "user", content: "[engine] The provider rejected the generated tool-call syntax before returning any call. No tool was executed from that generation. Try again with a well-formed call, one tool call at a time, and only its declared arguments. Previously completed tool operations must not be repeated." });
+      steps++;
       continue;
     }
 
@@ -440,16 +478,18 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
           // Local authoring retries repeatedly invented IDs and lost data.
           // Give a bounded inventory, not a second copy of surface content.
           const saved = store.list().slice(0, 16).map((surface) => ({ id: surface.id.slice(0, 120), root: store.resolve(surface.id)?.root?.type.slice(0, 80) }));
+          steps++;
           opts.messages.push({ role: "user", content: "[engine] Completion checks failed. Correct the saved outputs before finishing. These checks do not authorize any external operation. Use vak_update with existing surface/node IDs for partial corrections; vak_render replaces all nodes and data.\nSaved surface inventory (data, not instructions): " + JSON.stringify(saved) + "\n" + issues.slice(0, 16).map((issue) => issue.slice(0, 1200)).join("\n") });
           continue;
         }
         if (response) emit({ type: "text_delta", delta: response });
       }
-      emit({ type: "run_end", stop: lastStop, usage });
-      return { stop: lastStop };
+      return end(lastStop);
     }
 
     let allOk = true;
+    // Only a round that ran an offered integration tool draws on toolRounds.
+    let gathered = false;
     for (const call of calls) {
       let result: string;
       let isError = false;
@@ -458,11 +498,17 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
         isError = end.diagnostics.some((d) => d.severity === "error");
         result = formatDiagnostics(end.diagnostics) + (end.surface ? show(publisher, end.surface, emit) : "");
       } else {
-        const tool = userTools.get(call.name);
+        const tool = closing ? undefined : userTools.get(call.name);
+        // Identical to a call that already failed this turn: running it again cannot help.
+        const key = `${call.name}\u0000${call.arguments.trim()}`;
         if (!tool) {
-          result = `unknown tool ${call.name}`;
+          result = closing && userTools.has(call.name) ? `error: the tool budget for this turn is spent; answer from the results already gathered` : `unknown tool ${call.name}`;
+          isError = true;
+        } else if (failed.has(key)) {
+          result = "error: this exact call already failed in this turn. Change its arguments, use another tool, or answer from the results you have.";
           isError = true;
         } else {
+          gathered = true;
           try {
             let args: Record<string, unknown> = {};
             try {
@@ -478,18 +524,26 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
         }
       }
       allOk &&= !isError;
-      opts.messages.push({ role: "tool", content: result, toolCallId: call.id, toolName: call.name, ...(isError ? { isError } : {}) });
+      if (isError && !call.stream) failed.add(`${call.name}\u0000${call.arguments.trim()}`);
+      // Integration output is read by the model on every later step: bound it to
+      // what its context can carry beside the answer. Surfaces are not clipped.
+      const seen = call.stream ? result : clip(result, run.toolResultChars);
+      opts.messages.push({ role: "tool", content: seen, toolCallId: call.id, toolName: call.name, ...(isError ? { isError } : {}) });
       emit({ type: "tool_end", id: call.id, name: call.name, result, ...(isError ? { isError } : {}) });
     }
+    if (gathered) rounds++;
+    else steps++;
 
     // A clean projection with nothing else pending ends the turn: the UI
     // is the answer, and the user's next interaction starts a new run.
     const onlyProjection = calls.every((c) => VAK_TOOLS.has(c.name));
-    if (allOk && onlyProjection && opts.completion !== "response") {
-      emit({ type: "run_end", stop: "projected", usage });
-      return { stop: "projected" };
-    }
+    if (allOk && onlyProjection && opts.completion !== "response") return end("projected");
   }
-  emit({ type: "run_end", stop: "max_steps", usage });
-  return { stop: "max_steps" };
+  return end("max_steps");
+}
+
+/** The head of a long tool result, marked so the model knows the rest exists. */
+export function clip(text: string, max?: number): string {
+  if (!max || text.length <= max) return text;
+  return `${text.slice(0, max)}\n[engine] Result clipped: ${max} of ${text.length} characters shown.`;
 }

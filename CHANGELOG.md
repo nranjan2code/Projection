@@ -3,6 +3,14 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: integration rounds get their own budget and a closing answer
+
+- Rounds that run integration tools draw on `toolRounds` (`RunOptions`, `HostRunOptions`; default `TOOL_ROUNDS` = 6, a host policy), no longer on `maxSteps`, which now bounds answer, authoring and repair rounds. A small model doing research could spend every step gathering and end the turn with no reply.
+- When `toolRounds` runs out, one closing round withholds the integration tools (interface tools stay) and asks for an answer from the gathered results.
+- `run_end` and the run result carry `limit` (`"steps"` or `"tools"`): the budget that ended the run or forced its closing round. The host records `stop` and `limit` on the timeline entry and accepts `continue: true` to carry on a turn without a new user message.
+- Integration results the model sees are clipped to `toolResultChars` (the plan sets an eighth of the context window); `tool_end` keeps them whole. An identical call that already failed in the turn is not run again.
+- **Behaviour change:** tool-heavy runs can make up to `maxSteps + toolRounds` model requests; hosts with a total request cap set `toolRounds` below it. 274 tests pass.
+
 ## 2026-10-26: chat turns keep running in the background
 
 - A `/api/chat` turn no longer stops when the window that started it disconnects (the user opened another chat, the window closed). Its events go to the chat's viewers (`/api/events`) instead; if it ends unseen, viewers still get a `run_end`. Several chats can run at once, one turn per chat, as scheduled tasks already could.

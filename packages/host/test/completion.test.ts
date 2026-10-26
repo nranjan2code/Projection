@@ -26,3 +26,24 @@ test("public host response completion preserves multiple publications in one can
     assert.equal(requests, 1);
   } finally { await rm(dir, { recursive: true, force: true }); }
 });
+
+test("a turn ended by a budget is recorded as such and continues without a new user message", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "vak-host-continue-"));
+  const seen: string[] = [];
+  const provider: Provider = { id: "scripted", async describeModel() { return { tools: true, fingerprint: "test", source: "test" }; }, async *stream(req) {
+    seen.push(String(req.messages.at(-1)?.content ?? ""));
+    yield { type: "tool_start", id: `v${seen.length}`, name: "vak_render" };
+    yield { type: "tool_args", id: `v${seen.length}`, delta: "{" };
+    yield { type: "done", stop: "tool_use" };
+  } };
+  const host = createHost({ providers: () => [{ id: "scripted", label: "Scripted", available: true, make: () => provider }], profiles: new ProfileCache(path.join(dir, "profiles.json")), sessionsDir: dir, instructions: "test", log: () => {} });
+  try {
+    assert.deepEqual(await host.run({ session: "c", provider: "scripted", model: "m", message: "Work" }, { maxSteps: 1 }), { stop: "max_steps", limit: "steps" });
+    const first = (await host.view("c")).timeline.at(-1);
+    assert.ok(first?.kind === "assistant" && first.stop === "max_steps" && first.limit === "steps");
+    await host.run({ session: "c", provider: "scripted", model: "m", continue: true }, { maxSteps: 1 });
+    const timeline = (await host.view("c")).timeline;
+    assert.deepEqual(timeline.map((t) => t.kind), ["user", "assistant", "assistant"]);
+    assert.match(seen.at(-1)!, /^\[engine\] The user asked to continue/);
+  } finally { await rm(dir, { recursive: true, force: true }); }
+});

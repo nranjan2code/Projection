@@ -16,6 +16,8 @@ export interface ModelProfile {
 export interface ProjectionPlan extends ProjectionConfig {
   maxSteps: number;
   maxTokens?: number;
+  /** The longest integration result the model sees, from its context window. */
+  toolResultChars?: number;
   /** Why each choice was made, for display. */
   reasons: string[];
 }
@@ -35,6 +37,19 @@ export const SMALL_CONTEXT = 16_000;
 const rate = (r: ConfigResult, k: "valid" | "complete") => (r.runs ? r[k] / r.runs : 0);
 
 export function choosePlan(profile: ModelProfile, ctx: { userTools?: boolean } = {}): ProjectionPlan {
+  const plan = chooseConfig(profile, ctx);
+  const ctxWindow = profile.facts.contextWindow;
+  if (ctxWindow === undefined) return plan;
+  // Several results stay in view while the model answers: each gets at most an
+  // eighth of the window (about four characters a token).
+  const toolResultChars = Math.floor((ctxWindow * CHARS_PER_TOKEN) / RESULTS_IN_VIEW);
+  return { ...plan, toolResultChars, reasons: [...plan.reasons, `${ctxWindow}-token context: tool results up to ${toolResultChars} characters`] };
+}
+
+const CHARS_PER_TOKEN = 4;
+const RESULTS_IN_VIEW = 8;
+
+function chooseConfig(profile: ModelProfile, ctx: { userTools?: boolean }): ProjectionPlan {
   const reasons: string[] = [];
   const canTools = profile.facts.tools !== false;
   const canConstrained = profile.constrainedOutput && !ctx.userTools;

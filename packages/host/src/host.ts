@@ -34,13 +34,14 @@ import {
   type ProviderEntry,
   resolveProfile,
   runAgent,
+  type RunResult,
 } from "@vak/providers";
 
 /** What a UI needs to redraw a conversation: one entry per bubble. */
 export type TimelineEntry =
   | { kind: "user"; text: string; at: string }
   | { kind: "action"; action: string; at: string }
-  | { kind: "assistant"; text: string; surfaces: string[]; notes: { name: string; result: string }[]; status: string; error?: boolean; at: string; used?: { name: string; ok: boolean }[] };
+  | { kind: "assistant"; text: string; surfaces: string[]; notes: { name: string; result: string }[]; status: string; error?: boolean; at: string; used?: { name: string; ok: boolean }[]; stop?: string; limit?: "steps" | "tools" };
 
 export interface SessionSummary {
   id: string;
@@ -133,6 +134,8 @@ export interface HostTurn {
   model: string;
   message?: string;
   action?: { surface: string; source: string; data: Record<string, unknown> };
+  /** Carry on the chat's last turn (one a budget ended) with no new user message. */
+  continue?: boolean;
   think?: boolean;
   schemaMode?: string;
   generation?: string;
@@ -148,12 +151,14 @@ export interface HostRunOptions {
   tools?: AgentTool[];
   instructions?: string;
   maxSteps?: number;
+  /** Integration rounds per turn (default TOOL_ROUNDS), apart from maxSteps. */
+  toolRounds?: number;
   maxTokens?: number;
 }
 
 export interface VakHost {
   /** Runs on the canonical session/store, independent of any UI connection. Busy sessions reject. */
-  run(input: HostTurn, options?: HostRunOptions): Promise<{ stop: string }>;
+  run(input: HostTurn, options?: HostRunOptions): Promise<RunResult>;
   /** A detached copy of the canonical view; never exposes mutable session internals. */
   view(id: string): Promise<SessionView>;
   /** Delete an idle session and its raw transcript; running sessions must be stopped first. */
@@ -382,7 +387,7 @@ export function createHost(opts: HostOptions): VakHost {
   }
 
   // --- chat -------------------------------------------------------------------
-  async function executeTurn(body: HostTurn, s: Session, ctrl: AbortController, controls: HostRunOptions, broadcast: boolean): Promise<{ stop: string }> {
+  async function executeTurn(body: HostTurn, s: Session, ctrl: AbortController, controls: HostRunOptions, broadcast: boolean): Promise<RunResult> {
     const entry = provider(body.provider);
     if (!entry?.available) throw new Error(`provider ${body.provider} unavailable`);
     if (!body.model) throw new Error("model required");
@@ -421,6 +426,13 @@ export function createHost(opts: HostOptions): VakHost {
         return { stop: "delivered" };
       }
       s.messages.push(actionMessage(result.action));
+    } else if (body.continue === true) {
+      // Engine feedback continues the current turn rather than starting one, so the history window keeps its results.
+      if (!s.messages.length) {
+        emit({ type: "error", message: "nothing to continue" });
+        return { stop: "error" };
+      }
+      s.messages.push({ role: "user", content: "[engine] The user asked to continue. Carry on from the results above toward the original request; repeat a tool call only if its result is missing." });
     } else {
       const text = String(body.message ?? "").trim();
       if (!text) {
@@ -453,6 +465,7 @@ export function createHost(opts: HostOptions): VakHost {
       completion: controls.completion,
       validateCompletion: controls.validateCompletion,
       maxSteps: controls.maxSteps,
+      toolRounds: controls.toolRounds,
       maxTokens: controls.maxTokens,
       schemaMode: body.schemaMode === "strict" ? "strict" : "compact",
       // Grammar-constrained output cannot call other tools; integrations need tool calling.
@@ -464,7 +477,9 @@ export function createHost(opts: HostOptions): VakHost {
     });
     const secs = ((Date.now() - started) / 1000).toFixed(1);
     log(`[chat] ${entry.id}/${body.model} → ${result.stop} in ${secs}s`);
-    if (!reply.error) reply.status = `${entry.id} · ${body.model} · ${secs}s${result.stop === "max_steps" ? " · step limit" : ""}`;
+    if (!reply.error) reply.status = `${entry.id} · ${body.model} · ${secs}s${result.limit === "steps" ? " · step limit" : result.limit === "tools" ? " · tool budget" : ""}`;
+    reply.stop = result.stop;
+    if (result.limit) reply.limit = result.limit;
     s.timeline.push(reply);
     s.updated = now();
     await record(s.id, s.messages.slice(from));
@@ -472,7 +487,7 @@ export function createHost(opts: HostOptions): VakHost {
     return result;
   }
 
-  async function run(input: HostTurn, controls: HostRunOptions = {}): Promise<{ stop: string }> {
+  async function run(input: HostTurn, controls: HostRunOptions = {}): Promise<RunResult> {
     const s = await session(input.session);
     if (s.busy) throw new Error("session already running");
     const ctrl = new AbortController();

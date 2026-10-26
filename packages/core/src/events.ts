@@ -33,7 +33,8 @@ export type AgentEvent =
    */
   | { type: "approval"; id: string; tool: string; server: string; title: string; args: unknown; reason?: string }
   | { type: "approval_done"; id: string; decision: "allow" | "deny" }
-  | { type: "run_end"; stop: string; usage?: Usage }
+  /** limit: the budget that ended the run (steps) or forced its closing round (tools); such a turn can be continued. */
+  | { type: "run_end"; stop: string; limit?: "steps" | "tools"; usage?: Usage }
   | { type: "error"; message: string };
 
 /** Encode one event as a Server-Sent Events frame. */
