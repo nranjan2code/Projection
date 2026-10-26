@@ -1,3 +1,5 @@
+Edit-batch constraints (2026-10-26): opt-in public `validateEdits` on agent/host supplies bounded caller contract issues after each surface edit batch, before the next correction. Raw research task `eb3be4b1` showed component-only input diagnostics leading to a form inside evidence, while app completion validation had not run yet. Exact first edits now verify both feedback sources reach the next request; malformed callback results fail closed. 285 tests/replay gate and typecheck pass. Apps must opt in and still use final completion checks; no automatic acceptance or external authority.
+
 Cyclic-layout repair (2026-10-26): raw calls from Vakyartha local task `1c82b092` replayed as `root → stack_2 → root`, with no diagnostics before this change. Structural repair now removes ancestor child/template references without changing valid table content. Resolver recursion protection remains; lint also diagnoses residual resolved cycles. 283 tests/replay gate and typecheck pass. Fixture and tests live in `packages/core/test/surface-cycle.test.ts`. App consumption requires pushed pin update; theme/card code untouched.
 
 # HANDOVER.md: state of work (2026-10-25)

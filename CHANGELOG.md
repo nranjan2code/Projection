@@ -3,6 +3,11 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: caller constraints during surface correction
+
+- Optional public `validateEdits` on `runAgent` and host execution checks canonical surface snapshots after each surface-edit batch. Bounded issue feedback accompanies component diagnostics before the next generation, preserving the same budgets and final completion validation. The callback cannot accept work or change external authority; malformed decisions fail closed. Existing clients are unchanged.
+- Raw local research edits reproduced a correction that added a second form to an evidence surface while trying to satisfy component input lint. A replay regression verifies that caller constraints reach the next correction alongside those diagnostics. 285 tests/replay gate and typecheck pass; no dependencies or renderer changes.
+
 ## 2026-10-26: cyclic layout edges
 
 - A recorded inline layout referred back to its root from a descendant wrapper. Structural repair now removes only ancestor child/template edges, preserving valid nodes, table data and list instances. The resolver retains its recursion guard and lint reports any remaining resolved cycle for correction. No renderer or public API changes.

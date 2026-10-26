@@ -23,6 +23,7 @@ import { basicCatalog, type AgentEvent, type Catalog, encodeSse, formatDiagnosti
 import {
   actionMessage,
   type CompletionCheck,
+  type SurfaceCheck,
   calibrate,
   CALIBRATION_CASES,
   choosePlan,
@@ -145,6 +146,7 @@ export interface HostTurn {
 
 export interface HostRunOptions {
   validateCompletion?: CompletionCheck;
+  validateEdits?: SurfaceCheck;
   completion?: "projection" | "response";
   signal?: AbortSignal;
   emit?: (event: AgentEvent) => void;
@@ -464,6 +466,7 @@ export function createHost(opts: HostOptions): VakHost {
       instructions: controls.instructions ?? instructions(),
       completion: controls.completion,
       validateCompletion: controls.validateCompletion,
+      validateEdits: controls.validateEdits,
       maxSteps: controls.maxSteps,
       toolRounds: controls.toolRounds,
       maxTokens: controls.maxTokens,

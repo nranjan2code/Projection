@@ -43,10 +43,13 @@ export interface AgentTool {
 
 export type CompletionDecision = readonly string[] | { issues: readonly string[]; response?: string };
 export type CompletionCheck = (result: { surfaces: readonly SurfaceSnapshot[]; resolved: readonly ResolvedSurface[]; response: string }) => CompletionDecision | Promise<CompletionDecision>;
+export type SurfaceCheck = (result: { surfaces: readonly SurfaceSnapshot[]; resolved: readonly ResolvedSurface[] }) => readonly string[] | Promise<readonly string[]>;
 
 export interface RunOptions {
   /** Trusted application check; rejected prose stays private, feedback stays in this bounded run. */
   validateCompletion?: CompletionCheck;
+  /** Trusted constraints after each surface-edit batch; no extra generation or acceptance. */
+  validateEdits?: SurfaceCheck;
   provider: Provider;
   model: string;
   store: SurfaceStore;
@@ -530,6 +533,14 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
       const seen = call.stream ? result : clip(result, run.toolResultChars);
       opts.messages.push({ role: "tool", content: seen, toolCallId: call.id, toolName: call.name, ...(isError ? { isError } : {}) });
       emit({ type: "tool_end", id: call.id, name: call.name, result, ...(isError ? { isError } : {}) });
+    }
+    // Recorded task corrections followed component lint into a layout that
+    // contradicted the caller's contract. Supply both before the next edit,
+    // rather than waiting until the model eventually attempts a final answer.
+    if (opts.validateEdits && calls.some((call) => call.stream)) {
+      const issues: unknown = await opts.validateEdits({ surfaces: store.list().map((surface) => store.snapshot(surface.id)!), resolved: store.list().map((surface) => store.resolve(surface.id)).filter((surface): surface is ResolvedSurface => Boolean(surface)).map((surface) => structuredClone(surface)) });
+      if (!Array.isArray(issues) || issues.some((issue) => typeof issue !== "string")) throw new Error("Invalid surface-check result");
+      if (issues.length) opts.messages.push({ role: "user", content: "[engine] Current output constraints after this edit batch. Address these together with component diagnostics; preserve valid content and separate surfaces. Use vak_update on existing node IDs for partial corrections. These checks grant no authority for external operations.\n" + issues.slice(0, 16).map((issue) => issue.slice(0, 1200)).join("\n") });
     }
     if (gathered) rounds++;
     else steps++;
