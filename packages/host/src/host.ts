@@ -359,7 +359,10 @@ export function createHost(opts: HostOptions): VakHost {
     if (sessions.get(id)?.busy) throw new Error("stop the running session before deleting it");
     sessions.delete(id);
     (await summaries()).delete(id);
-    if (opts.sessionsDir) await rm(sessionFile(id), { force: true });
+    if (opts.sessionsDir) {
+      await rm(sessionFile(id), { force: true });
+      await rm(`${sessionFile(id)}.tmp`, { force: true });
+    }
     if (opts.transcripts) await rm(path.join(opts.transcripts, `${safeId(id)}.jsonl`), { force: true });
   }
 

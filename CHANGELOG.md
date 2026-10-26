@@ -3,6 +3,10 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: scoped session cleanup
+
+- Trusted session removal also removes its abandoned atomic-write temporary file. The canonical session and diagnostic transcript are still removed without touching other sessions. The existing scoped deletion regression now covers temporary content too; 287 tests/replay gate and typecheck pass.
+
 ## 2026-10-26: serialized list members
 
 - Schema-declared array props recover valid sibling settings written after a list inside its JSON string. The existing parser reads the owning object; only declared, type-valid siblings are accepted, and explicit settings win. Literal source and ordinary scalar row data are unchanged. This prevents a trailing table setting from becoming an extra displayed row.
