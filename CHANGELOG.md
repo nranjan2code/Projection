@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-26: referenced pointer keys in surface data
+
+- A root data key containing a full JSON pointer is expanded to its nested path only when that exact path is explicitly referenced by a control or whole-value binding and the nested target is missing. This follows retained local output with `data["/criteria/budget"]` rather than nested data. Values move unchanged; explicit nested values, conflicting pointer prefixes, unsafe paths and unrelated literal/source keys stay untouched. Tests cover display/submission, patches, conflicts and prototype safety.
+
 ## 2026-10-26: schema-constrained tool batches
 
 - Opt-in `toolEncoding: constrained|auto|native` on the agent/host decodes a typed `{reply,calls}` batch through providers advertising constrained output, then uses the existing tool dispatcher. This closes the gap where strict native tool schemas were only guidance and local corrections kept serializing malformed nested trees. Surface calls use flat, component-typed nodes and child IDs; multiple independent surfaces and integration calls remain possible.

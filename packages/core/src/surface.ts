@@ -421,6 +421,7 @@ export class SurfaceStore {
       ...this.dropSelfTemplates(state),
       ...this.fillMissingTemplates(state),
       ...this.bindInputNames(state),
+      ...this.expandReferencedDataPointers(state),
       ...this.bindWrappedLists(state),
       ...this.dropCyclicChildren(state),
       ...this.dropEmptyContainers(state),
@@ -625,6 +626,28 @@ export class SurfaceStore {
     for (const node of state.nodes.values()) {
       if (inTemplate.has(node.id) || !node.props || node.props.bind !== undefined) continue;
       node.props = rewrite(node.props, node.id, propsSchema(this.catalog, node.type)) as Record<string, unknown>;
+    }
+    return diags;
+  }
+
+  /** Recorded file reports used full JSON pointers as top-level data keys.
+   * Expand only referenced, missing targets; explicit nested data and unrelated
+   * literal keys win. Values are moved unchanged, never derived from prose. */
+  private expandReferencedDataPointers(state: SurfaceState): Diagnostic[] {
+    const paths = new Set<string>();
+    for (const node of state.nodes.values()) {
+      if (typeof node.props?.bind === "string") paths.add(node.props.bind);
+      for (const value of Object.values(node.props ?? {})) if (isBinding(value)) paths.add((value as string).slice(1, -1));
+    }
+    const keys = [...paths].filter((path) => path.startsWith("/") && parsePointer(path).length > 0 && Object.hasOwn(state.data, path) && state.data[path] !== undefined && getAt(state.data, path) === undefined);
+    const diags: Diagnostic[] = [];
+    for (const path of keys) {
+      if (keys.some((other) => other !== path && (path.startsWith(other + "/") || other.startsWith(path + "/")))) continue;
+      const data = structuredClone(state.data);
+      if (!setAt(data, path, data[path])) continue;
+      delete data[path];
+      state.data = data;
+      diags.push({ severity: "warning", surface: state.id, message: `data key ${JSON.stringify(path)} is a referenced missing pointer; moved its unchanged value into the nested data path` });
     }
     return diags;
   }
