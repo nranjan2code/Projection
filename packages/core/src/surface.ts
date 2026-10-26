@@ -1280,6 +1280,14 @@ export class SurfaceStore {
     }
     if (Object.keys(errors).length) return { errors };
     if (!name) return { errors: { [sourceId]: ["control has no action"] } };
+    // A button repeated per item ("Choose" on each card) that a model wrote
+    // without a payload naming its item reaches the model as {action} alone:
+    // it cannot tell which card was chosen. The item's own heading names it.
+    if (!["name", "id", "title", "option", "item"].some((k) => k in data)) {
+      const copy = findTrail(resolved.root!, source.key)?.slice(0, -1).reverse().find((n) => n.key.includes("#"));
+      const label = copy ? [copy, ...copy.children].map((n) => n.props.title ?? n.props.name ?? n.props.label ?? n.props.content).find((v) => typeof v === "string" && v.trim()) : undefined;
+      if (typeof label === "string") data.item = label.trim();
+    }
     return {
       errors,
       action: { action: name, surface: surfaceId, source: source.id, ...(target ? { target } : {}), data },

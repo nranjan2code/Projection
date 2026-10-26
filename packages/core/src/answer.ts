@@ -126,17 +126,43 @@ export function answerWords(s: string): string {
 }
 const has = (w: string, phrases: readonly string[]) => phrases.some((p) => ` ${w} `.includes(` ${p} `));
 
-const YES = ["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "confirm", "confirmed", "correct", "right", "go ahead", "do it", "please do", "sounds good", "thats right", "allow", "approve", "agreed", "fine"];
-const NO = ["no", "nope", "dont", "do not", "not", "never", "decline", "deny", "reject", "refuse"];
-const CANCEL = ["cancel", "never mind", "nevermind", "forget it", "stop"];
-const REPEAT = ["repeat", "say again", "say that again", "again", "pardon", "what was that"];
-const BACK = ["back", "go back", "previous", "undo"];
-const ORDINALS = ["first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth", "tenth"];
+// One list across the languages read aloud (en, fr, de, es, it, pt, nl): people
+// mix them ("ok, la deuxième"), and none of these words means something else
+// in another of them. Negations are many and win over agreement (see intent),
+// so "ne l'autorise pas" is never consent. Words are as answerWords leaves
+// them: lower case, no accents or apostrophes.
+const YES = ["yes", "yeah", "yep", "yup", "sure", "ok", "okay", "confirm", "confirmed", "correct", "right", "go ahead", "do it", "please do", "sounds good", "thats right", "allow", "approve", "agreed", "fine",
+  "oui", "daccord", "vas y", "allez y", "cest bon", "bien sur", "confirme", "autorise", "autoriser",
+  "ja", "jawohl", "genau", "klar", "mach das", "bestatigen", "erlauben", "erlaube",
+  "si", "vale", "claro", "de acuerdo", "adelante", "confirmo", "permitir", "permite",
+  "certo", "va bene", "conferma", "consenti", "procedi",
+  "sim", "pode", "permita",
+  "jawel", "oke", "doe maar", "akkoord", "bevestig", "toestaan", "sta toe"];
+/** Single words of agreement, in every language above: never the word that names an operation. */
+export const AGREEMENT_WORDS: ReadonlySet<string> = new Set(YES.filter((y) => !y.includes(" ")));
+const NO = ["no", "nope", "dont", "do not", "not", "never", "decline", "deny", "reject", "refuse",
+  "non", "pas", "jamais", "refuse", "refuser", "nein", "nicht", "niemals", "ablehnen", "nee", "nunca", "rechazar", "mai", "rifiuta", "nao", "recusar", "niet", "nooit", "weiger"];
+const CANCEL = ["cancel", "never mind", "nevermind", "forget it", "stop",
+  "annule", "annuler", "laisse tomber", "arrete", "abbrechen", "vergiss es", "stopp", "halt", "cancelar", "cancela", "olvidalo", "basta", "annulla", "lascia perdere", "fermati", "esquece", "chega", "annuleer", "annuleren", "laat maar"];
+const REPEAT = ["repeat", "say again", "say that again", "again", "pardon", "what was that",
+  "repete", "repeter", "encore une fois", "wiederholen", "nochmal", "noch einmal", "wie bitte", "repite", "repetir", "otra vez", "ripeti", "di nuovo", "de novo", "outra vez", "herhaal", "nog een keer", "opnieuw"];
+const BACK = ["back", "go back", "previous", "undo", "retour", "precedent", "zuruck", "vorherige", "atras", "volver", "anterior", "indietro", "precedente", "voltar", "terug", "vorige"];
+/** Index i names the (i+1)th option, in any of the languages. */
+const ORDINALS = [
+  ["first", "premier", "premiere", "erste", "ersten", "erster", "primero", "primera", "primo", "prima", "primeiro", "primeira", "eerste"],
+  ["second", "deuxieme", "seconde", "zweite", "zweiten", "zweiter", "segundo", "segunda", "secondo", "seconda", "tweede"],
+  ["third", "troisieme", "dritte", "dritten", "dritter", "tercero", "tercera", "terzo", "terza", "terceiro", "terceira", "derde"],
+  ["fourth", "quatrieme", "vierte", "vierten", "cuarto", "cuarta", "quarto", "quarta", "vierde"],
+  ["fifth", "cinquieme", "funfte", "funften", "quinto", "quinta", "vijfde"],
+  ["sixth"], ["seventh"], ["eighth"], ["ninth"], ["tenth"],
+];
+const LAST = ["last", "last one", "dernier", "derniere", "letzte", "letzten", "ultimo", "ultima", "laatste"];
 const SMALL = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"];
 const TENS = ["", "", "twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
 const MONTHS = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
 const DAYS = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-const STOP = new Set(["the", "a", "an", "of", "and", "to", "for", "in", "on", "at", "with", "one", "option", "please", "i", "want", "take", "pick", "choose", "lets", "go", "that", "this"]);
+const STOP = new Set(["the", "a", "an", "of", "and", "to", "for", "in", "on", "at", "with", "one", "option", "please", "i", "want", "take", "pick", "choose", "lets", "go", "that", "this",
+  "le", "la", "les", "un", "une", "de", "du", "der", "die", "das", "den", "ein", "eine", "el", "los", "las", "il", "lo", "gli", "o", "os", "as", "het", "een"]);
 
 /**
  * Comparisons a person makes instead of naming an option. Each names the kind
@@ -144,15 +170,15 @@ const STOP = new Set(["the", "a", "an", "of", "and", "to", "for", "in", "on", "a
  * takes the option the surface marks as its pick.
  */
 const COMPARISONS: { words: string[]; key?: RegExp; dir: "min" | "max" | "best" }[] = [
-  { words: ["cheapest", "cheaper", "least expensive", "lowest price", "lower price", "most affordable"], key: /price|cost|fee|rate|amount|total|fare/i, dir: "min" },
-  { words: ["most expensive", "priciest", "pricier", "highest price"], key: /price|cost|fee|rate|amount|total|fare/i, dir: "max" },
+  { words: ["cheapest", "cheaper", "least expensive", "lowest price", "lower price", "most affordable", "moins cher", "moins chere", "gunstigste", "gunstigsten", "billigste", "billigsten", "gunstiger", "mas barato", "mas barata", "piu economico", "piu economica", "meno caro", "meno cara", "mais barato", "mais barata", "goedkoopste", "goedkoper"], key: /price|cost|fee|rate|amount|total|fare/i, dir: "min" },
+  { words: ["most expensive", "priciest", "pricier", "highest price", "plus cher", "plus chere", "teuerste", "teuersten", "mas caro", "mas cara", "piu caro", "piu cara", "mais caro", "mais cara", "duurste", "duurder"], key: /price|cost|fee|rate|amount|total|fare/i, dir: "max" },
   { words: ["highest rated", "best rated", "top rated"], key: /rating|score|stars|reviews/i, dir: "max" },
   { words: ["shortest", "quickest", "fastest"], key: /duration|length|minutes|hours|travel|time/i, dir: "min" },
   { words: ["longest"], key: /duration|length|minutes|hours/i, dir: "max" },
   { words: ["nearest", "closest"], key: /distance|km|miles|away/i, dir: "min" },
   { words: ["earliest", "soonest"], key: /date|start|depart|when|day|time/i, dir: "min" },
   { words: ["latest"], key: /date|start|depart|when|day|time/i, dir: "max" },
-  { words: ["best", "recommended", "your pick", "you recommend", "best one"], dir: "best" },
+  { words: ["best", "recommended", "your pick", "you recommend", "best one", "meilleur", "meilleure", "recommande", "beste", "besten", "empfohlene", "mejor", "recomendado", "recomendada", "migliore", "consigliato", "consigliata", "melhor", "aanbevolen"], dir: "best" },
 ];
 
 /** Number words become digits ("twenty five people" → "25 people"); digits are kept. */
@@ -254,9 +280,9 @@ export function pickOption(options: readonly AnswerOption[], said: string): Reso
       return hits.length === 1 ? { kind: "choose", index: hits[0]! } : { kind: "ambiguous", indices: hits };
     }
   }
-  const ord = ORDINALS.findIndex((o) => has(w, [o]));
+  const ord = ORDINALS.findIndex((o) => has(w, o));
   if (ord >= 0 && ord < options.length) return { kind: "choose", index: ord };
-  if (has(w, ["last", "last one"])) return { kind: "choose", index: options.length - 1 };
+  if (has(w, LAST)) return { kind: "choose", index: options.length - 1 };
   const num = /\b(?:number|option|choice) (\d+)\b/.exec(w) ?? /^(\d+)$/.exec(w);
   if (num && Number(num[1]) >= 1 && Number(num[1]) <= options.length) return { kind: "choose", index: Number(num[1]) - 1 };
 

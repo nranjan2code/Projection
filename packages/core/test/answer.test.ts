@@ -167,3 +167,49 @@ test("spoken numbers and dates", () => {
   assert.equal(spokenDate("march 3", NOW), "2027-03-03");
   assert.equal(spokenDate("whenever", NOW), undefined);
 });
+
+test("a per-item button without a payload still tells the model which item was chosen", () => {
+  const store = new SurfaceStore(basicCatalog);
+  store.render({
+    surface: "trips",
+    data: { trips: [{ name: "Lisbon" }, { name: "Porto" }] },
+    nodes: [
+      { id: "root", type: "stack", children: { each: "/trips", template: "card" } },
+      { id: "card", type: "card", props: { title: "{name}" }, children: ["pick"] },
+      { id: "pick", type: "button", props: { label: "Choose", action: "choose_trip" } },
+    ],
+  });
+  const d = agenda(store, "trips").find((i) => i.kind === "decision");
+  if (d?.kind !== "decision") return assert.fail("no decision");
+  assert.equal(actOn(store, d, 1).action?.data.item, "Porto");
+  // A payload that names the item is left as the model wrote it.
+  store.update({ surface: "trips", nodes: [{ id: "pick", type: "button", props: { label: "Choose", action: "choose_trip", payload: { name: "{name}" } } }] });
+  assert.deepEqual(store.submit("trips", d.options[0]!.source).action?.data, { name: "Lisbon" });
+});
+
+test("answers in the other languages read aloud, with negation always winning", async () => {
+  const { AGREEMENT_WORDS } = await import("../src/answer.ts");
+  const d = decision(hotels(), "hotels");
+  const pick = (s: string) => { const r = resolveAnswer(d, s); return r.kind === "choose" ? r.index : r.kind; };
+  assert.equal(pick("la deuxième"), 1);
+  assert.equal(pick("die zweite bitte"), 1);
+  assert.equal(pick("el más barato"), 1);
+  assert.equal(pick("il più caro"), 2);
+  assert.equal(pick("a última"), 2);
+  assert.equal(pick("de goedkoopste"), 1);
+  assert.equal(pick("la meilleure"), 1);
+  const write: AgendaItem = { kind: "approval", id: "a", title: "Write", change: true, words: ["write"] };
+  const read: AgendaItem = { kind: "approval", id: "r", title: "Read", change: false, words: ["read"] };
+  const r = (i: AgendaItem, s: string) => resolveAnswer(i, s).kind;
+  assert.equal(r(read, "oui"), "yes");
+  assert.equal(r(read, "ja"), "yes");
+  assert.equal(r(read, "sí"), "yes");
+  assert.equal(r(read, "não"), "no");
+  assert.equal(r(read, "nein"), "no");
+  assert.notEqual(r(read, "ne l'autorise pas"), "yes", "a negation never leaves consent");
+  assert.notEqual(r(read, "nicht erlauben"), "yes", "a negation never leaves consent");
+  assert.notEqual(r(read, "no lo permitas"), "yes", "a negation never leaves consent");
+  assert.equal(r(write, "oui"), "unknown", "a change still needs its word in any language");
+  assert.equal(r(write, "oui, write"), "yes");
+  assert.ok(AGREEMENT_WORDS.has("oui") && AGREEMENT_WORDS.has("ja") && !AGREEMENT_WORDS.has("write"));
+});

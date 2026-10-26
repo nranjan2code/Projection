@@ -3,6 +3,11 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: per-item actions name their item; answers in seven languages
+
+- `store.submit`: a button repeated per item whose payload names no item (`name`, `id`, `title`, `option`, `item`) now sends `item` with its card's heading, so the model knows which card was chosen. Payloads that name the item are unchanged.
+- `resolveAnswer` understands agreement, refusal, cancel, repeat, back, ordinals and price/best comparisons in French, German, Spanish, Italian, Portuguese and Dutch as well as English; negation still wins over agreement. New export `AGREEMENT_WORDS`. Number words and dates are still English.
+
 ## 2026-10-26: activate a control by key
 
 - `<vak-surface>` gains `activate(key)` (additive): the same submit, validation, busy state and `vak-action` event as a click, for targets that answer without a pointer. Pair it with `agenda` option `source` keys.
