@@ -3,6 +3,11 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: cyclic layout edges
+
+- A recorded inline layout referred back to its root from a descendant wrapper. Structural repair now removes only ancestor child/template edges, preserving valid nodes, table data and list instances. The resolver retains its recursion guard and lint reports any remaining resolved cycle for correction. No renderer or public API changes.
+- Verbatim render/update replay and self/shared-node regressions pass: 283 framework tests including the replay gate, plus typecheck. No new dependency.
+
 ## 2026-10-26: token-based primitive member recovery
 
 - A key with a missing closing quote before a complete JSON primitive (`"flag:false}`) is recovered using explicit identifier/colon/delimiter scanning and standard `JSON.parse` validation of the primitive token. Recovery waits for finalized input and structural continuation. Properly quoted keys win; partial tokens, strings, containers, nonfinite numbers and non-JSON literal spellings are not inferred. A real comparison otherwise silently lost its first row and merged values from the second.

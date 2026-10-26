@@ -422,8 +422,35 @@ export class SurfaceStore {
       ...this.fillMissingTemplates(state),
       ...this.bindInputNames(state),
       ...this.bindWrappedLists(state),
+      ...this.dropCyclicChildren(state),
       ...this.dropEmptyContainers(state),
     ];
+  }
+
+  /** A recorded wrapper pointed back to root; discard only ancestor edges,
+   * never content or repeated nodes in separate list-item branches. */
+  private dropCyclicChildren(state: SurfaceState): Diagnostic[] {
+    const diags: Diagnostic[] = [], done = new Set<string>(), path = new Set<string>();
+    const visit = (id: string) => {
+      if (done.has(id)) return;
+      const node = state.nodes.get(id);
+      if (!node) return;
+      path.add(id);
+      const keep = (child: string) => {
+        if (path.has(child)) {
+          diags.push({ severity: "warning", surface: state.id, node: id, message: `removed cyclic child reference to ancestor "${child}"; valid sibling content is preserved` });
+          return false;
+        }
+        visit(child); return true;
+      };
+      if (Array.isArray(node.children)) node.children = node.children.filter(keep);
+      else if (node.children && !keep(node.children.template)) delete node.children;
+      path.delete(id); done.add(id);
+    };
+    const root = this.rootId(state);
+    if (root) visit(root);
+    for (const id of state.nodes.keys()) visit(id);
+    return diags;
   }
 
   /**
@@ -1068,6 +1095,13 @@ export class SurfaceStore {
     const diags: Diagnostic[] = [];
     const reported = new Set<string>();
     walk(root, (n) => {
+      // A recorded inline layout reused its root below a wrapper. Resolution
+      // guards recursion, but the same cycle must reach authoring feedback.
+      if (n.type === "$invalid" && n.error === "cycle" && !reported.has(n.id)) {
+        reported.add(n.id);
+        diags.push({ severity: "error", surface: state.id, node: n.id, message: `children contain a cycle back to "${n.id}"; remove the ancestor reference from the descendant's children with vak_update. Keep the valid content and use distinct IDs for new nodes` });
+        return;
+      }
       const node = state.nodes.get(n.id);
       if (!node || reported.has(n.id) || n.type.startsWith("$")) return;
       const bound = bindingsIn(node.props ?? {});
