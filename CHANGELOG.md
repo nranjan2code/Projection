@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-26: dual-stack public fetch lookup
+
+- `pinnedFetch` returns the checked DNS result using the callback shape requested by Node: an address list for dual-stack lookup, a single address/family otherwise. This fixes real public image fetches failing with `Invalid IP address: undefined` on Node 24 without a second DNS lookup or weakened private-address checks. Regression checks exercise both callback shapes offline.
+
 ## 2026-10-26: negotiated MCP HTTP lifecycle
 
 - The MCP client uses the server-negotiated supported protocol version on initialized and subsequent HTTP requests; reconnect clears the prior session/version. This fixes a real hosted connection returning HTTP 400 after a successful older-version handshake. Redirects fail closed so custom credential headers cannot be forwarded elsewhere. Regression checks cover negotiation, session reset and redirect refusal.

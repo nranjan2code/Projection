@@ -136,7 +136,10 @@ export function pinnedFetch(raw: string, opts: PinnedFetchOptions = {}): Promise
             const blocked = addresses.find((a) => !isPublicAddress(a.address));
             if (blocked) return cb(new Error(`${host} resolves to ${blocked.address}, which is not a public address`), "", 0);
             if (!addresses.length) return cb(new Error(`no address for ${host}`), "", 0);
-            cb(null, addresses[0]!.address, addresses[0]!.family);
+            // Node's dual-stack connector asks for all addresses. Return the
+            // matching callback shape, still using only the checked DNS result.
+            if (lookupOpts.all) cb(null, addresses);
+            else cb(null, addresses[0]!.address, addresses[0]!.family);
           },
           (err: Error) => cb(err, "", 0),
         );

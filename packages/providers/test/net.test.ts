@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import https from "node:https";
+import { syncBuiltinESMExports } from "node:module";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 import { isPublicAddress, isPublicHttpsUrl, pinnedFetch } from "../src/net.ts";
 
 // A fetch named by a model must not reach this machine's network. An IPv6
@@ -48,4 +52,32 @@ test("pinnedFetch refuses the address it just resolved instead of asking DNS aga
     pinnedFetch("https://mapped.example/", { resolve: async () => [{ address: "::ffff:169.254.169.254", family: 6 }] }),
     /not a public address/,
   );
+});
+
+
+test("pinnedFetch supplies the checked addresses in Node's single and dual-stack callback shapes", async () => {
+  const original = https.request;
+  const addresses = [{ address:"8.8.8.8", family:4 }, { address:"2606:4700:4700::1111", family:6 }];
+  try {
+    for (const all of [false, true]) {
+      let lookups = 0;
+      https.request = ((_url: unknown, opts: { lookup: Function }, response: Function) => {
+        const req = new EventEmitter() as EventEmitter & {end:()=>void};
+        req.end = () => {
+          opts.lookup("public.example", {all,family:0}, (err: Error|null, value: unknown, family?: number) => {
+            assert.ifError(err);
+            assert.deepEqual(value, all ? addresses : "8.8.8.8");
+            if (!all) assert.equal(family,4);
+            const stream = new PassThrough() as PassThrough & {headers: object;statusCode:number};
+            stream.headers={"content-type":"text/plain"};stream.statusCode=200;
+            response(stream);stream.end("public response");
+          });
+        };
+        return req;
+      }) as unknown as typeof https.request;
+      syncBuiltinESMExports();
+      const res = await pinnedFetch("https://public.example/", {resolve:async()=>{lookups++;return addresses;}});
+      assert.equal(await res.text(),"public response");assert.equal(lookups,1);
+    }
+  } finally {https.request=original;syncBuiltinESMExports();}
 });
