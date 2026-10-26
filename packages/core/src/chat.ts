@@ -23,6 +23,8 @@ export interface FormField {
   multiple?: boolean;
   range?: boolean;
   placeholder?: string;
+  min?: number;
+  max?: number;
 }
 
 const INPUT_TYPES = new Set(["input", "textarea", "select", "checkbox", "date"]);
@@ -52,6 +54,8 @@ export function formFields(scope: ResolvedNode): FormField[] {
         multiple: Boolean(n.props.multiple),
         range: Boolean(n.props.range),
         placeholder: typeof n.props.placeholder === "string" ? n.props.placeholder : undefined,
+        ...(typeof n.props.min === "number" ? { min: n.props.min } : {}),
+        ...(typeof n.props.max === "number" ? { max: n.props.max } : {}),
       });
     }
     n.children.forEach(visit);
@@ -80,9 +84,19 @@ export function readField(field: FormField, text: string): { value: unknown } | 
   } else if (field.type === "date") {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(t)) return { error: "Please send a date like 2026-11-10" };
     value = t;
-  } else if (field.kind === "number") {
-    if (!Number.isFinite(Number(t))) return { error: "Please send a number" };
-    value = Number(t);
+  } else if (field.kind === "number" || field.kind === "range" || field.kind === "rating") {
+    const n = Number(t.replace(/\s*(stars?|★+)$/i, ""));
+    const lo = field.min ?? (field.kind === "rating" ? 1 : undefined), hi = field.max ?? (field.kind === "rating" ? 5 : undefined);
+    if (!Number.isFinite(n)) return { error: "Please send a number" };
+    if ((lo !== undefined && n < lo) || (hi !== undefined && n > hi)) return { error: `Please send a number from ${lo ?? "…"} to ${hi ?? "…"}` };
+    value = n;
+  } else if (field.kind === "time") {
+    const m = /^(\d{1,2})(?::(\d{2}))?\s*([ap])?\.?m?\.?$/i.exec(t);
+    let h = m ? Number(m[1]) : NaN;
+    if (m?.[3]?.toLowerCase() === "p" && h < 12) h += 12;
+    if (m?.[3]?.toLowerCase() === "a" && h === 12) h = 0;
+    if (!m || h > 23 || Number(m[2] ?? 0) > 59) return { error: "Please send a time like 18:30" };
+    value = `${String(h).padStart(2, "0")}:${m[2] ?? "00"}`;
   } else value = t;
   const fails = runChecks(value, field.checks);
   return fails.length ? { error: fails.join("; ") } : { value };
@@ -113,6 +127,13 @@ export function tableText(props: Record<string, unknown>, maxColumns = Infinity)
 export function chartText(props: Record<string, unknown>): TextTable {
   const labels = (Array.isArray(props.labels) ? props.labels : []).map(str);
   const series = (Array.isArray(props.series) ? props.series : []) as { name?: string; values?: number[] }[];
+  if (props.kind === "scatter") {
+    return {
+      headers: [...(series.length > 1 ? [""] : []), "x", "y"],
+      align: [...(series.length > 1 ? ["start" as const] : []), "end", "end"],
+      rows: series.flatMap((s, si) => (s.values ?? []).map((v, i) => [...(series.length > 1 ? [s.name ?? `Series ${si + 1}`] : []), str((s as { x?: number[] }).x?.[i] ?? labels[i] ?? i + 1), str(v)])),
+    };
+  }
   if (props.kind === "pie" && series[0]?.values) {
     const values = series[0].values;
     const total = values.reduce((a, b) => a + (Number(b) || 0), 0) || 1;

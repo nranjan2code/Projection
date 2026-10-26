@@ -9,7 +9,9 @@
 
 import { mapLink, type Column, filterItems, filterRows, getAt, INTERACT, isRequired, pageRows, type ResolvedNode, sortRows, type SurfaceStore, tableInteraction, type VpsAction } from "@vak/core";
 import { normalizeChart, renderChart } from "./chart.ts";
+import { renderAccordion, renderBoard, renderCalendar, renderCompare, renderDiff, renderGantt, renderProgress, renderTimer, renderTree, type WidgetCtx } from "./everyday.ts";
 import { normalizeGraph, renderGraph } from "./graph.ts";
+import { texToMathML } from "./math.ts";
 import { renderMarkdown } from "./markdown.ts";
 import { surfaceCss } from "./styles.ts";
 
@@ -92,6 +94,8 @@ export class VakSurfaceElement extends HTMLElement {
   #errors: Record<string, string[]> = {};
   #tabs = new Map<string, number>();
   #views = new Map<string, View>();
+  /** Per-node state of the everyday widgets (a calendar's month, a running timer). */
+  #widgets = new Map<string, Record<string, unknown>>();
   #frame = 0;
   #busyKey?: string;
   #busyVersion = -1;
@@ -379,6 +383,32 @@ export class VakSurfaceElement extends HTMLElement {
         return this.#chart(normalizeChart(p));
       case "graph":
         return { el: renderGraph(normalizeGraph(p)) };
+      case "calendar":
+        return { el: renderCalendar(p, this.#widget(node)) };
+      case "board": {
+        const b = renderBoard(p, this.#widget(node));
+        return { el: b.el, sync: (n) => b.sync(n.props.value) };
+      }
+      case "progress":
+        return { el: renderProgress(p) };
+      case "accordion":
+        return renderAccordion(p, this.#widget(node), (t) => md(t, "md acc-body"));
+      case "compare":
+        return { el: renderCompare(p, (t) => md(t, "md cmp-note")) };
+      case "timer":
+        return { el: renderTimer(p, this.#widget(node)) };
+      case "tree":
+        return { el: renderTree(p, this.#widget(node)) };
+      case "diff":
+        return { el: renderDiff(p, this.#widget(node)) };
+      case "gantt":
+        return { el: renderGantt(p, this.#widget(node)) };
+      case "math": {
+        const fig = h(p.display === false ? "span" : "figure", `math${p.display === false ? " inline" : ""}`);
+        fig.append(texToMathML(str(p.tex), p.display !== false));
+        if (p.caption) fig.append(h("figcaption", undefined, str(p.caption)));
+        return { el: fig };
+      }
       case "timeline": {
         const el = h("ol", "timeline");
         for (const it of (Array.isArray(p.items) ? p.items : []) as Record<string, unknown>[]) {
@@ -518,6 +548,12 @@ export class VakSurfaceElement extends HTMLElement {
         return { el };
       }
     }
+  }
+
+  #widget(node: ResolvedNode): WidgetCtx {
+    let state = this.#widgets.get(node.key);
+    if (!state) this.#widgets.set(node.key, (state = {}));
+    return { state, ...(node.bindPath ? { set: (v: unknown) => this.#setValue(node.bindPath, node.key, v) } : {}) };
   }
 
   /** Charts re-render at their real width so labels stay legible in narrow columns. */
@@ -715,6 +751,97 @@ export class VakSurfaceElement extends HTMLElement {
           if (!focused(sel)) sel.value = str(n.props.value);
         };
       }
+    } else if (node.type === "input" && p.kind === "rating") {
+      // Stars as a radio group: arrows change the value, as native radios do.
+      const caption = h("span", "label", str(p.label));
+      if (isRequired(p.checks)) caption.append(h("span", "req", "*"));
+      const max = Math.max(1, Math.min(10, Math.round(Number(p.max) || 5)));
+      const stars = h("div", "stars-in");
+      stars.setAttribute("role", "radiogroup");
+      stars.setAttribute("aria-label", str(p.label));
+      const buttons = Array.from({ length: max }, (_, i) => {
+        const b = h("button", "star", "★");
+        b.type = "button";
+        b.setAttribute("role", "radio");
+        b.setAttribute("aria-label", `${i + 1} of ${max}`);
+        b.addEventListener("click", () => set(i + 1));
+        b.addEventListener("keydown", (e) => {
+          const d = e.key === "ArrowRight" || e.key === "ArrowUp" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowDown" ? -1 : 0;
+          if (!d) return;
+          e.preventDefault();
+          const v = Math.max(1, Math.min(max, (Number(node.props.value) || 0) + d));
+          set(v);
+          requestAnimationFrame(() => this.#shadow.querySelector<HTMLElement>(`[data-key="${CSS.escape(node.key)}"] .star:nth-child(${v})`)?.focus());
+        });
+        stars.append(b);
+        return b;
+      });
+      wrap.dataset.key = node.key;
+      wrap.append(caption, stars);
+      sync = (n) => {
+        const v = Math.round(Number(n.props.value) || 0);
+        buttons.forEach((b, i) => {
+          b.classList.toggle("on", i < v);
+          b.setAttribute("aria-checked", String(i + 1 === v));
+          b.tabIndex = i + 1 === (v || 1) ? 0 : -1;
+        });
+      };
+    } else if (node.type === "input" && p.kind === "range") {
+      wrap.append(label);
+      const row = h("div", "range-in");
+      const ctl = h("input");
+      ctl.type = "range";
+      ctl.id = id;
+      const min = Number.isFinite(Number(p.min)) ? Number(p.min) : 0;
+      const max = Number.isFinite(Number(p.max)) ? Number(p.max) : 100;
+      ctl.min = String(min);
+      ctl.max = String(max);
+      if (p.step !== undefined) ctl.step = str(p.step);
+      const out = h("output", "range-val");
+      out.htmlFor.add(id);
+      const unit = str(p.unit);
+      const show = (v: string) => {
+        out.textContent = `${v}${unit ? ` ${unit}` : ""}`;
+        ctl.style.setProperty("--pct", `${((Number(v) - min) / (max - min || 1)) * 100}%`);
+      };
+      ctl.addEventListener("input", () => (show(ctl.value), set(Number(ctl.value))));
+      row.append(ctl, out);
+      wrap.append(row);
+      sync = (n) => {
+        if (!focused(ctl)) ctl.value = n.props.value === undefined ? String(min) : str(n.props.value);
+        if (n.props.value === undefined) out.textContent = "–";
+        else show(ctl.value);
+      };
+    } else if (node.type === "input" && p.kind === "file") {
+      // Files stay on the device; the value is each file's name, type and size,
+      // plus the text of small text files, so the model can read a pasted list.
+      wrap.append(label);
+      const zone = h("label", "file-in");
+      const ctl = h("input");
+      ctl.type = "file";
+      ctl.id = id;
+      if (p.accept) ctl.accept = str(p.accept);
+      ctl.multiple = Boolean(p.multiple);
+      const names = h("span", "file-names", "Choose or drop files");
+      zone.append(ctl, names);
+      const read = async (files: FileList | null) => {
+        const list = await Promise.all([...(files ?? [])].map(async (f) => ({ name: f.name, type: f.type, size: f.size, ...(f.size <= 65_536 && /^text\/|json|csv|xml|markdown/.test(f.type || "text/") ? { text: await f.text() } : {}) })));
+        set(p.multiple ? list : list[0]);
+      };
+      ctl.addEventListener("change", () => void read(ctl.files));
+      zone.addEventListener("dragover", (e) => ((e.preventDefault()), zone.classList.add("over")));
+      zone.addEventListener("dragleave", () => zone.classList.remove("over"));
+      zone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        zone.classList.remove("over");
+        void read(e.dataTransfer?.files ?? null);
+      });
+      wrap.append(zone);
+      sync = (n) => {
+        const v = n.props.value;
+        const list = (Array.isArray(v) ? v : v ? [v] : []) as Record<string, unknown>[];
+        names.textContent = list.length ? list.map((f) => `${str(f.name)} (${Math.max(1, Math.round(Number(f.size) / 1024))} KB)`).join(", ") : "Choose or drop files";
+      };
     } else if (node.type === "date" && p.range) {
       wrap.append(label);
       const r = h("div", "range");
@@ -740,7 +867,8 @@ export class VakSurfaceElement extends HTMLElement {
       ctl.id = id;
       if (ctl instanceof HTMLInputElement) {
         const kind = node.type === "date" ? "date" : str(p.kind) || "text";
-        ctl.type = ["text", "email", "number", "tel", "url", "date"].includes(kind) ? kind : "text";
+        ctl.type = ["text", "email", "number", "tel", "url", "date", "time"].includes(kind) ? kind : "text";
+        if (kind === "number") for (const k of ["min", "max", "step"] as const) if (p[k] !== undefined) ctl[k] = str(p[k]);
         if (kind === "email") ctl.autocomplete = "email";
       }
       if (p.placeholder) ctl.placeholder = str(p.placeholder);

@@ -81,7 +81,7 @@ const write = (ctx: Ctx, md: string) => md && ctx.pending.push(md);
 const push = (ctx: Ctx, c: Component) => (flush(ctx), ctx.out.push(c));
 
 export function projectDiscord(surface: ResolvedSurface, tokenFor: (key: string, kind: Control["kind"]) => string, opts: ProjectOptions = {}): DiscordProjection {
-  // Timeline, steps, code, map, gallery and graph as lists, text and images.
+  // Rich components (lower.ts) as lists, tables, text and images.
   surface = lowerSurface(surface);
   const controls: Control[] = [];
   const ctx: Ctx = {

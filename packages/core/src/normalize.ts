@@ -203,7 +203,9 @@ export class Normalizer {
     const invalid = (t: string, presets?: Record<string, unknown>) =>
       validate(propsSchema(this.catalog, t)!, this.prepareProps(t, sentProps, ctx.id, presets), { skip }).length > 0;
     const variant = this.semanticType(match.type, this.prepareProps(match.type, sentProps, ctx.id, match.presets), ctx);
-    if (variant) return variant;
+    // An alias's presets ("rating" → kind: rating) still describe the node
+    // after a semantic retype: a bound rating is a rating input.
+    if (variant) return match.presets ? { ...variant, presets: match.presets } : variant;
     if (!invalid(match.type, match.presets)) return undefined;
     const common = new Set(Object.keys(this.catalog.common));
     const sent = Object.keys(sentProps).filter((k) => !common.has(k) && !isMetaKey(k));

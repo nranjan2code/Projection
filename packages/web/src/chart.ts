@@ -1,12 +1,13 @@
-// Dependency-free SVG charts: bar (grouped), line, area, pie (donut).
+// Dependency-free SVG charts: bar (grouped or stacked), line, area, pie (donut),
+// scatter, heatmap (a habit calendar for dated values, else a matrix) and radar.
 // Colors come from CSS custom properties so themes apply.
 
 const NS = "http://www.w3.org/2000/svg";
 
 export interface ChartSpec {
-  kind: "bar" | "line" | "area" | "pie";
+  kind: "bar" | "stacked" | "line" | "area" | "pie" | "scatter" | "heatmap" | "radar";
   labels: string[];
-  series: { name?: string; values: number[] }[];
+  series: { name?: string; values: number[]; x?: number[] }[];
 }
 
 function svgEl<K extends keyof SVGElementTagNameMap>(doc: Document, tag: K, attrs: Record<string, string | number> = {}): SVGElementTagNameMap[K] {
@@ -40,7 +41,7 @@ function fmt(v: number): string {
 }
 
 export function normalizeChart(props: Record<string, unknown>): ChartSpec {
-  const kind = (["bar", "line", "area", "pie"].includes(String(props.kind)) ? props.kind : "bar") as ChartSpec["kind"];
+  const kind = (["bar", "stacked", "line", "area", "pie", "scatter", "heatmap", "radar"].includes(String(props.kind)) ? props.kind : "bar") as ChartSpec["kind"];
   const rawSeries = Array.isArray(props.series) ? props.series : [];
   const series = rawSeries
     .map((s) => {
@@ -48,7 +49,8 @@ export function normalizeChart(props: Record<string, unknown>): ChartSpec {
       if (s && typeof s === "object") {
         const o = s as Record<string, unknown>;
         const vals = Array.isArray(o.values) ? o.values : Array.isArray(o.data) ? o.data : [];
-        return { name: typeof o.name === "string" ? o.name : undefined, values: vals.map(Number) };
+        const x = Array.isArray(o.x) ? o.x.map(Number) : undefined;
+        return { name: typeof o.name === "string" ? o.name : undefined, values: vals.map(Number), ...(x ? { x } : {}) };
       }
       return { values: [Number(s)] };
     })
@@ -69,9 +71,12 @@ export function renderChart(spec: ChartSpec, doc: Document = document, width = 6
     return wrap;
   }
   if (spec.kind === "pie") wrap.append(pie(spec, doc));
+  else if (spec.kind === "scatter") wrap.append(scatter(spec, doc, width));
+  else if (spec.kind === "heatmap") wrap.append(heatmap(spec, doc, width));
+  else if (spec.kind === "radar") wrap.append(radar(spec, doc));
   else wrap.append(cartesian(spec, doc, width));
 
-  const names = spec.kind === "pie" ? spec.labels : spec.series.map((s, i) => s.name ?? `Series ${i + 1}`);
+  const names = spec.kind === "heatmap" ? [] : spec.kind === "pie" ? spec.labels : spec.series.map((s, i) => s.name ?? `Series ${i + 1}`);
   if (names.length > 1) {
     const legend = doc.createElement("figcaption");
     legend.className = "legend";
@@ -90,7 +95,10 @@ export function renderChart(spec: ChartSpec, doc: Document = document, width = 6
 function cartesian(spec: ChartSpec, doc: Document, width: number): SVGSVGElement {
   const W = Math.max(200, Math.round(width)), H = Math.round(Math.min(320, Math.max(180, W * 0.5))), L = 44, R = 12, T = 12, B = 34;
   const svg = svgEl(doc, "svg", { viewBox: `0 0 ${W} ${H}`, role: "img", width: W, height: H });
-  const all = spec.series.flatMap((s) => s.values);
+  // Stacked bars scale to the tallest stack, positive and negative apart.
+  const all = spec.kind === "stacked"
+    ? spec.labels.flatMap((_, i) => [spec.series.reduce((a, s) => a + Math.max(s.values[i] ?? 0, 0), 0), spec.series.reduce((a, s) => a + Math.min(s.values[i] ?? 0, 0), 0)])
+    : spec.series.flatMap((s) => s.values);
   const min = Math.min(0, ...all);
   const max = niceMax(Math.max(...all, 0));
   const span = max - min || 1;
@@ -114,7 +122,21 @@ function cartesian(spec: ChartSpec, doc: Document, width: number): SVGSVGElement
     svg.append(t);
   });
 
-  if (spec.kind === "bar") {
+  if (spec.kind === "stacked") {
+    const bw = band * 0.62;
+    spec.labels.forEach((label, i) => {
+      let up = 0, down = 0;
+      spec.series.forEach((s, si) => {
+        const v = s.values[i] ?? 0;
+        const from = v >= 0 ? up : down;
+        const to = from + v;
+        if (v >= 0) up = to;
+        else down = to;
+        const top = y(Math.max(from, to)), h = Math.abs(y(from) - y(to));
+        svg.append(titled(doc, svgEl(doc, "rect", { x: L + band * i + (band - bw) / 2, y: top, width: Math.max(bw, 1), height: Math.max(h, 0.5), fill: color(si), stroke: "var(--vak-surface)", "stroke-width": 1 }), `${s.name ? `${s.name} · ` : ""}${label}: ${v}`));
+      });
+    });
+  } else if (spec.kind === "bar") {
     const groups = spec.series.length;
     const inner = band * 0.72;
     const bw = inner / groups;
@@ -155,6 +177,128 @@ function pie(spec: ChartSpec, doc: Document): SVGSVGElement {
       : `M${p(90, angle)}A90,90 0 ${large} 1 ${p(90, angle + a)}L${p(52, angle + a)}A52,52 0 ${large} 0 ${p(52, angle)}Z`;
     svg.append(titled(doc, svgEl(doc, "path", { d, fill: color(i), "fill-rule": "evenodd" }), `${spec.labels[i]}: ${v} (${Math.round((v / total) * 100)}%)`));
     angle += a;
+  });
+  return svg;
+}
+
+/** Points on numeric x and y axes; x from each series' own x, numeric labels, or position. */
+function scatter(spec: ChartSpec, doc: Document, width: number): SVGSVGElement {
+  const W = Math.max(200, Math.round(width)), H = Math.round(Math.min(320, Math.max(180, W * 0.55))), L = 44, R = 14, T = 12, B = 30;
+  const svg = svgEl(doc, "svg", { viewBox: `0 0 ${W} ${H}`, role: "img", width: W, height: H });
+  const xs = (s: ChartSpec["series"][number]) => s.values.map((_, i) => s.x?.[i] ?? (Number.isFinite(Number(spec.labels[i])) ? Number(spec.labels[i]) : i + 1));
+  const allX = spec.series.flatMap(xs), allY = spec.series.flatMap((s) => s.values);
+  // Axes on round steps (1, 2 or 5 × 10ⁿ) that cover the data.
+  const range = (v: number[]) => {
+    const lo = Math.min(...v), hi = Math.max(...v);
+    const step = niceMax(((hi - lo) || Math.abs(hi) || 1) / 4);
+    const a = Math.floor(lo / step) * step;
+    return [a, Math.max(a + step * 4, Math.ceil(hi / step) * step), step] as const;
+  };
+  const [x0, x1, xs0] = range(allX), [y0, y1, ys0] = range(allY);
+  const px = (v: number) => L + ((v - x0) / (x1 - x0)) * (W - L - R);
+  const py = (v: number) => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
+  for (let vy = y0; vy <= y1 + ys0 / 2; vy += ys0) {
+    svg.append(svgEl(doc, "line", { x1: L, x2: W - R, y1: py(vy), y2: py(vy), class: "gridline" }));
+    const ty = svgEl(doc, "text", { x: L - 6, y: py(vy) + 4, "text-anchor": "end", class: "axis" });
+    ty.textContent = fmt(vy);
+    svg.append(ty);
+  }
+  for (let vx = x0; vx <= x1 + xs0 / 2; vx += xs0) {
+    const tx = svgEl(doc, "text", { x: px(vx), y: H - 10, "text-anchor": "middle", class: "axis" });
+    tx.textContent = fmt(vx);
+    svg.append(tx);
+  }
+  spec.series.forEach((s, si) => {
+    const x = xs(s);
+    s.values.forEach((v, i) => svg.append(titled(doc, svgEl(doc, "circle", { cx: px(x[i]!), cy: py(v), r: 4.5, fill: color(si), "fill-opacity": 0.75, stroke: color(si) }), `${s.name ? `${s.name} · ` : ""}(${x[i]}, ${v})`)));
+  });
+  return svg;
+}
+
+/**
+ * Dated values (one series, ISO labels) as a habit calendar: a column per
+ * week, a row per weekday. Anything else as a matrix: a row per series, a
+ * column per label. Shade is the value's share of the largest.
+ */
+function heatmap(spec: ChartSpec, doc: Document, width: number): SVGSVGElement {
+  const dated = spec.series.length === 1 && spec.labels.length > 0 && spec.labels.every((l) => /^\d{4}-\d{2}-\d{2}$/.test(l));
+  const max = Math.max(...spec.series.flatMap((s) => s.values), 0) || 1;
+  const shade = (v: number) => (v <= 0 ? "var(--vak-surface-2)" : `color-mix(in srgb, var(--vak-accent) ${Math.round(18 + (v / max) * 82)}%, var(--vak-surface))`);
+  if (dated) {
+    const DAY = 86_400_000;
+    const t = spec.labels.map((l) => Date.parse(`${l}T00:00:00Z`));
+    const first = Math.min(...t) - (((new Date(Math.min(...t)).getUTCDay() + 6) % 7) * DAY);
+    const weeks = Math.floor((Math.max(...t) - first) / DAY / 7) + 1;
+    const cell = Math.max(8, Math.min(18, Math.floor((width - 40) / weeks) - 2)), gap = 2, L = 30, T = 16;
+    const W = L + weeks * (cell + gap), H = T + 7 * (cell + gap);
+    const svg = svgEl(doc, "svg", { viewBox: `0 0 ${W} ${H}`, role: "img", width: W, height: H, class: "heat" });
+    ["Mon", "", "Wed", "", "Fri", "", ""].forEach((d, i) => {
+      if (!d) return;
+      const tx = svgEl(doc, "text", { x: L - 6, y: T + i * (cell + gap) + cell - 2, "text-anchor": "end", class: "axis" });
+      tx.textContent = d;
+      svg.append(tx);
+    });
+    let lastMonth = -1, lastX = -99;
+    t.forEach((ti, i) => {
+      const w = Math.floor((ti - first) / DAY / 7), d = (new Date(ti).getUTCDay() + 6) % 7;
+      const m = new Date(ti).getUTCMonth();
+      if (m !== lastMonth && d === 0 && L + w * (cell + gap) - lastX > 34) {
+        lastMonth = m;
+        lastX = L + w * (cell + gap);
+        const tx = svgEl(doc, "text", { x: L + w * (cell + gap), y: 10, class: "axis" });
+        tx.textContent = new Date(ti).toLocaleString(undefined, { month: "short", timeZone: "UTC" });
+        svg.append(tx);
+      }
+      const v = spec.series[0]!.values[i] ?? 0;
+      svg.append(titled(doc, svgEl(doc, "rect", { x: L + w * (cell + gap), y: T + d * (cell + gap), width: cell, height: cell, rx: 2, fill: shade(v) }), `${spec.labels[i]}: ${v}`));
+    });
+    return svg;
+  }
+  const L = Math.min(120, 8 + 7 * Math.max(...spec.series.map((s, i) => (s.name ?? `Series ${i + 1}`).length))), T = 22;
+  const cw = Math.max(18, Math.min(56, (width - L) / Math.max(spec.labels.length, 1))), ch = Math.min(34, Math.max(20, cw * 0.7));
+  const W = L + cw * spec.labels.length, H = T + ch * spec.series.length;
+  const svg = svgEl(doc, "svg", { viewBox: `0 0 ${W} ${H}`, role: "img", width: W, height: H, class: "heat" });
+  spec.labels.forEach((l, i) => {
+    const tx = svgEl(doc, "text", { x: L + cw * (i + 0.5), y: 14, "text-anchor": "middle", class: "axis" });
+    tx.textContent = l.length > 6 ? `${l.slice(0, 5)}…` : l;
+    svg.append(tx);
+  });
+  spec.series.forEach((s, si) => {
+    const tx = svgEl(doc, "text", { x: L - 6, y: T + ch * (si + 0.5) + 4, "text-anchor": "end", class: "axis" });
+    tx.textContent = s.name ?? `Series ${si + 1}`;
+    svg.append(tx);
+    s.values.forEach((v, i) => {
+      svg.append(titled(doc, svgEl(doc, "rect", { x: L + cw * i + 1, y: T + ch * si + 1, width: cw - 2, height: ch - 2, rx: 3, fill: shade(v) }), `${s.name ? `${s.name} · ` : ""}${spec.labels[i]}: ${v}`));
+      if (cw >= 30) {
+        const vt = svgEl(doc, "text", { x: L + cw * (i + 0.5), y: T + ch * (si + 0.5) + 4, "text-anchor": "middle", class: `heat-v${v / max > 0.55 ? " on" : ""}` });
+        vt.textContent = fmt(v);
+        svg.append(vt);
+      }
+    });
+  });
+  return svg;
+}
+
+/** A spoke per label, a polygon per series, rings at quarters of the largest value. */
+function radar(spec: ChartSpec, doc: Document): SVGSVGElement {
+  const n = Math.max(spec.labels.length, 3), cx = 160, cy = 150, r = 105;
+  const svg = svgEl(doc, "svg", { viewBox: "0 0 320 300", role: "img", class: "radar" });
+  const max = niceMax(Math.max(...spec.series.flatMap((s) => s.values), 0));
+  const at = (i: number, f: number) => [cx + r * f * Math.sin((2 * Math.PI * i) / n), cy - r * f * Math.cos((2 * Math.PI * i) / n)] as const;
+  for (let k = 1; k <= 4; k++) svg.append(svgEl(doc, "polygon", { points: Array.from({ length: n }, (_, i) => at(i, k / 4).join(",")).join(" "), class: "gridline", fill: "none" }));
+  for (let i = 0; i < n; i++) {
+    const [x, y] = at(i, 1);
+    svg.append(svgEl(doc, "line", { x1: cx, y1: cy, x2: x, y2: y, class: "gridline" }));
+    const [lx, ly] = at(i, 1.16);
+    const t = svgEl(doc, "text", { x: lx, y: ly + 4, "text-anchor": Math.abs(lx - cx) < 8 ? "middle" : lx > cx ? "start" : "end", class: "axis" });
+    const label = spec.labels[i] ?? "";
+    t.textContent = label.length > 14 ? `${label.slice(0, 13)}…` : label;
+    svg.append(t);
+  }
+  spec.series.forEach((s, si) => {
+    const pts = Array.from({ length: n }, (_, i) => at(i, Math.max(0, s.values[i] ?? 0) / max));
+    svg.append(svgEl(doc, "polygon", { points: pts.map((q) => q.join(",")).join(" "), fill: color(si), "fill-opacity": 0.16, stroke: color(si), "stroke-width": 2 }));
+    pts.forEach(([x, y], i) => svg.append(titled(doc, svgEl(doc, "circle", { cx: x, cy: y, r: 3.5, fill: color(si) }), `${s.name ? `${s.name} · ` : ""}${spec.labels[i]}: ${s.values[i] ?? 0}`)));
   });
   return svg;
 }

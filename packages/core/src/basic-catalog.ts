@@ -19,6 +19,7 @@ type Extra = Pick<JSONSchema, "aliases" | "enumAliases" | "namesComponent" | "de
 const str = (extra: Extra = {}): JSONSchema => ({ type: "string", ...extra });
 const oneOf = (values: string[], extra: Extra = {}): JSONSchema => ({ type: "string", enum: values, ...extra });
 const bool = (extra: Extra = {}): JSONSchema => ({ type: "boolean", ...extra });
+const num = (extra: Extra = {}): JSONSchema => ({ type: "number", ...extra });
 const props = (properties: Record<string, JSONSchema>, required: string[] = []): JSONSchema => ({
   type: "object",
   properties,
@@ -136,8 +137,39 @@ function finalizeTable(p: Record<string, unknown>): Record<string, unknown> {
 
 const numeric = (v: unknown) => typeof v === "number" || (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)));
 
+/** A point as [x, y] or {x, y}. */
+const xy = (v: unknown): [number, number] | undefined => {
+  const o = v as Record<string, unknown>;
+  const pair = Array.isArray(v) && v.length === 2 ? v : o && typeof o === "object" && "x" in o && "y" in o ? [o.x, o.y] : undefined;
+  return pair && numeric(pair[0]) && numeric(pair[1]) ? [Number(pair[0]), Number(pair[1])] : undefined;
+};
+
+/**
+ * Scatter points written as [x, y] pairs or {x, y} records, as a bare list
+ * (one series) or as a series' values, become values plus their x. Without
+ * this a pair list reads as many two-value series.
+ */
+function scatterPoints(p: Record<string, unknown>): Record<string, unknown> {
+  const s = p.series;
+  if (p.kind !== "scatter" || !Array.isArray(s) || !s.length) return p;
+  const split = (pts: unknown[]) => {
+    const ok = pts.map(xy);
+    return ok.every(Boolean) ? { x: ok.map((q) => q![0]), values: ok.map((q) => q![1]) } : undefined;
+  };
+  const whole = split(s);
+  if (whole) return { ...p, series: [whole] };
+  const series = s.map((it) => {
+    const o = it as Record<string, unknown>;
+    const pts = o && typeof o === "object" ? (["values", "data", "points"].map((k) => o[k]).find(Array.isArray) as unknown[] | undefined) : undefined;
+    const sp = pts && pts.length && pts.every((v) => !numeric(v)) ? split(pts) : undefined;
+    return sp ? { ...(typeof o.name === "string" ? { name: o.name } : {}), ...sp } : it;
+  });
+  return { ...p, series };
+}
+
 /** Canonicalize the series shorthands the schema accepts into [{name?, values}]. */
 function normalizeChart(p: Record<string, unknown>): Record<string, unknown> {
+  p = scatterPoints(p);
   const s = p.series;
   if (!Array.isArray(s) || s.length === 0) return p;
   if (s.every(numeric)) return { ...p, series: [{ values: s.map(Number) }] };
@@ -254,6 +286,222 @@ function finalizeGraph(p: Record<string, unknown>): Record<string, unknown> {
     if (from && to) edges.push({ from, to, ...(text(r.label) ? { label: text(r.label) } : {}) });
   }
   return { ...p, nodes, edges };
+}
+
+// --- everyday components: item shapes and canonical forms -------------------
+
+const calendarEvent = props(
+  {
+    title: str({ aliases: ["name", "event", "label", "summary", "meal", "class", "what"] }),
+    date: str({ description: "YYYY-MM-DD", aliases: ["day", "on", "when"] }),
+    start: str({ description: "HH:MM", aliases: ["time", "from", "startTime", "begin"] }),
+    end: str({ description: "HH:MM", aliases: ["to", "until", "endTime", "finish"] }),
+    note: str({ aliases: ["description", "details", "location", "where", "body"] }),
+    tone,
+  },
+  ["title"],
+);
+const boardCard = props(
+  {
+    id: str({ aliases: ["key"] }),
+    title: str({ aliases: ["name", "label", "text", "task", "role", "company"] }),
+    column: str({ aliases: ["status", "stage", "lane", "list", "state", "columnId"] }),
+    note: str({ aliases: ["description", "details", "body", "subtitle"] }),
+    tag: str({ aliases: ["label", "category", "priority", "assignee", "owner"] }),
+  },
+  ["title"],
+);
+const compareOption = props(
+  {
+    name: str({ aliases: ["title", "label", "option", "product"] }),
+    price: { type: ["string", "number"], aliases: ["cost"] },
+    pros: { type: "array", items: { type: "string" }, aliases: ["advantages", "good", "strengths", "upsides", "plus"] },
+    cons: { type: "array", items: { type: "string" }, aliases: ["disadvantages", "bad", "weaknesses", "downsides", "minus"] },
+    specs: { type: "object", aliases: ["features", "attributes", "details", "properties"] },
+    note: md({ aliases: ["description", "summary", "verdict", "body"] }),
+    best: bool({ aliases: ["recommended", "winner", "pick"] }),
+  },
+  ["name"],
+);
+const ganttTask = props(
+  {
+    title: str({ aliases: ["name", "task", "label", "phase"] }),
+    start: str({ description: "YYYY-MM-DD", aliases: ["from", "begin", "startDate"] }),
+    end: str({ description: "YYYY-MM-DD", aliases: ["to", "finish", "endDate", "due"] }),
+    progress: { type: ["number", "string"], aliases: ["done", "percent", "complete"] },
+    group: str({ aliases: ["team", "stream", "category", "owner", "lane"] }),
+  },
+  ["title", "start"],
+);
+
+const records = (v: unknown) => (Array.isArray(v) ? v : []).map((x) => (typeof x === "string" ? { title: x } : x && typeof x === "object" ? (x as Record<string, unknown>) : undefined)).filter((x): x is Record<string, unknown> => x !== undefined);
+const coerceAll = (schema: JSONSchema, v: unknown) => records(v).map((r) => coerce(schema, r) as Record<string, unknown>);
+const iso = (v: unknown): string | undefined => {
+  const t = text(v);
+  const m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(t);
+  if (m) return `${m[1]}-${m[2]!.padStart(2, "0")}-${m[3]!.padStart(2, "0")}`;
+  const d = t ? new Date(t) : undefined;
+  return d && !Number.isNaN(d.getTime()) && /\d{4}/.test(t) ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : undefined;
+};
+/** "9am", "9:30 PM", "14:05" → "HH:MM". */
+const clock = (v: unknown): string | undefined => {
+  const m = /^(\d{1,2})(?::(\d{2}))?\s*([ap])?\.?m?\.?$/i.exec(text(v));
+  if (!m) return undefined;
+  let h = Number(m[1]);
+  if (m[3]?.toLowerCase() === "p" && h < 12) h += 12;
+  if (m[3]?.toLowerCase() === "a" && h === 12) h = 0;
+  return h < 24 ? `${String(h).padStart(2, "0")}:${m[2] ?? "00"}` : undefined;
+};
+const number = (v: unknown): number | undefined => {
+  const n = typeof v === "number" ? v : Number(text(v).replace(/[^0-9.+-]/g, ""));
+  return Number.isFinite(n) && text(v) !== "" ? n : undefined;
+};
+
+/**
+ * Events with ISO dates and HH:MM times, sorted. A time written into the date
+ * ("2026-11-02 18:00") or as "6pm" is split out; an event whose date cannot
+ * be read keeps its text so nothing the model sent is lost.
+ */
+function finalizeCalendar(p: Record<string, unknown>): Record<string, unknown> {
+  const events = coerceAll(calendarEvent, p.events).map((e) => {
+    const raw = text(e.date);
+    const timeInDate = /[T\s](\d{1,2}:\d{2}\s*(?:[ap]m)?)$/i.exec(raw)?.[1];
+    const date = iso(raw);
+    const start = clock(e.start) ?? clock(timeInDate);
+    const end = clock(e.end);
+    const keep: Record<string, unknown> = ({ title: text(e.title) || "Event", ...(date ? { date } : raw ? { when: raw } : {}), ...(start ? { start } : {}), ...(end ? { end } : {}), ...(text(e.note) ? { note: text(e.note) } : {}), ...(e.tone ? { tone: e.tone } : {}) });
+    return keep;
+  });
+  events.sort((a, b) => `${text(a.date) || "9"}${text(a.start)}`.localeCompare(`${text(b.date) || "9"}${text(b.start)}`));
+  const date = iso(p.date) ?? text(events.find((e) => e.date)?.date);
+  return { ...p, events, ...(date ? { date } : {}) };
+}
+
+/**
+ * Columns as [{id, title}] and every card in a column. A card naming a column
+ * the model never listed adds it (dropping the card loses content); a card
+ * with no column joins the first. Columns default to the cards' own stages.
+ */
+function finalizeBoard(p: Record<string, unknown>): Record<string, unknown> {
+  const cols: { id: string; title: string }[] = [];
+  const byKey = new Map<string, string>();
+  const addCol = (id: string, title = id) => {
+    if (!id || byKey.has(id.toLowerCase())) return byKey.get(id.toLowerCase());
+    cols.push({ id, title });
+    byKey.set(id.toLowerCase(), id);
+    byKey.set(title.toLowerCase(), id);
+    return id;
+  };
+  for (const c of Array.isArray(p.columns) ? p.columns : []) {
+    if (typeof c === "string") addCol(c);
+    else if (c && typeof c === "object") {
+      const o = c as Record<string, unknown>;
+      addCol(text(o.id) || text(o.title), text(o.title) || text(o.id));
+    }
+  }
+  const cards = coerceAll(boardCard, p.cards).map((c, i) => {
+    const col = text(c.column);
+    const column = (col && (byKey.get(col.toLowerCase()) ?? addCol(col))) || cols[0]?.id || addCol("To do")!;
+    return { ...c, id: text(c.id) || `c${i + 1}`, title: text(c.title) || `Card ${i + 1}`, column };
+  });
+  if (!cols.length) addCol("To do");
+  return { ...p, columns: cols, cards };
+}
+
+/** Numbers for value and max ("$420", "60%"); a rating defaults to 5 stars, others to 100. */
+function finalizeProgress(p: Record<string, unknown>): Record<string, unknown> {
+  const pct = typeof p.value === "string" && p.value.trim().endsWith("%");
+  const value = number(p.value) ?? 0;
+  const max = number(p.max) ?? (p.kind === "rating" ? 5 : pct || value <= 100 ? 100 : value);
+  const unit = text(p.unit) || (typeof p.value === "string" ? /^[^\d.+-]+/.exec(p.value.trim())?.[0]?.trim() : undefined);
+  return { ...p, value, max: max > 0 ? max : 100, ...(unit ? { unit } : {}) };
+}
+
+/** Each option's lists as strings and specs as text; the best is marked on the option itself. */
+function finalizeCompare(p: Record<string, unknown>): Record<string, unknown> {
+  const best = text(p.best).toLowerCase();
+  const list = (v: unknown) => (Array.isArray(v) ? v : [v]).flatMap((x) => text(x).split(/\s*[;\n]\s*/)).filter(Boolean);
+  const options = coerceAll(compareOption, p.options).map((o) => {
+    const name = text(o.name) || text(o.title);
+    const specs = o.specs && typeof o.specs === "object" && !Array.isArray(o.specs) ? Object.fromEntries(Object.entries(o.specs as object).map(([k, v]) => [k, text(v) || (typeof v === "boolean" ? (v ? "Yes" : "No") : "")])) : undefined;
+    return { ...o, name, pros: list(o.pros), cons: list(o.cons), ...(specs ? { specs } : {}), ...(o.price !== undefined ? { price: text(o.price) } : {}), best: o.best === true || (best !== "" && name.toLowerCase() === best) };
+  });
+  return { ...p, options };
+}
+
+/** Seconds from 90, "90", "10m", "1h 30m", "1:30", "01:00:00". */
+export function seconds(v: unknown): number | undefined {
+  if (typeof v === "number") return v > 0 ? v : undefined;
+  const t = text(v).toLowerCase();
+  if (!t) return undefined;
+  if (/^\d+(\.\d+)?$/.test(t)) return Number(t);
+  if (/^\d+(:\d{1,2}){1,2}$/.test(t)) return t.split(":").map(Number).reduce((a, b) => a * 60 + b, 0);
+  let total = 0, found = false;
+  for (const m of t.matchAll(/(\d+(?:\.\d+)?)\s*(h|hr|hours?|m|min|mins|minutes?|s|sec|secs|seconds?)\b/g)) {
+    found = true;
+    total += Number(m[1]) * (m[2]!.startsWith("h") ? 3600 : m[2]!.startsWith("m") ? 60 : 1);
+  }
+  return found && total > 0 ? total : undefined;
+}
+
+function finalizeTimer(p: Record<string, unknown>): Record<string, unknown> {
+  const duration = seconds(p.duration);
+  const until = text(p.until) && !Number.isNaN(new Date(text(p.until)).getTime()) ? text(p.until) : undefined;
+  const { duration: _d, until: _u, ...rest } = p;
+  return { ...rest, ...(duration ? { duration } : {}), ...(until ? { until } : {}) };
+}
+
+/**
+ * Nested [{label, children}] from nested records ({name, items}, {title,
+ * children}), path strings ("src/app/main.ts") or "  indented" outline lines.
+ */
+function finalizeTree(p: Record<string, unknown>): Record<string, unknown> {
+  type T = { label: string; note?: string; children: T[] };
+  const kidsKeys = ["children", "items", "nodes", "sub", "files", "entries", "sections"];
+  const fromRecord = (o: Record<string, unknown>): T => {
+    const label = text(o.label) || text(o.name) || text(o.title) || text(o.text) || text(o.path) || "Item";
+    const kids = kidsKeys.map((k) => o[k]).find(Array.isArray) as unknown[] | undefined;
+    return { label, ...(text(o.note ?? o.description) ? { note: text(o.note ?? o.description) } : {}), children: kids ? build(kids) : [] };
+  };
+  const build = (list: unknown[]): T[] => {
+    const out: T[] = [];
+    const at = (path: string[], into: T[]) => {
+      let level = into;
+      for (const part of path) {
+        let node = level.find((n) => n.label === part && n.children);
+        if (!node) level.push((node = { label: part, children: [] }));
+        level = node.children;
+      }
+    };
+    const strings = list.filter((x): x is string => typeof x === "string");
+    const indented = strings.some((x) => /^\s+\S/.test(x));
+    const stack: { depth: number; kids: T[] }[] = [{ depth: -1, kids: out }];
+    for (const x of list) {
+      if (typeof x === "string" && indented) {
+        const depth = /^\s*/.exec(x)![0].length;
+        while (stack.length > 1 && stack.at(-1)!.depth >= depth) stack.pop();
+        const node: T = { label: x.trim().replace(/^[-*•]\s*/, ""), children: [] };
+        stack.at(-1)!.kids.push(node);
+        stack.push({ depth, kids: node.children });
+      } else if (typeof x === "string") at(x.split(/\s*[/\\>›]\s*/).filter(Boolean), out);
+      else if (x && typeof x === "object") out.push(fromRecord(x as Record<string, unknown>));
+    }
+    return out;
+  };
+  const items = Array.isArray(p.items) ? p.items : p.items && typeof p.items === "object" ? Object.entries(p.items as object).map(([k, v]) => (Array.isArray(v) ? { label: k, children: v } : v && typeof v === "object" ? { label: k, ...(v as object) } : { label: k, note: text(v) })) : [];
+  return { ...p, items: build(items) };
+}
+
+/** Tasks with ISO start and end (end defaults to start: a milestone), progress 0-100, in start order. */
+function finalizeGantt(p: Record<string, unknown>): Record<string, unknown> {
+  const tasks = coerceAll(ganttTask, p.tasks).map((t) => {
+    const start = iso(t.start);
+    const end = iso(t.end) ?? start;
+    const pr = number(t.progress);
+    return { ...t, title: text(t.title) || "Task", ...(start ? { start } : {}), ...(end ? { end: end < (start ?? end) ? start : end } : {}), ...(pr !== undefined ? { progress: Math.max(0, Math.min(100, pr <= 1 && String(t.progress).includes(".") ? pr * 100 : pr)) } : {}) };
+  });
+  tasks.sort((a, b) => text(a.start).localeCompare(text(b.start)));
+  return { ...p, tasks };
 }
 
 /**
@@ -441,10 +689,10 @@ export const basicCatalog = defineCatalog(
       description: "Chart.",
       props: props(
         {
-          kind: oneOf(["bar", "line", "area", "pie"], {
+          kind: oneOf(["bar", "stacked", "line", "area", "pie", "scatter", "heatmap", "radar"], {
             default: "bar",
             aliases: ["chartType", "variant"],
-            enumAliases: { column: "bar", columns: "bar", barchart: "bar", histogram: "bar", linechart: "line", trend: "line", areachart: "area", piechart: "pie", donut: "pie", doughnut: "pie" },
+            enumAliases: { column: "bar", columns: "bar", barchart: "bar", histogram: "bar", linechart: "line", trend: "line", areachart: "area", piechart: "pie", donut: "pie", doughnut: "pie", stackedbar: "stacked", stackedbars: "stacked", stackedcolumn: "stacked", stack: "stacked", scatterplot: "scatter", bubble: "scatter", points: "scatter", xy: "scatter", heat: "heatmap", habit: "heatmap", habits: "heatmap", calendarheatmap: "heatmap", matrix: "heatmap", spider: "radar", web: "radar", polar: "radar" },
           }),
           labels: listOr({ type: "array", items: { type: "string" } }, { aliases: ["categories", "xAxis", "x", "keys"] }),
           series: {
@@ -454,7 +702,7 @@ export const basicCatalog = defineCatalog(
               {
                 type: "array",
                 items: props(
-                  { name: str({ aliases: ["label", "title"] }), values: { type: "array", items: { type: "number" }, aliases: ["data", "points", "y"] } },
+                  { name: str({ aliases: ["label", "title"] }), values: { type: "array", items: { type: "number" }, aliases: ["data", "points", "y"] }, x: { type: "array", items: { type: "number" }, description: "scatter: x of each value", aliases: ["xs", "xValues"] } },
                   ["values"],
                 ),
               },
@@ -475,6 +723,13 @@ export const basicCatalog = defineCatalog(
         { name: "areachart", props: { kind: "area" } },
         { name: "piechart", props: { kind: "pie" } },
         { name: "donutchart", props: { kind: "pie" } },
+        { name: "stackedbarchart", props: { kind: "stacked" } },
+        { name: "scatterplot", props: { kind: "scatter" } },
+        { name: "scatterchart", props: { kind: "scatter" } },
+        { name: "heatmap", props: { kind: "heatmap" } },
+        { name: "habittracker", props: { kind: "heatmap" } },
+        { name: "radarchart", props: { kind: "radar" } },
+        { name: "spiderchart", props: { kind: "radar" } },
       ],
     },
     alert: {
@@ -525,7 +780,7 @@ export const basicCatalog = defineCatalog(
         ["items"],
       ),
       normalize: (p) => ({ ...p, items: itemObjects(p.items) }),
-      aliases: ["stepper", "progress", "wizard", "process", "checklist_steps"],
+      aliases: ["stepper", "wizard", "process", "checklist_steps"],
     },
     code: {
       tier: "extended",
@@ -614,6 +869,155 @@ export const basicCatalog = defineCatalog(
       normalize: (p) => ({ ...p, images: itemObjects(p.images, "src") }),
       aliases: ["carousel", "photos", "album", "images"],
     },
+    calendar: {
+      tier: "extended",
+      description: "Events on a day, week or month calendar, or as an agenda.",
+      hint: "for meal plans, classes, trips and shifts; props.events is [{title, date: YYYY-MM-DD, start?: HH:MM, end?: HH:MM, note?}]; view: month, week, day or agenda",
+      // "calendar" was a date-picker alias: one with a bind is that input.
+      retype: [{ type: "date", when: props({ bind: str() }, ["bind"]) }],
+      props: props(
+        {
+          events: listOr({ type: "array", items: calendarEvent }, { aliases: ["items", "entries", "schedule", "meals", "classes", "shifts", "appointments"] }),
+          view: oneOf(["month", "week", "day", "agenda"], { aliases: ["mode", "range", "kind"], enumAliases: { monthly: "month", weekly: "week", daily: "day", list: "agenda", schedule: "agenda" } }),
+          date: str({ description: "YYYY-MM-DD shown first", aliases: ["start", "focus", "initialDate", "today"] }),
+        },
+        ["events"],
+      ),
+      normalize: (p) => ({ ...p, events: itemObjects(p.events) }),
+      finalize: finalizeCalendar,
+      aliases: ["agenda", "schedule", "planner", "eventcalendar", "mealplan", "weekplanner", { name: "weekview", props: { view: "week" } }, { name: "monthview", props: { view: "month" } }],
+    },
+    board: {
+      tier: "extended",
+      description: "Columns of cards the user drags between stages.",
+      hint: "for to-dos, job hunts, pipelines and projects; props.columns is the stage names; props.cards is [{title, column, note?, tag?}]; bind: /path keeps moves in data",
+      props: props(
+        {
+          columns: listOr({ type: "array", items: { anyOf: [{ type: "string" }, props({ id: str({ aliases: ["key", "value"] }), title: str({ aliases: ["name", "label", "stage", "status"] }) })] } }, { aliases: ["stages", "lanes", "lists", "statuses"] }),
+          cards: listOr({ type: "array", items: { anyOf: [{ type: "string" }, boardCard] } }, { aliases: ["items", "tasks", "tickets", "entries", "jobs"] }),
+          bind: str({ description: "/path the cards are kept at; moves write here", aliases: ["path", "model"] }),
+        },
+        ["cards"],
+      ),
+      finalize: finalizeBoard,
+      aliases: ["kanban", "kanbanboard", "taskboard", "pipeline", "swimlanes", "trello"],
+    },
+    progress: {
+      tier: "extended",
+      description: "How far toward a goal: a bar, a gauge, a ring or a star rating.",
+      hint: "for budgets, spending limits, habits, goals and scores; props.value and props.max (default 100); kind: bar, gauge, ring or rating; tone shows state",
+      // "progress" was a steps alias: one with stage items is steps. A rating
+      // the user sets (with bind) is an input.
+      retype: [
+        { type: "steps", when: props({ items: { type: "array", minItems: 1 } }, ["items"]) },
+        { type: "input", when: props({ bind: str() }, ["bind"]) },
+      ],
+      props: props(
+        {
+          value: { type: ["number", "string"], aliases: ["current", "spent", "done", "score", "progress", "percent", "amount", "rating"] },
+          max: { type: ["number", "string"], description: "default 100; 5 for a rating", aliases: ["total", "goal", "target", "limit", "budget", "of", "outOf", "maximum"] },
+          label: str({ aliases: ["title", "name", "caption", "text"] }),
+          kind: oneOf(["bar", "gauge", "ring", "rating"], { aliases: ["variant", "style", "type"], enumAliases: { meter: "bar", linear: "bar", dial: "gauge", speedometer: "gauge", circle: "ring", donut: "ring", radial: "ring", stars: "rating", star: "rating" } }),
+          unit: str({ aliases: ["suffix", "currency", "units"] }),
+          tone,
+          note: str({ aliases: ["description", "detail", "subtitle"] }),
+        },
+        ["value"],
+      ),
+      finalize: finalizeProgress,
+      aliases: ["progressbar", "meter", "gauge", "budget", "goal", "score", { name: "rating", props: { kind: "rating" } }, { name: "stars", props: { kind: "rating" } }, { name: "ring", props: { kind: "ring" } }, { name: "progressring", props: { kind: "ring" } }],
+    },
+    accordion: {
+      tier: "extended",
+      description: "Collapsible sections; each item or child opens on its own.",
+      hint: "for FAQs and long content on phones; props.items is [{title, body}], or children with props.title",
+      props: props({
+        items: listOr({ type: "array", items: props({ title: str({ aliases: ["question", "q", "heading", "label", "summary"] }), body: md({ aliases: ["answer", "a", "content", "text", "details"] }) }, ["title"]) }, { aliases: ["sections", "faqs", "questions", "entries", "panels"] }),
+        multiple: bool({ description: "several open at once (default true)", aliases: ["allowMultiple"] }),
+      }),
+      children: true,
+      aliases: ["faq", "faqs", "collapsible", "expander", "disclosure", "details", "accordions"],
+    },
+    compare: {
+      tier: "extended",
+      description: "Options side by side, the best one highlighted.",
+      hint: "for shopping and which-should-I-pick questions; props.options is [{name, pros, cons, specs: {feature: value}, price?, note?}]; props.best names the pick",
+      props: props(
+        {
+          options: listOr({ type: "array", items: compareOption }, { aliases: ["items", "choices", "products", "candidates", "alternatives"] }),
+          best: str({ description: "name of the recommended option", aliases: ["winner", "pick", "recommended", "recommendation", "choice"] }),
+        },
+        ["options"],
+      ),
+      finalize: finalizeCompare,
+      aliases: ["comparison", "proscons", "prosandcons", "versus", "vs", "comparisontable", "decision"],
+    },
+    timer: {
+      tier: "extended",
+      description: "A timer or stopwatch, or a countdown to a date and time.",
+      hint: "for cooking, workouts and deadlines; props.duration in seconds or \"10m\"/\"1:30\"; props.until is a date-time to count down to; no duration nor until is a stopwatch",
+      props: props({
+        label: str({ aliases: ["title", "name", "caption", "text"] }),
+        duration: { type: ["number", "string"], description: "seconds, or \"10m\", \"1:30\"", aliases: ["seconds", "time", "length", "minutes", "for"] },
+        until: str({ description: "YYYY-MM-DDTHH:MM to count down to", aliases: ["deadline", "date", "target", "end", "at", "due"] }),
+        autostart: bool({ aliases: ["autoStart", "start", "running"] }),
+      }),
+      finalize: finalizeTimer,
+      aliases: ["countdown", "stopwatch", "clock", "kitchentimer", "workouttimer"],
+    },
+    tree: {
+      tier: "extended",
+      description: "A collapsible hierarchy: files, notes, outlines and tables of contents.",
+      hint: "props.items is [{label, children: [...]}] nested, or path strings like \"src/app/main.ts\"",
+      props: props(
+        {
+          items: listOr({ type: "array", items: { anyOf: [{ type: "string" }, { type: "object" }] } }, { aliases: ["nodes", "children", "files", "outline", "entries", "toc", "data"] }),
+          expanded: bool({ description: "start open (default true for 2 levels)", aliases: ["open", "expandAll"] }),
+        },
+        ["items"],
+      ),
+      finalize: finalizeTree,
+      aliases: ["outline", "treeview", "filetree", "hierarchy", "toc", "tableofcontents", "folders", "directory"],
+    },
+    math: {
+      tier: "extended",
+      description: "A mathematical formula written in TeX.",
+      hint: "props.tex is TeX like \\frac{a}{b}, x^2, \\sqrt{x}, \\sum_{i=1}^n; display: false for inline",
+      props: props(
+        {
+          tex: str({ literal: true, description: "TeX source; braces are preserved", aliases: ["formula", "latex", "expression", "equation", "math", "content", "text", "value"] }),
+          display: bool({ description: "default true", aliases: ["block"] }),
+          caption: str({ aliases: ["label", "title", "note"] }),
+        },
+        ["tex"],
+      ),
+      aliases: ["formula", "equation", "latex", "katex", "tex", "mathjax"],
+    },
+    diff: {
+      tier: "extended",
+      description: "Before and after text with the changes marked.",
+      hint: "props.before and props.after are the full texts (copied verbatim), or props.diff is a unified diff; view: unified or split",
+      props: props({
+        before: str({ literal: true, aliases: ["old", "original", "from", "left", "a"] }),
+        after: str({ literal: true, aliases: ["new", "changed", "to", "right", "b", "revised"] }),
+        diff: str({ literal: true, description: "unified diff text", aliases: ["patch", "unified"] }),
+        language: str({ aliases: ["lang", "syntax"] }),
+        title: str({ aliases: ["filename", "file", "label", "caption"] }),
+        view: oneOf(["unified", "split"], { aliases: ["mode", "layout"], enumAliases: { inline: "unified", sidebyside: "split", "side-by-side": "split" } }),
+      }),
+      aliases: ["textdiff", "changes", "beforeafter", "patch", "codediff"],
+    },
+    gantt: {
+      tier: "extended",
+      description: "Tasks as bars across dates: a Gantt chart or roadmap.",
+      hint: "props.tasks is [{title, start: YYYY-MM-DD, end: YYYY-MM-DD, progress?: 0-100, group?}]; for dated events without spans use timeline",
+      props: props(
+        { tasks: listOr({ type: "array", items: ganttTask }, { aliases: ["items", "bars", "phases", "milestones", "entries", "workstreams"] }) },
+        ["tasks"],
+      ),
+      finalize: finalizeGantt,
+      aliases: ["ganttchart", "roadmap", "projectplan", "schedulechart"],
+    },
     // --- interaction ------------------------------------------------------
     button: {
       description: "Button that sends an action to you.",
@@ -649,11 +1053,17 @@ export const basicCatalog = defineCatalog(
           placeholder,
           // HTML input types that are their own components here ("date", "checkbox",
           // "textarea") retype the node instead of failing the enum.
-          kind: oneOf(["text", "email", "number", "tel", "url"], {
+          kind: oneOf(["text", "email", "number", "tel", "url", "time", "range", "rating", "file"], {
             aliases: ["inputType", "format"],
-            enumAliases: { phone: "tel", telephone: "tel", integer: "number", link: "url", string: "text" },
+            enumAliases: { phone: "tel", telephone: "tel", integer: "number", link: "url", string: "text", slider: "range", stars: "rating", upload: "file", attachment: "file", clock: "time" },
             namesComponent: true,
           }),
+          min: num({ aliases: ["minimum", "from"] }),
+          max: num({ description: "range top; rating stars (default 5)", aliases: ["maximum", "to", "stars", "outOf"] }),
+          step: num({ aliases: ["increment"] }),
+          unit: str({ aliases: ["suffix", "units"] }),
+          accept: str({ description: "file types, e.g. image/*,.pdf", aliases: ["fileTypes", "types"] }),
+          multiple: bool({ description: "file: several files", aliases: ["multi"] }),
           checks,
         },
         ["label", "bind"],
@@ -667,6 +1077,19 @@ export const basicCatalog = defineCatalog(
         { name: "tel", props: { kind: "tel" } },
         { name: "url", props: { kind: "url" } },
         { name: "numberinput", props: { kind: "number" } },
+        { name: "time", props: { kind: "time" } },
+        { name: "timepicker", props: { kind: "time" } },
+        { name: "timeinput", props: { kind: "time" } },
+        { name: "slider", props: { kind: "range" } },
+        { name: "range", props: { kind: "range" } },
+        { name: "rangeinput", props: { kind: "range" } },
+        { name: "starrating", props: { kind: "rating" } },
+        { name: "ratinginput", props: { kind: "rating" } },
+        { name: "file", props: { kind: "file" } },
+        { name: "fileinput", props: { kind: "file" } },
+        { name: "upload", props: { kind: "file" } },
+        { name: "attachment", props: { kind: "file" } },
+        { name: "dropzone", props: { kind: "file" } },
       ],
     },
     textarea: {
@@ -707,7 +1130,7 @@ export const basicCatalog = defineCatalog(
       description: "Date picker.",
       props: props({ label: fieldLabel, bind: fieldBind, range: bool({ aliases: ["isRange"] }), checks }, ["label", "bind"]),
       defaults: fieldDefaults,
-      aliases: ["datepicker", "calendar", "dateinput", { name: "daterange", props: { range: true } }],
+      aliases: ["datepicker", "dateinput", { name: "daterange", props: { range: true } }],
     },
   },
   {

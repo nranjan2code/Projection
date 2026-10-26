@@ -3,6 +3,14 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: everyday components
+
+- New extended-tier components, each drawn natively on the web and lowered for chat and text targets (`LOWERED`): `calendar` (month, week, day and agenda views; arrow-key day grid), `board` (columns of cards moved by pointer drag, touch included, or by keyboard; with `bind` the moves write the cards to the data model), `progress` (bar, gauge, ring or star rating; over-limit reads as danger), `accordion` (items or child sections; native disclosure), `compare` (options side by side, the best highlighted, a specs table), `timer` (timer, stopwatch with laps, countdown to a date-time; wall-clock based), `tree` (nested records, path strings or indented outlines; WAI tree keys), `math` (TeX drawn as MathML, no fonts or libraries), `diff` (before/after or a unified diff; unified or split, word-level marks, folded context) and `gantt` (date-scaled bars; zoom by buttons, keys, ctrl-wheel or pinch; pan by drag).
+- `input` kinds `time`, `range` (slider), `rating` (stars) and `file` (name, type, size, and the text of small text files; files stay on the device), with `min`, `max`, `step`, `unit`, `accept`, `multiple`. Chat forms read typed times, bounded numbers and "4 stars".
+- `chart` kinds `stacked`, `scatter` (points as `[x, y]` or `{x, y}`; series gain `x`), `heatmap` (a habit calendar for dated values, else a matrix) and `radar`. `chartText` lists scatter points.
+- Aliases moved where a name now has its own component: `calendar` (was a date-picker alias) and `progress` (was a steps alias) retype back when the props say so (a bind; stage items). An alias's presets survive a semantic retype, so a bound `rating` is a rating input.
+- Checked in Chromium and in off-screen WebKit, desktop and phone widths. 264 tests/replay gate and typecheck pass. No dependencies added.
+
 ## 2026-10-26: trusted completion acknowledgement
 
 - `CompletionCheck` can additionally return `{issues, response?}`. Existing issue arrays remain valid. After successful substantive checks, a trusted application may replace the emitted final prose with a neutral acknowledgement, retaining raw provider prose in conversation/transcript data for diagnosis. Rejected or malformed decisions emit no final text.
