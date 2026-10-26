@@ -84,3 +84,22 @@ test("completion feedback identifies existing surfaces so a correction patch pre
   assert.equal(store.list().length, 1);
   assert.equal(store.resolve("chosen-by-author")!.root!.children[0]!.props.value, 42);
 });
+
+test("a trusted review acknowledgement replaces final prose without another generation", async () => {
+  const events: AgentEvent[] = [], messages = [{ role: "user" as const, content: "Review the outputs" }];
+  let requests = 0;
+  const provider: Provider = { id: "review", async *stream() { requests++; yield { type: "text", delta: "Everything has been independently verified." }; yield { type: "done", stop: "end" }; } };
+  const result = await runAgent({ provider, model: "m", store: new SurfaceStore(basicCatalog), messages, completion: "response", maxSteps: 2, validateCompletion: ({ response }) => { assert.match(response, /independently verified/); return { issues: [], response: "Ready for user review." }; }, emit: (event) => events.push(event) });
+  assert.equal(result.stop, "end"); assert.equal(requests, 1);
+  assert.equal(events.filter((event) => event.type === "text_delta").map((event) => event.delta).join(""), "Ready for user review.");
+});
+
+test("replacement prose cannot bypass failed checks and malformed review decisions fail closed", async () => {
+  for (const decision of [{ issues: ["Evidence missing"], response: "Ready for user review." }, { issues: [], response: 3 }, { issues: "not a list" }, null, { issues: [], typo: "ignored?" }]) {
+    const events: AgentEvent[] = [];
+    const provider: Provider = { id: "review", async *stream() { yield { type: "text", delta: "Unsupported assertion" }; yield { type: "done", stop: "end" }; } };
+    const result = await runAgent({ provider, model: "m", store: new SurfaceStore(basicCatalog), messages: [{ role: "user", content: "Work" }], completion: "response", maxSteps: 2, validateCompletion: () => decision as never, emit: (event) => events.push(event) });
+    assert.equal(result.stop, decision?.issues instanceof Array && decision.issues.length ? "max_steps" : "error");
+    assert.equal(events.some((event) => event.type === "text_delta"), false);
+  }
+});
