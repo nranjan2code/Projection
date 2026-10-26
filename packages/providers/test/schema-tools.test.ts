@@ -9,12 +9,12 @@ test("schema batches publish independent surfaces and dispatch declared external
   const store = new SurfaceStore(basicCatalog); let requests = 0, executions = 0;
   const provider: Provider = { id: "scripted", capabilities: { constrainedOutput: true }, async *stream(request) {
     assert.equal(request.tools, undefined); assert.ok(request.responseSchema);
-    const batches = [ { reply: "", calls: [render("first"), render("second")] }, { reply: "", calls: [{ name: "approved_read", arguments: { name: "chosen" } }] }, { reply: "Ready for review", calls: [] } ];
+    const batches = [ { reply: "", calls: [render("first")] }, { reply: "", calls: [render("second")] }, { reply: "", calls: [{ name: "approved_read", arguments: { name: "chosen" } }] }, { reply: "Ready for review", calls: [] } ];
     yield { type: "text", delta: JSON.stringify(batches[requests++]) }; yield { type: "done", stop: "end", usage: { input: 2, output: 3 } };
   } };
   const result = await runAgent({ provider, model: "test", store, messages: [], schemaMode: "strict", toolEncoding: "constrained", completion: "response", maxSteps: 3,
     tools: [{ spec: { name: "approved_read", description: "Read after existing authorization", inputSchema: { type: "object", required: ["name"], properties: { name: { type: "string" } } } }, execute: (args) => { assert.deepEqual(args, { name: "chosen" }); executions++; return "read receipt"; } }], emit: () => {} });
-  assert.equal(result.stop, "end"); assert.equal(requests, 3); assert.equal(executions, 1); assert.equal(store.list().length, 2);
+  assert.equal(result.stop, "end"); assert.equal(requests, 4); assert.equal(executions, 1); assert.equal(store.list().length, 2);
 });
 
 test("a malformed or truncated batch dispatches no calls and retries within the existing step budget", async () => {

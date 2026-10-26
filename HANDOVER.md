@@ -1,3 +1,5 @@
+Schema encoding now admits one operation per decoded response, so each edit receives feedback before another operation. Multiple independent surfaces still accumulate in the same bounded loop; no additional request allowance. Native tool encoding is unchanged.
+
 Schema-batch follow-up (2026-10-26): native tool definitions do not guarantee nested JSON shapes. The new opt-in toolEncoding constrained/auto encodes calls through provider responseSchema, validates the complete batch before dispatch and then reuses the same tools loop. Flat typed render nodes avoid serialized/nested-tree corruption; multiple independent surfaces and tools remain available. Malformed/truncated batches emit no calls; no new authority, budget or agent. Native default unchanged. App outcome reruns follow separately.
 
 Deletion-guidance follow-up: a review correction omitted an unwanted date from merged data, which correctly preserves it. Authoring now explicitly names vak_remove for nodes and JSON Patch remove for data; no inferred deletion. 334 tests/replay and typecheck pass.
