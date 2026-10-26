@@ -29,7 +29,10 @@ test("primitive key-quote recovery supports literals without accepting partial v
   }
   assert.deepEqual(parsePartial('{"ok:fal').value, {});
   assert.deepEqual(parsePartial('{"n:12').value, {});
-  assert.deepEqual(parsePartial('{"ok:false}').value, { ok: false });
+  assert.deepEqual(parsePartial('{"ok:false}').value, {});
+  assert.deepEqual(parsePartial('{"ok:false}', { final: true }).value, { ok: false });
+  assert.deepEqual(parsePartial('{"flag:false, note"').value, {});
+  assert.equal(Object.hasOwn(parseLenient('{"note:false, unfinished') as object, "note"), false);
 });
 
 test("valid quoted keys, source strings and ambiguous nonliteral values retain their reading", () => {

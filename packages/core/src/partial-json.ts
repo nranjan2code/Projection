@@ -530,9 +530,10 @@ class Parser {
    * Read a candidate identifier/colon/token boundary, then let JSON.parse
    * validate the primitive token. No value is guessed, and partial tokens,
    * quoted values, containers and non-JSON dialect literals are not repairs.
+   * Defer recovery until final input: a live prefix may still be a valid key.
    */
   private recoverPrimitiveMember(start: number): { name: string; colon: number } | undefined {
-    if (this.s[start] !== '"') return undefined;
+    if (!this.final || this.s[start] !== '"') return undefined;
     const first = (c: string) => c >= "A" && c <= "Z" || c >= "a" && c <= "z" || c === "_" || c === "$";
     const rest = (c: string) => first(c) || c >= "0" && c <= "9" || c === "-";
     const white = (c: string) => c === " " || c === "\n" || c === "\r" || c === "\t";
@@ -551,7 +552,12 @@ class Parser {
     try { value = JSON.parse(this.s.slice(valueStart, i)); } catch { return undefined; }
     if (!(value === null || typeof value === "boolean" || typeof value === "number" && Number.isFinite(value))) return undefined;
     while (i < this.s.length && white(this.s[i]!)) i++;
-    return this.s[i] === "," || this.s[i] === "}" ? { name, colon } : undefined;
+    const delimiter = this.s[i++];
+    while (i < this.s.length && white(this.s[i]!)) i++;
+    const next = this.s[i];
+    if (delimiter === "," && (next === '"' || next === "}")) return { name, colon };
+    if (delimiter === "}" && (next === undefined || next === "," || next === "}" || next === "]")) return { name, colon };
+    return undefined;
   }
 
   string(): { value: string; closed: boolean } {
