@@ -496,7 +496,19 @@ class Parser {
       return mixed[2]!;
     }
     if (c === '"' || c === "'") {
+      const start = this.i, truncated = this.truncated;
       const { value, closed } = this.string();
+      const end = this.i;
+      this.skip();
+      const member = this.s[this.i];
+      this.i = end;
+      // Proper quoted keys win, including keys containing colons/literals.
+      const recovered = !(closed && (member === ":" || member === "=")) ? this.recoverPrimitiveMember(start) : undefined;
+      if (recovered) {
+        this.i = recovered.colon;
+        this.truncated = truncated;
+        return recovered.name;
+      }
       return closed ? value : MISSING;
     }
     const m = /^[A-Za-z_$][\w$-]*/.exec(this.s.slice(this.i));
@@ -511,6 +523,35 @@ class Parser {
       return MISSING;
     }
     return m[0];
+  }
+
+  /**
+   * A typed 4B table omitted a key's closing quote (`"within_budget:false}`).
+   * Read a candidate identifier/colon/token boundary, then let JSON.parse
+   * validate the primitive token. No value is guessed, and partial tokens,
+   * quoted values, containers and non-JSON dialect literals are not repairs.
+   */
+  private recoverPrimitiveMember(start: number): { name: string; colon: number } | undefined {
+    if (this.s[start] !== '"') return undefined;
+    const first = (c: string) => c >= "A" && c <= "Z" || c >= "a" && c <= "z" || c === "_" || c === "$";
+    const rest = (c: string) => first(c) || c >= "0" && c <= "9" || c === "-";
+    const white = (c: string) => c === " " || c === "\n" || c === "\r" || c === "\t";
+    let i = start + 1;
+    if (!first(this.s[i] ?? "")) return undefined;
+    const nameStart = i++;
+    while (i < this.s.length && rest(this.s[i]!)) i++;
+    const name = this.s.slice(nameStart, i);
+    while (i < this.s.length && white(this.s[i]!)) i++;
+    if (this.s[i] !== ":") return undefined;
+    const colon = i++;
+    while (i < this.s.length && white(this.s[i]!)) i++;
+    const valueStart = i;
+    while (i < this.s.length && !white(this.s[i]!) && this.s[i] !== "," && this.s[i] !== "}" && this.s[i] !== "]") i++;
+    let value: unknown;
+    try { value = JSON.parse(this.s.slice(valueStart, i)); } catch { return undefined; }
+    if (!(value === null || typeof value === "boolean" || typeof value === "number" && Number.isFinite(value))) return undefined;
+    while (i < this.s.length && white(this.s[i]!)) i++;
+    return this.s[i] === "," || this.s[i] === "}" ? { name, colon } : undefined;
   }
 
   string(): { value: string; closed: boolean } {

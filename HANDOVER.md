@@ -14,6 +14,8 @@ Authoring/data fidelity repairs added 2026-10-26: replayed the retained local co
 
 Trusted completion acknowledgement added 2026-10-26: `CompletionCheck` may return the existing issue array or `{issues, response?}`. Successful checks can replace emitted final prose without forcing a stylistic generation retry; raw provider prose remains diagnostic data. Failed/malformed checks still withhold final text. This followed a real comparison where exact final wording alone caused retries and later lost columns. 257 tests/replay gate and typecheck pass in an isolated checkout; no dependencies or existing-signature break.
 
+Token-based primitive member recovery (2026-10-26): an isolated branch fixes a missing key quote before a complete JSON primitive, using token boundaries and `JSON.parse`, not a compound regex repair. Replayed real typed-comparison render/update calls now retain both rows; deliberately wrong facts are preserved. 281 tests/replay gate and typecheck pass. No compatibility adapters, dependencies or renderer/style edits. Concurrent theme/card work stays in its original checkout; reconcile through the branch review rather than staging that work.
+
 Start here in a new session. Rules: [AGENTS.md](AGENTS.md). System: [SPECS.md](SPECS.md).
 
 ## Handover prompt (paste into a new session)
