@@ -1,0 +1,22 @@
+[
+  {
+    "name": "vak_render",
+    "arguments": "{\"surface\":\"criteria_form\",\"title\":\"Fictional Selection Criteria Form\",\"nodes\":[{\"children\":[{\"id\":\"budget_input\",\"props\":{\"bind\":\"/criteria/budget\",\"kind\":\"number\",\"label\":\"Budget (monthly)\",\"placeholder\":\"e.g., 20\"},\"type\":\"input\"},{\"id\":\"seats_input\",\"props\":{\"bind\":\"/criteria/seats\",\"kind\":\"number\",\"label\":\"Required seats\",\"placeholder\":\"e.g., 6\"},\"type\":\"input\"},{\"id\":\"data_label\",\"props\":{\"content\":\"Fictional selection data is live in the comparison table below.\"},\"type\":\"text\"}],\"id\":\"root\",\"props\":{\"submit\":\"revise_criteria\",\"submitLabel\":\"Update criteria\"},\"type\":\"form\"}],\"data\":{\"criteria\":{\"budget\":20,\"seats\":6}}}"
+  },
+  {
+    "name": "vak_render",
+    "arguments": "{\"surface\":\"comparison_table\",\"title\":\"Fictional Option Comparison Table\",\"nodes\":\"[{\\\"id\\\": \\\"root\\\", \\\"type\\\": \\\"table\\\", \\\"props\\\": {\\\"columns\\\": [{\\\"key\\\": \\\"option\\\", \\\"label\\\": \\\"Option\\\"}, {\\\"key\\\": \\\"monthly_cost\\\", \\\"label\\\": \\\"Monthly Cost ($)\\\"}, {\\\"key\\\": \\\"seats\\\", \\\"label\\\": \\\"Seats\\\"}, {\\\"key\\\": \\\"cost_per_seat\\\", \\\"label\\\": \\\"Cost per Seat ($)\\\"}, {\\\"key\\\": \\\"within_budget\\\", \\\"label\\\": \\\"Within Budget\\\"}, {\\\"key\\\": \\\"enough_seats\\\", \\\"label\\\": \\\"Enough Seats\\\"}, {\\\"key\\\": \\\"meets_both\\\", \\\"label\\\": \\\"Meets Both\\\"}], \\\"rows\\\": [{\\\"option\\\": \\\"Atlas\\\", \\\"monthly_cost\\\": 12, \\\"seats\\\": 4, \\\"cost_per_seat\\\": 3, \\\"within_budget\\\": true, \\\"enough_seats\\\": false, \\\"meets_both\\\": false}, {\\\"option\\\": \\\"Birch\\\", \\\"monthly_cost\\\": 18, \\\"seats\\\": 8, \\\"cost_per_seat\\\": 2.25, \\\"within_budget\\\": true, \\\"enough_seats\\\": true, \\\"meets_both\\\": true}], \\\"sortable\\\": true, \\\"searchable\\\": true, \\\"totals\\\": false}, \\\"children\\\": []}\",\"data\":{\"criteria\":{\"budget\":20,\"seats\":6}}}"
+  },
+  {
+    "name": "vak_update",
+    "arguments": "{\"surface\":\"criteria_form\",\"nodes\":\"[{\\\"children\\\":[{\\\"id\\\":\\\"budget_input\\\",\\\"props\\\":{\\\"bind\\\":\\\"/criteria/budget\\\",\\\"kind\\\":\\\"number\\\",\\\"label\\\":\\\"Budget (monthly)\\\",\\\"placeholder\\\":\\\"e.g., 20\\\"},\\\"type\\\":\\\"input\\\"},{\\\"id\\\":\\\"seats_input\\\",\\\"props\\\":{\\\"bind\\\":\\\"/criteria/seats\\\",\\\"kind\\\":\\\"number\\\",\\\"label\\\":\\\"Required seats\\\",\\\"placeholder\\\":\\\"e.g., 6\\\"},\\\"type\\\":\\\"input\\\"},{\\\"id\\\":\\\"data_label\\\",\\\"props\\\":{\\\"content\\\":\\\"Fictional selection data is live in the comparison table below.\\\"},\\\"type\\\":\\\"text\\\"}],\\\"id\\\":\\\"root\\\",\\\"props\\\":{\\\"submit\\\":\\\"revise_criteria\\\",\\\"submitLabel\\\":\\\"Update criteria\\\"},\\\"type\\\":\\\"form\\\"}, {\\\"children\\\":[{\\\"id\\\":\\\"note\\\",\\\"props\\\":{\\\"content\\\":\\\"Form updated. Comparison table reflects new criteria: Budget $10, Seats 8.\\\"}]}]\",\"id\":\" \\\"root\\\"\"}"
+  },
+  {
+    "name": "vak_update",
+    "arguments": "{\"surface\":\"comparison_table\",\"data\":{\"criteria\":{\"budget\":10,\"seats\":8}}}"
+  },
+  {
+    "name": "vak_render",
+    "arguments": "{\"surface\":\"comparison_table\",\"title\":\"Fictional Option Comparison Table\",\"nodes\":\"[{\\\"children\\\":[{\\\"id\\\":\\\"root\\\",\\\"type\\\":\\\"table\\\",\\\"props\\\":{\\\"columns\\\":[{\\\"key\\\":\\\"option\\\",\\\"label\\\":\\\"Option\\\"},{\\\"key\\\":\\\"monthly_cost\\\",\\\"label\\\":\\\"Monthly Cost ($)\\\"},{\\\"key\\\":\\\"seats\\\",\\\"label\\\":\\\"Seats\\\"},{\\\"key\\\":\\\"cost_per_seat\\\",\\\"label\\\":\\\"Cost per Seat ($)\\\"},{\\\"key\\\":\\\"within_budget\\\",\\\"label\\\":\\\"Within Budget\\\"},{\\\"key\\\":\\\"enough_seats\\\",\\\"label\\\":\\\"Enough Seats\\\"},{\\\"key\\\":\\\"meets_both\\\",\\\"label\\\":\\\"Meets Both\\\"}],\\\"rows\\\":[{\\\"option\\\":\\\"Atlas\\\",\\\"monthly_cost\\\":12,\\\"seats\\\":4,\\\"cost_per_seat\\\":3,\\\"within_budget\\\":false,\\\"enough_seats\\\":false,\\\"meets_both\\\":false},{\\\"option\\\":\\\"Birch\\\",\\\"monthly_cost\\\":18,\\\"seats\\\":8,\\\"cost_per_seat\\\":2.25,\\\"within_budget\\\":false,\\\"enough_seats\\\":true,\\\"meets_both\\\":false}],\\\"sortable\\\":true,\\\"searchable\\\":true,\\\"totals\\\":false},\\\"type\\\":\\\"table\\\"}]\",\"id\":\"root\"}"
+  }
+]
