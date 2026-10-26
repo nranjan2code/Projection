@@ -3,6 +3,11 @@
 What changed, newest first. Nothing is released yet: every package is `0.1.0` and unpublished. Apps pin this repository by commit or tag; a change that breaks a package export is marked **Breaking** (see [RELEASING.md](RELEASING.md)). Details of each step are in [HANDOVER.md](HANDOVER.md); the architecture is in [SPECS.md](SPECS.md).
 
 
+## 2026-10-26: conversation and short answers stay plain text
+
+- The system prompt now says when to answer without a tool, not only when to prefer UI: greetings, thanks, small talk, questions about the assistant, a fact, definition or short explanation, or a request for text. Earlier surfaces in the conversation are no reason to render again. `CONSTRAINED_INSTRUCTIONS` makes `render: null` the answer for conversation and short plain answers, and the kit's default instructions match. Seen in Vakyartha with qwen3.5:4b-mlx, which rendered a greeting surface for "hello" and ignored "Plain text only" after earlier surfaces.
+- `titleRepeated(title, root)` (`@vak/core`): whether a surface's opening content (first card/section title or text) already says its title. `<vak-surface>` leaves such a title out, so "Hello!" no longer sits above "Hello! How can I help?" and a heading no longer repeats the title above it. A title that adds something ("Weather in Paris" over a "Weather" card) stays.
+
 ## 2026-10-26: integration rounds get their own budget and a closing answer
 
 - Rounds that run integration tools draw on `toolRounds` (`RunOptions`, `HostRunOptions`; default `TOOL_ROUNDS` = 6, a host policy), no longer on `maxSteps`, which now bounds answer, authoring and repair rounds. A small model doing research could spend every step gathering and end the turn with no reply.

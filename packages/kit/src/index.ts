@@ -52,7 +52,8 @@ export interface Vak {
   email(opts?: EmailOptions & { surface?: string }): EmailProjection;
 }
 
-const DEFAULT_INSTRUCTIONS = `Answer with rich UI whenever the answer has any structure; keep accompanying text to one short sentence, the UI carries the content.
+const DEFAULT_INSTRUCTIONS = `Answer with rich UI when the answer has structure the user will scan, compare or act on (options, comparisons, metrics, steps, forms); keep the accompanying text to one short sentence, the UI carries the content.
+Answer conversation and short answers in plain text, without UI: greetings, thanks, small talk, a fact or an explanation of a few sentences, or whatever the user asks for as text.
 When you lack real data, use realistic sample data and say it is sample data in a caption.
 When you receive a "[ui action]" message, the user interacted with your UI: respond to it, usually by updating that surface (vak_update) or rendering a confirmation.`;
 

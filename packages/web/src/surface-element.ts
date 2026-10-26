@@ -7,7 +7,7 @@
 // - Actions validate locally (same named checks as the server) and dispatch a
 //   `vak-action` event with the action and the surface data model.
 
-import { mapLink, type Column, filterItems, filterRows, getAt, INTERACT, isRequired, pageRows, type ResolvedNode, sortRows, type SurfaceStore, tableInteraction, type VpsAction } from "@vak/core";
+import { mapLink, type Column, filterItems, titleRepeated, filterRows, getAt, INTERACT, isRequired, pageRows, type ResolvedNode, sortRows, type SurfaceStore, tableInteraction, type VpsAction } from "@vak/core";
 import { normalizeChart, renderChart } from "./chart.ts";
 import { renderAccordion, renderBoard, renderCalendar, renderCompare, renderDiff, renderGantt, renderProgress, renderTimer, renderTree, type WidgetCtx } from "./everyday.ts";
 import { normalizeGraph, renderGraph } from "./graph.ts";
@@ -155,7 +155,8 @@ export class VakSurfaceElement extends HTMLElement {
     }
     if (this.#busyKey && surface.version !== this.#busyVersion) this.#busyKey = undefined;
     const els: HTMLElement[] = [];
-    if (surface.title) {
+    // A title the opening content already says is an echo: leave it out.
+    if (surface.title && !titleRepeated(surface.title, surface.root)) {
       const t = (this.#cache.get("$title")?.el as HTMLElement | undefined) ?? h("h2", "title");
       t.textContent = surface.title;
       this.#cache.set("$title", { el: t, sig: surface.title });

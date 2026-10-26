@@ -371,7 +371,7 @@ export function projectionResponseSchema(catalog: Catalog): JSONSchema {
 }
 
 export const CONSTRAINED_INSTRUCTIONS =
-  "Answer with one JSON object: {\"reply\": \"one short sentence\", \"render\": <vak_render arguments, or null only when the answer has no structure at all>}. " +
+  "Answer with one JSON object: {\"reply\": \"one short sentence\", \"render\": <vak_render arguments, or null when the reply is conversation or a short plain answer>}. " +
   "To change a UI you showed before, render it again with the same surface id.";
 
 // ---------------------------------------------------------------------------
@@ -426,6 +426,7 @@ export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts
   lines.push(
     "You can show rich, interactive UI by calling vak_render (new or replaced surface), vak_update (patch) and vak_remove.",
     "Prefer UI over long prose whenever content has structure: options, comparisons, metrics, steps, forms.",
+    "Answer in plain text, without any tool, when the reply is conversation or a short answer: greetings, thanks, small talk, questions about you, a fact, definition or explanation of a few sentences, or whenever the user asks for text. Surfaces earlier in the conversation are not a reason to render again: decide from the latest message.",
     "",
     "Rules:",
     opts.authoring === "inline"
@@ -464,6 +465,8 @@ export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts
     lines.push("", "Examples of good vak_render arguments:");
     for (const ex of catalog.examples) lines.push(`Request: ${ex.request}`, `vak_render: ${JSON.stringify(opts.authoring === "inline" ? toInline(ex.render) : ex.render)}`);
   }
+  // Small models weigh the end most: the plain-text rule is repeated last.
+  lines.push("", "Last: decide from the latest message alone. A greeting (\"hello\", \"hi\"), thanks or a short answer is plain text with no tool call.");
   if (profile) {
     lines.push("", `Target: ${profile.target}.`);
     if (profile.layout === "linear") lines.push("This target shows one column; layout is flattened in priority order, so order nodes by importance.");

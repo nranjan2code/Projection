@@ -19,3 +19,4 @@ export * from "./interact.ts";
 export * from "./lower.ts";
 export * from "./markdown-projector.ts";
 export * from "./ansi-projector.ts";
+export * from "./title.ts";

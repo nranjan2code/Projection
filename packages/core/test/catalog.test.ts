@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { basicCatalog } from "../src/basic-catalog.ts";
-import { narrow, systemPrompt, toInline, toolDefinitions } from "../src/catalog.ts";
+import { CONSTRAINED_INSTRUCTIONS, narrow, systemPrompt, toInline, toolDefinitions } from "../src/catalog.ts";
 import { SurfaceStore } from "../src/surface.ts";
 import { validate } from "../src/schema.ts";
 
@@ -86,4 +86,13 @@ test("compact prompt exposes rich item contracts and literal source fidelity", (
   assert.match(prompt, /Preserve all user-supplied items, labels, order and values exactly/);
   assert.match(toolDefinitions(basicCatalog, { mode: "compact", authoring: "inline" })[0]!.description, /child node objects directly/);
   assert.doesNotMatch(toolDefinitions(basicCatalog, { authoring: "inline" })[0]!.description, /flat list/);
+});
+
+test("the prompt says when to answer in plain text, not only when to render", () => {
+  // Vakyartha, 2026-10-26: qwen3.5:4b-mlx rendered a "greeting" surface for "hello" and
+  // ignored "Plain text only" once the chat held surfaces; the prompt only said when to prefer UI.
+  const prompt = systemPrompt(basicCatalog);
+  assert.match(prompt, /Answer in plain text, without any tool, when the reply is conversation or a short answer: greetings/);
+  assert.match(prompt, /Surfaces earlier in the conversation are not a reason to render again/);
+  assert.match(CONSTRAINED_INSTRUCTIONS, /null when the reply is conversation or a short plain answer/);
 });
