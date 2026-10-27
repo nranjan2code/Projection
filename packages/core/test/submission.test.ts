@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { basicCatalog, SurfaceStore, prepareSubmission, submissionTool, validate } from "../src/index.ts";
 
 const form = { op: "replace", surface: "criteria", data: { budget: 18 }, root: { type: "form", props: { submit: "apply" }, children: [{ type: "input", props: { label: "Budget", kind: "number", bind: "/budget" } }] } };
-const report = { op: "replace", surface: "report", root: { type: "table", props: { columns: ["name", "value"], rows: [{ name: "One", value: 9 }] } } };
+const report = { op: "replace", surface: "report", root: { type: "table", props: { columns: ["name", "value"], rows: [["One", 9]] } } };
 test("inline submission compiles identities without changing facts or canonical state", () => {
   const current = new SurfaceStore(basicCatalog);
   const candidate = prepareSubmission(basicCatalog, [], { surfaces: [form, report] });
@@ -13,16 +13,16 @@ test("inline submission compiles identities without changing facts or canonical 
   assert.deepEqual(store.snapshot("criteria")!.nodes.map((node) => node.id), ["root", "__vak_0_0"]);
   assert.deepEqual(store.snapshot("criteria")!.data, { budget: 18 });
   assert.equal(store.submit("criteria", "root").action?.data.budget, 18);
-  assert.deepEqual(store.resolve("report")!.root!.props.rows, [{ name: "One", value: 9 }]);
+  assert.deepEqual(store.resolve("report")!.root!.props.rows, [["One", 9]]);
   assert.deepEqual(validate(submissionTool(basicCatalog).inputSchema, { surfaces: [form, report] }), []);
 });
 test("submitted patches preserve unchanged surfaces and use canonical merge/deletion semantics", () => {
   const first = prepareSubmission(basicCatalog, [], { surfaces: [form, report] }).store!;
   const snapshots = first.list().map((surface) => first.snapshot(surface.id)!);
-  const revised = prepareSubmission(basicCatalog, snapshots, { surfaces: [{ op: "patch", surface: "report", nodes: [{ id: "root", props: { rows: [{ name: "One", value: 12 }] } }] }] }).store!;
+  const revised = prepareSubmission(basicCatalog, snapshots, { surfaces: [{ op: "patch", surface: "report", nodes: [{ id: "root", props: { rows: [["One", 12]] } }] }] }).store!;
   assert.deepEqual(revised.snapshot("criteria"), first.snapshot("criteria"));
-  assert.equal((revised.resolve("report")!.root!.props.rows as { value: number }[])[0]!.value, 12);
-  assert.equal((first.resolve("report")!.root!.props.rows as { value: number }[])[0]!.value, 9);
+  assert.equal((revised.resolve("report")!.root!.props.rows as unknown[][])[0]![1], 12);
+  assert.equal((first.resolve("report")!.root!.props.rows as unknown[][])[0]![1], 9);
   assert.deepEqual(prepareSubmission(basicCatalog, snapshots, { surfaces: [{ op: "remove", surface: "report" }] }).store!.list().map((surface) => surface.id), ["criteria"]);
   assert.ok(prepareSubmission(basicCatalog, snapshots, { surfaces: [{ op: "remove", surface: "criteria", ids: ["__vak_0_0"] }] }).issues.length === 0);
 });
@@ -56,7 +56,7 @@ test("invalid documents, duplicate targets, references and missing bindings cann
 test("state-aware submission schemas never offer nonexistent patch/remove targets", () => {
   const fresh = submissionTool(basicCatalog, []).inputSchema;
   assert.ok(validate(fresh, { surfaces: [{ op: "patch", surface: "invented", data: {} }] }).length);
-  const { surface, ...newReport } = report;
+  const newReport = { op: "replace", root: { type: "table", props: { columns: ["name", "value"], rows: [["One", 9]] } } };
   assert.equal(validate(fresh, { surfaces: [{ ...newReport, data: {} }] }).length, 0);
   const existing = submissionTool(basicCatalog, ["report"]).inputSchema;
   assert.equal(validate(existing, { surfaces: [{ op: "patch", surface: "report", data: {} }] }).length, 0);
@@ -91,7 +91,7 @@ test("local schema references reject inherited names and remain depth bounded", 
 test("table rows type their cells instead of admitting nested UI wrappers", () => {
   const schema = submissionTool(basicCatalog, []).inputSchema;
   const create = (rows: unknown[]) => ({ surfaces: [{ op: "replace", root: { type: "table", props: { columns: ["name", "cost"], rows } }, data: {} }] });
-  assert.equal(validate(schema, create([{ name: "One", cost: 12 }])).length, 0);
+  assert.ok(validate(schema, create([{ name: "One", cost: 12 }])).length);
   assert.equal(validate(schema, create([["One", 12]])).length, 0);
   assert.ok(validate(schema, create([{ props: { name: "One", cost: 12 } }])).length);
 });
@@ -104,4 +104,11 @@ test("retained complete report cannot encode row nodes in place of scalar cells"
   const data = value.surfaces[1].data.inventory_report.table_data;
   assert.equal(data.items[0].line_total, 36);
   assert.equal(data.totals.remaining_budget, 30);
+});
+
+test("bound table data obeys the positional authoring contract after resolution", () => {
+  const candidate = { surfaces: [{ op: "replace", root: { type: "table", props: { columns: ["name", "value"], rows: "{/rows}" } }, data: { rows: [{ data: '{"name":"One","value":12}' }] } }] };
+  assert.ok(prepareSubmission(basicCatalog, [], candidate).issues.some((issue) => issue.includes("expected array")));
+  const good = { ...candidate, surfaces: [{ ...candidate.surfaces[0], data: { rows: [["One", 12]] } }] };
+  assert.deepEqual(prepareSubmission(basicCatalog, [], good).issues, []);
 });

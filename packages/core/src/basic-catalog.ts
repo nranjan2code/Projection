@@ -677,11 +677,7 @@ export const basicCatalog = defineCatalog(
           // Complete report a867394a hid row facts inside props/children.
           // Model authoring uses scalar cells; ingestion retains original raw
           // material rather than coercing malformed records into lossy cells.
-          rows: { ...listOr({ type: "array" }, { description: "array of row objects, or \"{/path}\"", aliases: ["data", "items", "records"] }), wire: listOr({ type: "array", items: { anyOf: [
-            { type: "array", items: { type: ["string", "number", "boolean", "null"] } },
-            { type: "object", additionalProperties: { type: ["string", "number", "boolean", "null"] } },
-            { type: ["string", "number", "boolean", "null"] },
-          ] } }, { description: "row records keyed directly by columns, or positional arrays; cells are scalar values, never props/children wrappers; or a data binding" }) },
+          rows: { ...listOr({ type: "array" }, { description: "array of row objects, or \"{/path}\"", aliases: ["data", "items", "records"] }), wire: listOr({ type: "array", items: { type: "array", items: { type: ["string", "number", "boolean", "null"] } } }, { description: "positional row arrays: each cell corresponds to the column at the same index; no object keys, wrappers or nested UI nodes; use null for a missing value" }) },
           // Projectors sort, filter and page on their own (see interact.ts);
           // these only switch a default off or on.
           sortable: bool({ aliases: ["sort", "sorting"] }),

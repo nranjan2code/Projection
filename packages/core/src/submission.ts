@@ -1,7 +1,7 @@
 // Complete inline documents remove reference bookkeeping from initial authoring.
 // A private candidate prevents a rejected repair from damaging accepted surfaces.
 import { toolDefinitions, propsSchema, type Catalog, type ToolDefinition } from "./catalog.ts";
-import { SurfaceStore, type SurfaceSnapshot } from "./surface.ts";
+import { SurfaceStore, walk, type SurfaceSnapshot } from "./surface.ts";
 import { TOOL_RENDER, TOOL_UPDATE, TOOL_REMOVE, type VpsNode } from "./vps.ts";
 import { validate, toWireSchema, type JSONSchema } from "./schema.ts";
 
@@ -96,6 +96,12 @@ export function prepareSubmission(catalog: Catalog, current: readonly SurfaceSna
   // relationship outside that operation: assess the entire resulting store.
   for (const surface of candidate.list()) {
     issues.push(...candidate.lint(surface).filter((issue) => issue.severity === "error").map((issue) => `${surface.id}/${issue.node ?? ""}: ${issue.message}`));
+    const resolved = candidate.resolve(surface.id);
+    if (resolved?.root) walk(resolved.root, (node) => {
+      for (const [key, schema] of Object.entries(catalog.components[node.type]?.props.properties ?? {})) {
+        if (schema.wire && node.props[key] !== undefined) issues.push(...validate(toWireSchema(schema), node.props[key]).map((issue) => `${surface.id}/${node.id}/props/${key}${issue.path}: ${issue.message}`));
+      }
+    });
   }
   return { ...(issues.length ? {} : { store: candidate }), issues: [...new Set(issues)], reply };
 }

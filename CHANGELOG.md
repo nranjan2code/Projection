@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-27: positional table authoring
+
+- Model-authored table rows use positional scalar arrays, eliminating dynamic row-key/column-key coordination. Resolved bindings obey the same canonical contract before admission. Runtime table ingestion/projectors retain both supported canonical row representations; no facts are transformed. **Breaking:** transactional authored record rows must be sent as cell arrays in column order.
+
 ## 2026-10-27: canonical table row authoring
 
 - Catalog declares scalar table cells for model authoring, rejecting nested props/children row wrappers before dispatch. The wire schema is derived from this canonical declaration; tolerant ingestion preserves raw source material instead of coercing malformed historical records into lossy cells. Exact failed full-report candidate is retained as a regression. No fact or value synthesis.
