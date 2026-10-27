@@ -221,3 +221,8 @@ Source access and provenance remain the caller's responsibility. Selected snapsh
 Transactional prompting is assembled once by the provider agent. Ordinary progressive prompting uses the catalog helper; a turn receives only its active protocol. Host/agent runtime no longer exposes a compact/strict schema selector. Component tool descriptors are typed; shared record data remains dynamic JSON unless a trusted caller supplies an optional dataSchema. This does not claim native tool schemas enforce decoding on providers that do not support it. Catalog normalization handles supported representation conversions at ingestion; declared source/caller data is not coerced to make an outcome pass.
 
 Trusted local context loaders may declare AgentTool.kind=context. They use the existing dispatcher and answer-step budget, remain loadable with zero external rounds and have no external-operation allowance. The trusted application must not mark an external tool as context. All other tools remain externally budgeted by default; model text cannot set this metadata. Related views may share a surface, while explicitly independent outputs remain separate.
+
+
+## Responsive content measures
+
+The basic catalog exposes common `maxWidth: sm|md|lg|full` on every node, independent of grid `span`. Web measures are container-capped at 320, 720 or 1040 pixels, or use the available width. Explicit numeric grid columns preserve unused tracks; automatic grids fit occupied tracks. Horizontal stacks default to top alignment and honor explicit alignment. Charts use a 720-pixel default measure, overridable through the common prop or inherited `--vak-chart-max-width`; text/channel content is unchanged. Theme tokens remain application-owned.

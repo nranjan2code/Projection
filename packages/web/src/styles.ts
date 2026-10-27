@@ -118,11 +118,11 @@ pre code { background: none; padding: 0; }
 
 /* ---- layout ---------------------------------------------------------- */
 .stack { display: flex; flex-direction: column; gap: var(--gap); min-width: 0; }
-.stack.horizontal { flex-direction: row; flex-wrap: wrap; align-items: center; }
+.stack.horizontal { flex-direction: row; flex-wrap: wrap; align-items: flex-start; }
 .stack.horizontal > * { flex: 1 1 auto; min-width: 0; }
 .stack.horizontal > :is(.btn, .chip) { flex: 0 0 auto; }
-.align-start { align-items: flex-start; } .align-center { align-items: center; }
-.align-end { align-items: flex-end; } .align-stretch { align-items: stretch; }
+.stack.align-start { align-items: flex-start; } .stack.align-center { align-items: center; }
+.stack.align-end { align-items: flex-end; } .stack.align-stretch { align-items: stretch; }
 
 .grid-box { container-type: inline-size; min-width: 0; }
 .grid {
@@ -131,6 +131,13 @@ pre code { background: none; padding: 0; }
   gap: var(--gap);
   grid-template-columns: repeat(auto-fit, minmax(min(100%, max(var(--min), (100% - (var(--cols) - 1) * var(--gap)) / var(--cols))), 1fr));
 }
+/* Explicit grids keep their requested track rhythm when the final row is sparse. */
+.grid.fixed-columns { grid-template-columns: repeat(auto-fill, minmax(min(100%, max(var(--min), (100% - (var(--cols) - 1) * var(--gap)) / var(--cols))), 1fr)); }
+/* Semantic measures constrain any component, including flex/grid children. */
+.measure-sm { width: 100%; max-width: 320px; }
+.measure-md { width: 100%; max-width: 720px; }
+.measure-lg { width: 100%; max-width: 1040px; }
+.measure-full { width: 100%; max-width: none; }
 .span-full { grid-column: 1 / -1; }
 @container (min-width: 540px) { .grid > .span-2 { grid-column: span 2; } }
 @container (min-width: 800px) { .grid > .span-3 { grid-column: span 3; } }
@@ -282,6 +289,10 @@ tr:last-child td { border-bottom: 0; }
   td::before { content: attr(data-label); color: var(--vak-muted, var(--_vak-muted)); font-size: 0.85em; text-align: left; }
 }
 
+.chart-box { width: 100%; max-width: var(--vak-chart-max-width, 720px); min-width: 0; }
+.chart-box.measure-sm { max-width: 320px; }
+.chart-box.measure-lg { max-width: 1040px; }
+.chart-box.measure-full { max-width: none; }
 .chart { margin: 0; padding: 14px 14px 10px; background: var(--vak-surface, var(--_vak-surface)); border: 1px solid var(--vak-border, var(--_vak-border)); border-radius: var(--vak-radius, var(--_vak-radius)); min-width: 0; }
 .card .chart { padding: 0; border: 0; }
 .chart svg { display: block; width: 100%; height: auto; overflow: visible; }

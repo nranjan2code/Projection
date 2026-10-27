@@ -220,7 +220,8 @@ export class VakSurfaceElement extends HTMLElement {
       built?.release?.();
       built = { ...this.#build(node), sig };
       built.sig = signature(Boolean(built.sync));
-      const { span, priority } = node.props;
+      const { span, priority, maxWidth } = node.props;
+      if (["sm", "md", "lg", "full"].includes(String(maxWidth))) built.el.classList.add(`measure-${maxWidth}`);
       if (span !== undefined) built.el.classList.add(span === "full" || Number(span) >= 5 ? "span-full" : `span-${Math.max(1, Math.min(4, Number(span) || 1))}`);
       if (typeof priority === "string") built.el.classList.add(`p-${priority}`);
       if (!this.#seen.has(node.key)) {
@@ -289,6 +290,8 @@ export class VakSurfaceElement extends HTMLElement {
         const box = h("div", "grid-box");
         const grid = h("div", "grid");
         const cols = Number(p.columns);
+        // Explicit columns retain empty tracks rather than enlarging orphan panels.
+        if (Number.isFinite(cols) && cols > 0) grid.classList.add("fixed-columns");
         grid.style.setProperty("--cols", String(Number.isFinite(cols) && cols > 0 ? Math.min(cols, 6) : 4));
         grid.style.setProperty("--min", MIN_W[str(p.minItemWidth)] ?? MIN_W.md!);
         grid.style.setProperty("--gap", gap);
@@ -599,7 +602,7 @@ export class VakSurfaceElement extends HTMLElement {
 
   /** Charts re-render at their real width so labels stay legible in narrow columns. */
   #chart(spec: ReturnType<typeof normalizeChart>): Omit<Built, "sig"> {
-    const box = h("div");
+    const box = h("div", "chart-box");
     let lastWidth = 0;
     const draw = (w: number) => {
       lastWidth = w;
@@ -611,7 +614,7 @@ export class VakSurfaceElement extends HTMLElement {
       if (w > 0 && Math.abs(w - lastWidth) > 24) draw(w);
     });
     ro.observe(box);
-    return { el: box };
+    return { el: box, release: () => ro.disconnect() };
   }
 
   #view(key: string): View {

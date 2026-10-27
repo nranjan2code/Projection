@@ -1173,6 +1173,7 @@ export const basicCatalog = defineCatalog(
   {
     span: { type: ["integer", "string"], description: "1-4 or \"full\"", aliases: ["colSpan", "colspan", "width"] },
     priority: oneOf(["primary", "secondary", "tertiary"], { aliases: ["importance"], enumAliases: { high: "primary", medium: "secondary", low: "tertiary" } }),
+    maxWidth: oneOf(["sm", "md", "lg", "full"], { description: "Responsive content measure: sm for compact summaries, md for forms/charts, lg for detailed views, full for available width. Never exceeds its container." }),
     visibleIf: str({ description: "{/path}: shown when truthy", aliases: ["showIf", "if", "when"] }),
   },
   {
