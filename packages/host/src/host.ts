@@ -145,6 +145,8 @@ export interface HostTurn {
 }
 
 export interface HostRunOptions {
+  tableSources?: import("@vak/core").TableSources;
+  tableParameters?: Readonly<Record<string, import("@vak/core").SourceCell>>;
   surfaceSubmission?: boolean;
   validateCompletion?: CompletionCheck;
   validateEdits?: SurfaceCheck;
@@ -547,6 +549,8 @@ export function createHost(opts: HostOptions): VakHost {
         toolRounds: controls.toolRounds,
         maxTokens: controls.maxTokens,
         surfaceSubmission: controls.surfaceSubmission,
+        tableSources: controls.tableSources,
+        tableParameters: controls.tableParameters,
         schemaMode: body.schemaMode === "strict" ? "strict" : "compact",
         // Grammar-constrained output cannot call other tools; integrations need tool calling.
         generation: tools.length || controls.completion === "response" ? "tools" : body.generation === "tools" || body.generation === "constrained" ? body.generation : "auto",

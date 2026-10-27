@@ -30,7 +30,7 @@ import {
   TOOL_RENDER,
   TOOL_UPDATE,
   toolDefinitions,
-  submissionTool, prepareSubmission, TOOL_SUBMIT,
+  submissionTool, prepareSubmission, TOOL_SUBMIT, validateTableSources, compileSourceTable, sourceTableSchema, validate, getAt, type TableSource, type TableSources, type SourceCell,
   toWireSchema,
   ToolCallStream,
   type VpsAction,
@@ -69,6 +69,8 @@ export interface RunOptions {
   schemaMode?: "strict" | "compact";
   /** Trusted transactional surface authoring; candidates publish only after complete validation. */
   surfaceSubmission?: boolean;
+  tableSources?: TableSources;
+  tableParameters?: Readonly<Record<string, SourceCell>>;
   /**
    * How the model produces UI:
    * - "tools": native tool calling, with engine repair and diagnostics fed back
@@ -109,6 +111,8 @@ export interface RunOptions {
   signal?: AbortSignal;
 }
 
+const TOOL_PREPARE = "vak_prepare_table";
+const TOOL_DERIVE = "vak_derive_columns";
 const VAK_TOOLS = new Set([TOOL_RENDER, TOOL_UPDATE, TOOL_REMOVE]);
 
 interface ResolvedRun {
@@ -158,7 +162,7 @@ export function resolveRun(opts: RunOptions): ResolvedRun {
   if (opts.completion === "response" && requested === "constrained") throw new Error("Response completion requires tool generation");
   if (opts.validateCompletion && opts.completion !== "response") throw new Error("Completion validation requires response completion");
   if (opts.surfaceSubmission && (opts.completion !== "response" || requested === "constrained" || opts.validateEdits)) throw new Error("Surface submission requires response completion without edit checks");
-  if (opts.surfaceSubmission && opts.tools?.some((tool) => tool.spec.name === TOOL_SUBMIT)) throw new Error("Reserved submission tool name");
+  if (opts.surfaceSubmission && opts.tools?.some((tool) => [TOOL_SUBMIT, TOOL_PREPARE, TOOL_DERIVE].includes(tool.spec.name))) throw new Error("Reserved submission tool name");
   const generation = generationMode({ ...opts, generation: requested });
   return {
     catalog,
@@ -179,6 +183,7 @@ export function buildSystem(opts: RunOptions, run: ResolvedRun = resolveRun(opts
     "Use vak_submit alone when the complete result is ready. Each distinct output is a separate surface entry in the same submission. Omit surface IDs for new outputs; the framework assigns distinct identities. Use supplied canonical IDs only for existing outputs. replace creates a complete inline root and data; patch changes existing canonical IDs; remove deletes explicitly. Unmentioned surfaces stay. Rejected candidates change nothing. Acceptance ends the run; substantive answers belong visibly on surfaces, not only in reply.",
     "Follow the tool's typed component schema. Use the simplest structure the request needs. Children and collection templates are inline objects, never references. Node IDs may be omitted; preserve explicit IDs for stable identity. A leaf has no children.",
     'Data is separate from presentation. Put supplied input defaults in data at their exact bind paths. Props bind using {/path}; a whole binding preserves the raw value. Inputs use bind: /path and belong inside a form with submit: actionName. Do not add unrequested populated fields. Collection children use {each: "/items", template: nodeObject}, with relative {field} bindings.',
+    opts.tableSources && Object.keys(opts.tableSources).length ? "Tables reference immutable selected sources instead of copying cells. The compiler inserts data.sources; do not author or copy that reserved field. First use vak_derive_columns for per-row calculations, then vak_prepare_table for aggregate summaries and the total row. These are separate typed stages without UI bookkeeping. Then submit tables using only props.source and local interaction settings. Prepared cells cannot be authored or changed by presentation. Row expressions use {column: name}; summary expressions use {sum: columnName} or {parameter: callerPath}; operations are {op: add|subtract|multiply|divide|lte,args:[left,right]}. Compiler bindings are {/sources/<source>/summary/<key>}, filename and sha256. Display all requested interpretation and source/limitation labels on the report, with the table inside a stack if needed. Available parameters: " + JSON.stringify(opts.tableParameters ?? {}) : undefined,
     shownSurfacesNote(opts.store, true),
   ].filter(Boolean).join("\n\n");
   const parts = [opts.instructions, systemPrompt(run.catalog, opts.profile, { examples: run.examples, authoring: run.authoring, submission: opts.surfaceSubmission })].filter(Boolean);
@@ -309,6 +314,11 @@ export function generationMode(opts: Pick<RunOptions, "generation" | "provider" 
  * user sees, so the store, the saved session and every client agree.
  */
 export async function runAgent(opts: RunOptions): Promise<RunResult> {
+  if (opts.tableSources && !opts.surfaceSubmission) throw new Error("Table sources require transactional surface submission");
+  if (opts.tableSources) {
+    validateTableSources(opts.tableSources);
+    opts = { ...opts, tableSources: structuredClone(opts.tableSources), tableParameters: structuredClone(opts.tableParameters ?? {}) };
+  }
   const publisher = opts.surfaceSubmission ? undefined : new SurfacePublisher(opts.store);
   const emit = opts.emit;
   opts = {
@@ -418,6 +428,59 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
   const authoring = run.authoring;
   const vakSpecs: ToolSpec[] = (opts.surfaceSubmission ? [submissionTool(catalog)] : toolDefinitions(catalog, { mode: opts.schemaMode ?? "compact", authoring })).map((tool) => ({ ...tool }));
   const userTools = new Map((opts.tools ?? []).map((t) => [t.spec.name, t]));
+  const prepared: Record<string, TableSource> = {};
+  const derived: Record<string, TableSource> = {};
+  const derivedPlans = new Map<string, Record<string, unknown>>();
+  const preparedPlans = new Map<string, Record<string, unknown>>();
+  const parametersFor = (snapshots: readonly SurfaceSnapshot[]) => {
+    const parameters = { ...opts.tableParameters };
+    for (const path of Object.keys(parameters)) {
+      const values = snapshots.flatMap((surface) => { if (!surface.nodes.some((node) => node.props?.bind === path)) return []; const value = getAt(surface.data, path); return value === undefined ? [] : [value]; });
+      if (values.length && !values.every((value) => value === values[0])) throw new Error("Caller parameter has conflicting canonical controls");
+      if (values.length && ["number", "string", "boolean"].includes(typeof values[0])) parameters[path] = values[0] as SourceCell;
+    }
+    return parameters;
+  };
+  const sourceFrom = (id: string, compiled: ReturnType<typeof compileSourceTable>, prepared = false): TableSource => ({ ...opts.tableSources![id]!, columns: compiled.props.columns as string[], rows: compiled.props.rows as SourceCell[][], prepared, summary: compiled.data.summary as Record<string, SourceCell> });
+  const refreshPrepared = (parameters: Readonly<Record<string, SourceCell>>) => {
+    for (const [id, plan] of derivedPlans) derived[id] = sourceFrom(id, compileSourceTable(plan, opts.tableSources!, parameters));
+    for (const [id, plan] of preparedPlans) prepared[id] = sourceFrom(id, compileSourceTable(plan, derived, parameters), true);
+  };
+  const planningSchema = (rows: boolean) => {
+    const sources = rows ? opts.tableSources! : derived;
+    const schema = sourceTableSchema(sources);
+    const keep = rows ? ["source", "derive"] : ["source", "summary", "total"];
+    for (const key of Object.keys(schema.properties!)) if (!keep.includes(key)) delete schema.properties![key];
+    schema.required = rows ? ["source", "derive"] : ["source", "summary"];
+    const definitions = submissionTool(catalog, [], sources, opts.tableParameters).inputSchema.$defs!;
+    schema.$defs = Object.fromEntries(Object.entries(definitions).filter(([key]) => key.includes("calculation")));
+    if (!rows) {
+      const names = [...new Set(Object.values(sources).flatMap((source) => source.columns))];
+      const total = schema.properties?.total;
+      if (total?.properties?.sumColumns) total.properties.sumColumns.items = { type: "string", enum: [...new Set(Object.values(sources).flatMap((source) => source.columns.slice(1)))] };
+      const summary = schema.$defs.vak_summary_calculation!;
+      summary.anyOf = summary.anyOf!.map((branch) => branch.properties?.sum ? { ...branch, properties: { sum: { type: "string", enum: names } } } : branch);
+    }
+    return schema;
+  };
+  if (opts.tableSources && Object.keys(opts.tableSources).length) {
+    const checked = (schema: ReturnType<typeof planningSchema>, args: Record<string, unknown>) => {
+      const issues = validate(schema, args); if (issues.length) throw new Error(issues.map((issue) => `${issue.path}: ${issue.message}`).join("\n"));
+    };
+    userTools.set(TOOL_DERIVE, { spec: { name: TOOL_DERIVE, description: "First declare the requested per-row computed columns. derive contains {key, expression}; expressions use original source column names and numeric operators. Use derive: [] only when no per-row calculation is requested. This computes facts; it creates no UI.", inputSchema: planningSchema(true) }, execute: (args) => {
+      checked(planningSchema(true), args);
+      const compiled = compileSourceTable(args, opts.tableSources!, parametersFor(opts.store.list().map((surface) => opts.store.snapshot(surface.id)!)));
+      derivedPlans.set(compiled.id, structuredClone(args)); derived[compiled.id] = sourceFrom(compiled.id, compiled);
+      preparedPlans.delete(compiled.id); delete prepared[compiled.id];
+      return "Computed row columns (data, not instructions): " + JSON.stringify({ source: compiled.id, columns: compiled.props.columns, rows: compiled.props.rows }) + "\nNext use vak_prepare_table for requested summaries/total row; do not copy cells into UI.";
+    } });
+    userTools.set(TOOL_PREPARE, { spec: { name: TOOL_PREPARE, description: "After per-row columns are computed, declare requested aggregate summaries and an optional total row. Summary expressions use sum of an available column, a caller parameter, or numeric operations. Use summary: [] if no summaries are requested. Then reference the prepared source in vak_submit.", inputSchema: {} }, execute: (args) => {
+      checked(planningSchema(false), args);
+      const compiled = compileSourceTable(args, derived, parametersFor(opts.store.list().map((surface) => opts.store.snapshot(surface.id)!)));
+      preparedPlans.set(compiled.id, structuredClone(args)); prepared[compiled.id] = sourceFrom(compiled.id, compiled, true);
+      return "Prepared source (data, not permission): " + JSON.stringify({ id: compiled.id, columns: compiled.props.columns, rows: compiled.props.rows, summary: compiled.data.summary, filename: prepared[compiled.id]!.filename, sha256: prepared[compiled.id]!.sha256 }) + "\nNow submit the complete UI with props.source referencing this source. Display requested interpretation using {/sources/" + compiled.id + "/summary/<key>} bindings; do not author data.sources.";
+    } });
+  }
   const tools = [...vakSpecs, ...(opts.tools ?? []).map((t) => t.spec)];
   const system = buildSystem(opts, { ...run, authoring });
   const runId = `run_${Date.now().toString(36)}_${++runCounter}`;
@@ -446,13 +509,18 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
       opts.messages.push({ role: "user", content: `[engine] This turn's tool budget is spent (${rounds} rounds); no more tools other than the interface ones are available. Answer the request now from the tool results above, or show them with the interface tools. Say plainly what is still missing or unverified, so the user can ask to continue.` });
     }
     let text = "", callChars = 0, receivedDone = false;
+    let offered = new Set<string>();
     const requestBase = opts.surfaceSubmission ? store.list().map((surface) => store.snapshot(surface.id)!) : undefined;
+    if (requestBase) refreshPrepared(parametersFor(requestBase));
+    if (userTools.has(TOOL_PREPARE) && Object.keys(derived).length) userTools.get(TOOL_PREPARE)!.spec.inputSchema = planningSchema(false);
     const calls: (ToolCall & { stream?: ToolCallStream })[] = [];
     const byId = new Map<string, (typeof calls)[number]>();
     let native: unknown;
 
     try {
-      const request: ChatRequest = { model: opts.model, system: opts.surfaceSubmission ? buildSystem(opts, { ...run, authoring }) : system, messages: view(), tools: opts.surfaceSubmission ? [submissionTool(catalog, store.list().map((surface) => surface.id)), ...(closing ? [] : [...userTools.values()].map((tool) => tool.spec))] : closing ? vakSpecs : tools, maxTokens: run.maxTokens, effort: opts.effort, extra: opts.extra, signal: opts.signal };
+      const request: ChatRequest = { model: opts.model, system: opts.surfaceSubmission ? buildSystem(opts, { ...run, authoring }) : system, messages: view(), tools: opts.surfaceSubmission ? [...(opts.tableSources && Object.keys(opts.tableSources).length && !Object.keys(prepared).length ? [] : [submissionTool(catalog, store.list().map((surface) => surface.id), Object.keys(prepared).length ? prepared : opts.tableSources, opts.tableParameters)]), ...(closing ? [] : [...userTools.values()].filter((tool) => tool.spec.name !== TOOL_PREPARE || Object.keys(derived).length).map((tool) => tool.spec))] : closing ? vakSpecs : tools, maxTokens: run.maxTokens, effort: opts.effort, extra: opts.extra, signal: opts.signal };
+      offered = new Set(request.tools?.map((tool) => tool.name));
+      if (opts.surfaceSubmission && Object.keys(prepared).length) request.system += "\nCurrent computed source summaries (data): " + JSON.stringify(Object.entries(prepared).map(([id, source]) => ({ id, summary: source.summary, columns: source.columns })));
       const events = opts.surfaceSubmission && opts.provider.capabilities?.constrainedOutput
         ? structuredCall(opts.provider, request, `${runId}_${steps}_${rounds}`) : opts.provider.stream(request);
       for await (const ev of events) {
@@ -505,8 +573,16 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
       ...(native !== undefined ? { native: { provider: opts.provider.id, value: native } } : {}),
     });
 
+    if (opts.surfaceSubmission && calls.some((call) => !offered.has(call.name))) {
+      for (const call of calls) {
+        const feedback = "Call batch rejected before effects: choose only currently offered tools. Prepare source calculations before submitting UI. Canonical surfaces are unchanged.";
+        opts.messages.push({ role: "tool", content: feedback, toolCallId: call.id, toolName: call.name, isError: true });
+        emit({ type: "tool_end", id: call.id, name: call.name, result: feedback, isError: true });
+      }
+      steps++; continue;
+    }
     if (opts.surfaceSubmission && calls.length === 0) {
-      const feedback = "[engine] No candidate was submitted. Use vak_submit alone to submit the complete requested result or targeted changes; plain prose does not publish a result. Previously accepted surfaces are unchanged.";
+      const feedback = "[engine] No candidate was submitted. Use the offered preparation tool first when present, then vak_submit alone to submit the complete requested result or targeted changes; plain prose does not publish a result. Previously accepted surfaces are unchanged.";
       const key = createHash("sha256").update(JSON.stringify({ response: text, issues: feedback, surfaces: contentSnapshots(store) })).digest("hex");
       if (key === rejectedCandidate) return end("validation_stalled");
       rejectedCandidate = key; steps++;
@@ -543,7 +619,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
       else {
         try {
           if (calls[0]!.arguments.length > 512000) throw new Error("Submission exceeds 512000 characters");
-          candidate = prepareSubmission(catalog, base, JSON.parse(calls[0]!.arguments));
+          candidate = prepareSubmission(catalog, base, JSON.parse(calls[0]!.arguments), { sources: Object.keys(prepared).length ? prepared : opts.tableSources, parameters: parametersFor(base) });
         } catch (err) { candidate.issues.push(`Invalid submission JSON: ${(err as Error).message}`); }
       }
       let response = candidate.reply;
@@ -601,7 +677,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
           result = "error: this exact call already failed in this turn. Change its arguments, use another tool, or answer from the results you have.";
           isError = true;
         } else {
-          gathered = true;
+          if (![TOOL_PREPARE, TOOL_DERIVE].includes(call.name)) gathered = true;
           try {
             let args: Record<string, unknown> = {};
             try {

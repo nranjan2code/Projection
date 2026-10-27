@@ -6,14 +6,20 @@ import { ToolGenerationError, type ChatRequest, type Message, type Provider, typ
 export async function* structuredCall(provider: Provider, request: ChatRequest, id: string): AsyncIterable<ProviderEvent> {
   const tools = request.tools ?? [];
   if (!tools.length) throw new Error("Structured calls require an offered tool");
-  const branches: JSONSchema[] = tools.map((tool) => ({ type: "object", additionalProperties: false, required: ["tool", "arguments"], properties: {
-    tool: { type: "string", const: tool.name, description: tool.description }, arguments: toWireSchema(tool.inputSchema),
-  } }));
   const definitions: Record<string, JSONSchema> = Object.create(null);
-  for (const tool of tools) for (const [name, definition] of Object.entries(tool.inputSchema.$defs ?? {})) {
-    if (definitions[name] && JSON.stringify(definitions[name]) !== JSON.stringify(definition)) throw new Error("Conflicting tool schema definitions");
-    definitions[name] = definition;
-  }
+  const scoped = (schema: JSONSchema, prefix: string): JSONSchema => {
+    const copy = toWireSchema(schema);
+    if (copy.$ref?.startsWith("#/$defs/")) copy.$ref = "#/$defs/" + prefix + copy.$ref.slice(8);
+    if (copy.$defs) { for (const [name, definition] of Object.entries(copy.$defs)) definitions[prefix + name] = scoped(definition, prefix); delete copy.$defs; }
+    if (copy.properties) copy.properties = Object.fromEntries(Object.entries(copy.properties).map(([name, value]) => [name, scoped(value, prefix)]));
+    if (copy.items) copy.items = scoped(copy.items, prefix);
+    if (copy.anyOf) copy.anyOf = copy.anyOf.map((value) => scoped(value, prefix));
+    if (copy.additionalProperties && typeof copy.additionalProperties === "object") copy.additionalProperties = scoped(copy.additionalProperties, prefix);
+    return copy;
+  };
+  const branches: JSONSchema[] = tools.map((tool, index) => ({ type: "object", additionalProperties: false, required: ["tool", "arguments"], properties: {
+    tool: { type: "string", const: tool.name, description: tool.description }, arguments: scoped(tool.inputSchema, `tool_${index}_`),
+  } }));
   const schema: JSONSchema = { ...(branches.length === 1 ? branches[0]! : { anyOf: branches }), $defs: definitions };
   // Preserve the engine's canonical tool history; translate only this wire view.
   // Otherwise a native-call history teaches XML calls inside JSON decoding.

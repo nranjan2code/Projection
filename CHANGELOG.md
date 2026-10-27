@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-27: source-backed table computation
+
+- Trusted table sources preserve selected records independently of presentation. Bounded typed row calculations and aggregate/total preparation run before UI authoring in the existing counted loop. Presentation references prepared tables and computed summary bindings; it cannot copy, shift or replace their facts. Canonical user parameters win over stale unused data and model defaults cannot revise them. No new persistence owner, dependency, IPC or external authority.
+- Per-tool schema definitions are scoped on the provider wire to avoid recursive-name collisions when preparation and submission are offered together.
+
 ## 2026-10-27: positional table authoring
 
 - Model-authored table rows use positional scalar arrays, eliminating dynamic row-key/column-key coordination. Resolved bindings obey the same canonical contract before admission. Runtime table ingestion/projectors retain both supported canonical row representations; no facts are transformed. **Breaking:** transactional authored record rows must be sent as cell arrays in column order.
