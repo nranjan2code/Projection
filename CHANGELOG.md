@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-27: canonical table row authoring
+
+- Catalog declares scalar table cells for model authoring, rejecting nested props/children row wrappers before dispatch. The wire schema is derived from this canonical declaration; tolerant ingestion preserves raw source material instead of coercing malformed historical records into lossy cells. Exact failed full-report candidate is retained as a regression. No fact or value synthesis.
+
 ## 2026-10-27: local schema reference safety
 
 - Local definition references must resolve own keys; inherited prototype names cannot resolve as schemas. Recursive references are depth bounded and conflicting tool definitions fail closed. 361 tests/replay and typecheck pass.

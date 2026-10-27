@@ -87,3 +87,21 @@ test("local schema references reject inherited names and remain depth bounded", 
   for (const name of ["constructor", "__proto__", "missing"]) assert.ok(validate({ $ref: `#/$defs/${name}`, $defs: {} }, "anything").length);
   assert.ok(validate({ $ref: "#/$defs/cycle", $defs: { cycle: { $ref: "#/$defs/cycle" } } }, {}).some((issue) => issue.message.includes("128 levels")));
 });
+
+test("table rows type their cells instead of admitting nested UI wrappers", () => {
+  const schema = submissionTool(basicCatalog, []).inputSchema;
+  const create = (rows: unknown[]) => ({ surfaces: [{ op: "replace", root: { type: "table", props: { columns: ["name", "cost"], rows } }, data: {} }] });
+  assert.equal(validate(schema, create([{ name: "One", cost: 12 }])).length, 0);
+  assert.equal(validate(schema, create([["One", 12]])).length, 0);
+  assert.ok(validate(schema, create([{ props: { name: "One", cost: 12 } }])).length);
+});
+
+test("retained complete report cannot encode row nodes in place of scalar cells", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const value = JSON.parse(await readFile(new URL("./fixtures/transaction-row-wrappers-2026-10-27.json", import.meta.url), "utf8"));
+  const issues = validate(submissionTool(basicCatalog, []).inputSchema, value);
+  assert.ok(issues.some((issue) => issue.path.includes("rows")));
+  const data = value.surfaces[1].data.inventory_report.table_data;
+  assert.equal(data.items[0].line_total, 36);
+  assert.equal(data.totals.remaining_budget, 30);
+});

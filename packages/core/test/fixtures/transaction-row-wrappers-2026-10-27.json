@@ -1,0 +1,145 @@
+{
+  "surfaces": [
+    {
+      "op": "replace",
+      "title": "Budget Criteria Form",
+      "root": {
+        "type": "form",
+        "children": [
+          {
+            "type": "input",
+            "props": {
+              "label": "Budget ($)",
+              "bind": "/criteria/budget"
+            }
+          },
+          {
+            "type": "checkbox",
+            "props": {
+              "label": "Fictional",
+              "bind": "/criteria/fictional"
+            }
+          },
+          {
+            "type": "checkbox",
+            "props": {
+              "label": "2026-10-01",
+              "bind": "/criteria/delivered-on"
+            }
+          }
+        ]
+      },
+      "data": {
+        "criteria": {
+          "budget": 100,
+          "fictional": true,
+          "delivered_on": "2026-10-01"
+        }
+      }
+    },
+    {
+      "op": "replace",
+      "title": "Inventory Report Table",
+      "root": {
+        "type": "table",
+        "props": {
+          "columns": [
+            "item",
+            "quantity",
+            "unit_cost",
+            "line_total"
+          ],
+          "rows": [
+            {
+              "props": {
+                "item": "Desk kits",
+                "quantity": 3,
+                "unit_cost": 12,
+                "line_total": 36
+              },
+              "children": [
+                {
+                  "type": "text",
+                  "content": "Fictional Snapshot: 2026-10-01 (Source: inventory.csv)"
+                }
+              ]
+            },
+            {
+              "props": {
+                "item": "Lamp kits",
+                "quantity": 2,
+                "unit_cost": 17,
+                "line_total": 34
+              },
+              "children": [
+                {
+                  "type": "text",
+                  "content": "Fictional Snapshot: 2026-10-01 (Source: inventory.csv)"
+                }
+              ]
+            },
+            "footer_row_1_props"
+          ]
+        }
+      },
+      "data": {
+        "inventory_report": {
+          "table_data": {
+            "items": [
+              {
+                "name": "Desk kits",
+                "quantity": 3,
+                "unit_cost": 12,
+                "line_total": 36
+              },
+              {
+                "name": "Lamp kits",
+                "quantity": 2,
+                "unit_cost": 17,
+                "line_total": 34
+              }
+            ],
+            "totals": {
+              "total_cost": 70,
+              "available_budget": 100,
+              "remaining_budget": 30,
+              "within_budget": true
+            },
+            "metadata": {
+              "sources": [
+                "inventory.csv (2026-10-01)"
+              ],
+              "notes": [
+                "Delivery dates: Missing",
+                "File freshness: Unverified"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "op": "replace",
+      "title": "Grand Total Summary",
+      "root": {
+        "type": "list",
+        "props": {
+          "items": [
+            "Total Cost: $70.00",
+            "Available Budget: $100.00",
+            "Remaining Budget: $30.00",
+            "Status: Within Budget"
+          ]
+        }
+      },
+      "data": {
+        "grand_totals": {
+          "total_cost": 70,
+          "available_budget": 100,
+          "remaining_budget": 30,
+          "within_budget": true
+        }
+      }
+    }
+  ]
+}

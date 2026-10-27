@@ -15,6 +15,8 @@ import { parseLenient } from "./partial-json.ts";
 export type SchemaType = "string" | "number" | "integer" | "boolean" | "object" | "array" | "null";
 
 export interface JSONSchema {
+  /** Canonical model-authoring shape when ingestion also accepts recoverable forms. */
+  wire?: JSONSchema;
   $ref?: string;
   $defs?: Record<string, JSONSchema>;
   type?: SchemaType | SchemaType[];
@@ -51,6 +53,7 @@ const EXTENSION_KEYS = new Set(["aliases", "enumAliases", "namesComponent", "lit
 
 /** Deep copy without extension keywords, for provider tool definitions. */
 export function toWireSchema(schema: JSONSchema): JSONSchema {
+  if (schema.wire) return toWireSchema(schema.wire);
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(schema)) {
     if (EXTENSION_KEYS.has(k)) continue;
