@@ -15,6 +15,8 @@ import { parseLenient } from "./partial-json.ts";
 export type SchemaType = "string" | "number" | "integer" | "boolean" | "object" | "array" | "null";
 
 export interface JSONSchema {
+  $ref?: string;
+  $defs?: Record<string, JSONSchema>;
   type?: SchemaType | SchemaType[];
   description?: string;
   enum?: readonly unknown[];
@@ -52,8 +54,8 @@ export function toWireSchema(schema: JSONSchema): JSONSchema {
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(schema)) {
     if (EXTENSION_KEYS.has(k)) continue;
-    if (k === "properties" && v) {
-      out.properties = Object.fromEntries(Object.entries(v as Record<string, JSONSchema>).map(([pk, pv]) => [pk, toWireSchema(pv)]));
+    if ((k === "properties" || k === "$defs") && v) {
+      out[k] = Object.fromEntries(Object.entries(v as Record<string, JSONSchema>).map(([pk, pv]) => [pk, toWireSchema(pv)]));
     } else if ((k === "items" || k === "additionalProperties") && v && typeof v === "object") {
       out[k] = toWireSchema(v as JSONSchema);
     } else if (k === "anyOf" && Array.isArray(v)) {
@@ -69,6 +71,9 @@ export interface SchemaError {
 }
 
 export interface ValidateOptions {
+  /** Internal root for local definition references, preserved through recursive validation. */
+  root?: JSONSchema;
+  depth?: number;
   /** Return true to accept a value without checking it (e.g. a `{/path}` binding). */
   skip?: (value: unknown, schema: JSONSchema) => boolean;
 }
@@ -91,11 +96,30 @@ export function validate(
   opts: ValidateOptions = {},
   path = "",
 ): SchemaError[] {
+  if ((opts.depth ?? 0) > 128) return [{ path: path || "/", message: "schema validation exceeds 128 levels" }];
+  opts = { ...opts, root: opts.root ?? schema, depth: (opts.depth ?? 0) + 1 };
+  if (schema.$ref) {
+    const name = schema.$ref.startsWith("#/$defs/") ? schema.$ref.slice(8) : undefined;
+    const target = name && opts.root?.$defs?.[name];
+    if (!target) return [{ path: path || "/", message: "unsupported or unresolved schema reference" }];
+    return validate(target, value, opts, path);
+  }
   if (opts.skip?.(value, schema)) return [];
   const errors: SchemaError[] = [];
   const fail = (message: string) => errors.push({ path: path || "/", message });
 
   if (schema.anyOf) {
+    // Tagged unions select their declared branch before descending. Without
+    // this, recursive node schemas explore every component at every level.
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const record = value as Record<string, unknown>;
+      const first = schema.anyOf[0];
+      const key = Object.keys(first?.properties ?? {}).find((name) => schema.anyOf!.every((branch) => branch.properties?.[name]?.const !== undefined));
+      if (key) {
+        const matching = schema.anyOf.filter((branch) => branch.properties![key]!.const === record[key]);
+        if (matching.length === 1) return validate(matching[0]!, value, opts, path);
+      }
+    }
     // The branch the value matched furthest (its first error deepest) is the
     // one meant; fewest errors breaks ties. By count alone, chart series of
     // [{name, values}] with five gaps lost to "a list of numbers" (one error,

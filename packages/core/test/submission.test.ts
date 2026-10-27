@@ -50,5 +50,34 @@ test("invalid documents, duplicate targets, references and missing bindings cann
   }
   let root: unknown = { type: "text", props: { content: "Leaf" } };
   for (let i = 0; i < 34; i++) root = { type: "stack", children: [root] };
-  assert.ok(prepareSubmission(basicCatalog, [], { surfaces: [{ ...report, root }] }).issues.some((issue) => issue.includes("32 tree levels")));
+  assert.ok(prepareSubmission(basicCatalog, [], { surfaces: [{ ...report, root }] }).issues.some((issue) => /32 tree levels|128 levels/.test(issue)));
+});
+
+test("state-aware submission schemas never offer nonexistent patch/remove targets", () => {
+  const fresh = submissionTool(basicCatalog, []).inputSchema;
+  assert.ok(validate(fresh, { surfaces: [{ op: "patch", surface: "invented", data: {} }] }).length);
+  const { surface, ...newReport } = report;
+  assert.equal(validate(fresh, { surfaces: [{ ...newReport, data: {} }] }).length, 0);
+  const existing = submissionTool(basicCatalog, ["report"]).inputSchema;
+  assert.equal(validate(existing, { surfaces: [{ op: "patch", surface: "report", data: {} }] }).length, 0);
+  assert.ok(validate(existing, { surfaces: [{ op: "remove", surface: "invented" }] }).length);
+});
+
+test("new surface documents receive distinct identities without model bookkeeping", () => {
+  const first = { op: "replace", root: { type: "text", props: { content: "One" } } };
+  const second = { op: "replace", root: { type: "text", props: { content: "Two" } } };
+  const result = prepareSubmission(basicCatalog, [], { surfaces: [first, second] });
+  assert.deepEqual(result.issues, []);
+  assert.deepEqual(result.store!.list().map((surface) => surface.id), ["__vak_surface_1", "__vak_surface_2"]);
+  const current = result.store!.list().map((surface) => result.store!.snapshot(surface.id)!);
+  const next = prepareSubmission(basicCatalog, current, { surfaces: [first] });
+  assert.equal(next.store!.list().length, 3);
+  assert.equal(next.store!.get("__vak_surface_3")!.nodes.get("root")!.props?.content, "One");
+});
+
+test("request schemas require a leaf's required props and a complete replacement data object", () => {
+  const schema = submissionTool(basicCatalog, []).inputSchema;
+  assert.ok(validate(schema, { surfaces: [{ op: "replace", root: { type: "text" }, data: {} }] }).length);
+  assert.ok(validate(schema, { surfaces: [{ op: "replace", root: { type: "text", props: { content: "Visible" } } }] }).length);
+  assert.equal(validate(schema, { surfaces: [{ op: "replace", root: { type: "text", props: { content: "Visible" } }, data: {} }] }).length, 0);
 });

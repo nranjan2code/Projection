@@ -50,6 +50,15 @@ node scripts/telegram-repro.ts "<request>"   # replay one Telegram turn offline,
 
 Node 24 runs `.ts` directly (type stripping); there is no build step for development. The playground's browser page loads the packages' TypeScript directly too.
 
+## Acceptance gate for model-output work
+
+- Start with the smallest real primary-provider contract that exercises the failing boundary; verify types, original values, stop/usage and canonical dispatch before expanding the workflow.
+- Native tool schema descriptions are not constrained decoding. Verify the actual provider wire mode rather than assuming schema enforcement.
+- Keep source facts and deterministic calculations separate from presentation. Never repair invented values or reshape results in an app to obtain a pass.
+- Preserve the original failing transcript and add its deterministic regression. Freeze the intended outcome checks before running the full flow; do not weaken them after a failure.
+- Unit/replay passes establish mechanisms only. Do not call the user’s repair complete, update its checklist to done, or present an installation as success until the original end-to-end outcome passes independent content and interaction checks.
+- After a failed full trial, diagnose the earliest failing boundary offline. Do not accumulate prompt/parser variants or repeat the fixture until a lucky pass. Record any unresolved outcome explicitly and continue its necessary repair within authorized scope.
+
 ## How to fix a model-output problem
 
 1. Get the raw output. Telegram records every turn in `.vak/telegram/<chat>.jsonl`, the playground in `.vak/playground/<session>.jsonl`, and the bench in `packages/bench/data/results/`.

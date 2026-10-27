@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-27: enforce the submission contract at decoding
+
+- Transactional calls use the actual offered tool schema through advertised provider schema decoding. Recursive local definitions type all inline descendants; state-aware operations do not offer nonexistent patch/remove targets. New surface IDs are generated; replacement data and required component props are required by the request schema. Native calls remain for providers without constrained output. Strict complete validation, existing execution/approvals/accounting and atomic admission remain. Submission instructions describe only the active protocol rather than imposing unrelated layout recipes.
+- Added a real primary-provider contract gate and AGENTS outcome acceptance requirements. Tests/builds/rejection are mechanism evidence, never a substitute for original task correctness.
+
 ## 2026-10-27: transactional multi-surface authoring
 
 - Trusted `surfaceSubmission` mode offers one `vak_submit` change set with inline replacements, canonical-ID patches and explicit removal. Bounded recursive compilation generates IDs and preserves inline collection templates. Candidate structure and completion checks run before a synchronous canonical commit; rejected, stale, incomplete and mixed external-operation batches publish nothing. Accepted submissions finish without an extra generation. Ordinary progressive chat remains unchanged.
