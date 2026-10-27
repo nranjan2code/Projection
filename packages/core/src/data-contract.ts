@@ -40,6 +40,21 @@ export function bindDataContract(props: JSONSchema, data: JSONSchema): JSONSchem
   };
   const specialize = (schema: JSONSchema): JSONSchema => {
     if (schema.anyOf) {
+      const mapping = schema.anyOf.find(branch => branch.type === "object" && branch.properties?.records);
+      const collections = paths.filter(candidate => candidate.schema.type === "array" && candidate.schema.items && deref(candidate.schema.items).type === "object");
+      // Record collections have no positional-row equivalent. The retained
+      // provider output copied unrelated cells (or []) despite declared records.
+      // Narrow collection views to explicit mappings, never infer their values.
+      if (mapping && schema.anyOf.some(branch => branch.type === "array") && collections.length && !paths.some(candidate => schema.anyOf!.some(branch => branch.type === "array" && fits(branch, candidate.schema)))) {
+        return { anyOf: collections.map(({ path, schema: collection }) => {
+          const item = deref(collection.items!);
+          const keys = Object.keys(item.properties ?? {});
+          return { ...mapping, properties: { ...mapping.properties,
+            records: { type: "string", enum: path.startsWith("/") ? [`{${path}}`, `{${path.slice(1)}}`] : [`{${path}}`] },
+            ...(keys.length ? { fields: { ...mapping.properties!.fields!, items: { type: "string", enum: keys } } } : {}),
+          } };
+        }) };
+      }
       const binding = schema.anyOf.find(branch => branch.type === "string" && branch.pattern === "^\\{/?[^{}]*\\}$");
       if (binding) {
         const values = schema.anyOf.filter(branch => branch !== binding);

@@ -13,6 +13,7 @@
 import { defineCatalog, type ItemField } from "./catalog.ts";
 import { cell, type Row, totalsRow } from "./interact.ts";
 import { coerce, type JSONSchema } from "./schema.ts";
+import { recordViewSchema, finalizeRecordView } from "./record-view.ts";
 
 type Extra = Pick<JSONSchema, "aliases" | "enumAliases" | "namesComponent" | "description" | "default" | "format" | "literal">;
 
@@ -96,6 +97,8 @@ function itemObjects(v: unknown, field = "title"): unknown {
 }
 
 function finalizeTable(p: Record<string, unknown>): Record<string, unknown> {
+  p = finalizeRecordView(p, "rows");
+  if (p.$error) return p;
   if (!Array.isArray(p.columns)) return p;
   const rows = Array.isArray(p.rows) ? p.rows : [];
   const first = rows.find((r) => r && typeof r === "object" && !Array.isArray(r)) as Record<string, unknown> | undefined;
@@ -194,6 +197,8 @@ function normalizeChart(p: Record<string, unknown>): Record<string, unknown> {
  * A record of numbers is one series, a point per key.
  */
 function finalizeChart(p: Record<string, unknown>): Record<string, unknown> {
+  p = finalizeRecordView(p, "series");
+  if (p.$error) return p;
   const s = p.series;
   const record = (x: unknown): x is Record<string, unknown> => x !== null && typeof x === "object" && !Array.isArray(x);
   // `{/data/expense_totals}` with {"Rent/Mortgage": 750, "Utilities": 180, ...}
@@ -643,7 +648,7 @@ export const basicCatalog = defineCatalog(
       props: props(
         {
           label: str({ aliases: ["name", "title", "metric", "caption"] }),
-          value: { type: ["string", "number"], aliases: ["amount", "number", "count", "total", "figure"] },
+          value: { anyOf: [{ type: ["string", "number"] }, recordViewSchema("metric")], aliases: ["amount", "number", "count", "total", "figure"] },
           delta: str({ description: "e.g. +12%", aliases: ["change", "diff", "trendValue", "growth"] }),
           trend: oneOf(["up", "down", "flat"], { aliases: ["direction"], enumAliases: { increase: "up", positive: "up", decrease: "down", negative: "down", neutral: "flat", none: "flat" } }),
           tone,
@@ -651,6 +656,7 @@ export const basicCatalog = defineCatalog(
         ["label", "value"],
       ),
       aliases: ["kpi", "metric", "statistic", "number", "scorecard"],
+      finalize: p => finalizeRecordView(p, "value"),
     },
     table: {
       description: "Data table.",
@@ -677,7 +683,7 @@ export const basicCatalog = defineCatalog(
           // Complete report a867394a hid row facts inside props/children.
           // Model authoring uses scalar cells; ingestion retains original raw
           // material rather than coercing malformed records into lossy cells.
-          rows: { ...listOr({ type: "array" }, { description: "array of row objects, or \"{/path}\"", aliases: ["data", "items", "records"] }), wire: listOr({ type: "array", items: { type: "array", items: { type: ["string", "number", "boolean", "null"] } } }, { description: "positional row arrays: each cell corresponds to the column at the same index; no object keys, wrappers or nested UI nodes; use null for a missing value" }) },
+          rows: { anyOf: [{ type: "array" }, binding, recordViewSchema("table")], aliases: ["data", "items", "records"], wire: { anyOf: [{ type: "array", items: { type: "array", items: { type: ["string", "number", "boolean", "null"] } } }, binding, recordViewSchema("table")], description: "Prefer {records: '{/records}', fields: ['fieldName', ...]} to map shared records without copying cells. Otherwise positional scalar rows or a binding to them." } },
           // Projectors sort, filter and page on their own (see interact.ts);
           // these only switch a default off or on.
           sortable: bool({ aliases: ["sort", "sorting"] }),
@@ -687,7 +693,7 @@ export const basicCatalog = defineCatalog(
         },
         ["columns", "rows"],
       ),
-      hint: "Author rows as positional scalar cell arrays in column order, or bind rows to data of that shape. Do not leave rows empty when displaying supplied records. props.totals: true computes numeric column sums and replaces a supplied last total row; use it only for a requested total. For a requested custom summary row, keep that row and set totals: false",
+      hint: "For shared data use rows:{records:'{/records}',fields:['label','value']} and columns in the same order. Tables and charts can reference the same records; do not copy cells into separate view arrays. Literal tables can use positional scalar rows and props.totals: true for a requested numeric total. Keep a requested custom summary row with totals: false; record mappings also support the same requested totals behavior.",
       finalize: finalizeTable,
       aliases: ["datatable", "grid_table", "spreadsheet", "datagrid"],
     },
@@ -705,7 +711,7 @@ export const basicCatalog = defineCatalog(
     },
     chart: {
       description: "Chart.",
-      hint: "kind: bar, stacked (parts of each total), line, area, pie, scatter (x/y points), heatmap (dated values or a grid), radar (scores on axes)",
+      hint: "For shared records use series:{records:'{/records}',label:'label',fields:['value']} with no separate labels array. Multiple numeric fields become series; scatter can add x:'numericField'. kind: bar, stacked, line, area, pie, scatter, heatmap, radar",
       props: props(
         {
           kind: oneOf(["bar", "stacked", "line", "area", "pie", "scatter", "heatmap", "radar"], {
@@ -728,6 +734,7 @@ export const basicCatalog = defineCatalog(
               { type: "array", items: { type: "number" } },
               { type: "array", items: { type: "array", items: { type: "number" } } },
               binding,
+              recordViewSchema("chart"),
             ],
           },
         },

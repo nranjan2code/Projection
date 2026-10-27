@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased: shared record views
+
+- Tables, charts and stat aggregates select named fields from the same bound records. Form edits and canonical patches resolve every view from that collection. No new data store, renderer protocol, dependencies or executable expression strings. Closed caller contracts reject copied/empty view arrays when the declared collection requires field mapping. Multiple series, scatter coordinates and independent surfaces retain their existing execution paths.
+- Offline regression covers the retained empty/copied-table output, local edits, form submission, restore, missing/nonfinite data, multiple series, patch isolation and requested totals. 388 tests/replay, types and package build pass.
+- Retained local mapping checks: initial full-view trial0/3, initial table-only0/3; after reference enforcement table-only2/3 (`record-view-2026-10-27T07-08-41.264Z.json`). The remaining run repeatedly requests an unasked total. Final code preserves normal explicitly requested table totals; no further live rerun or full outcome success is claimed. Intent reliability and the original app outcome remain open.
+
 ## Unreleased: declared data-to-view relationships
 
 - Closed caller data contracts constrain collection bindings to compatible declared paths. When such a collection exists, authoring references it instead of copying a second collection into view props. Open dictionaries and unions retain ordinary reference handling. Caller-specified `surfaceCount` constrains an initial submission and validates resulting state after targeted edits; it is independent of operation count.

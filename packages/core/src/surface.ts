@@ -1135,6 +1135,11 @@ export class SurfaceStore {
       }
       const node = state.nodes.get(n.id);
       if (!node || reported.has(n.id) || n.type.startsWith("$")) return;
+      if (n.error) {
+        reported.add(n.id);
+        diags.push({ severity: "error", surface: state.id, node: n.id, message: n.error });
+        return;
+      }
       const bound = bindingsIn(node.props ?? {});
       if (!bound.size) return;
       const schema = propsSchema(this.catalog, n.type);
