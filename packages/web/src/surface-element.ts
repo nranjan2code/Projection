@@ -603,7 +603,7 @@ export class VakSurfaceElement extends HTMLElement {
   /** Charts re-render at their real width so labels stay legible in narrow columns. */
   #chart(spec: ReturnType<typeof normalizeChart>): Omit<Built, "sig"> {
     const box = h("div", "chart-box");
-    let lastWidth = 0;
+    let lastWidth = 0, redraw = 0;
     const draw = (w: number) => {
       lastWidth = w;
       box.replaceChildren(renderChart(spec, document, w - 28));
@@ -611,10 +611,15 @@ export class VakSurfaceElement extends HTMLElement {
     draw(640);
     const ro = new ResizeObserver(([entry]) => {
       const w = entry?.contentRect.width ?? 0;
-      if (w > 0 && Math.abs(w - lastWidth) > 24) draw(w);
+      if (w > 0 && Math.abs(w - lastWidth) > 24) {
+        // Drawing inside observer delivery can resize the figure in the same
+        // cycle. Defer it and discard obsolete widths during a panel resize.
+        window.clearTimeout(redraw);
+        redraw = window.setTimeout(() => draw(w), 0);
+      }
     });
     ro.observe(box);
-    return { el: box, release: () => ro.disconnect() };
+    return { el: box, release: () => { ro.disconnect(); window.clearTimeout(redraw); } };
   }
 
   #view(key: string): View {

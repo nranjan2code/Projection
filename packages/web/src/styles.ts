@@ -155,7 +155,8 @@ pre code { background: none; padding: 0; }
 
 /* Narrow surfaces: horizontal stacks fold, primary content comes first. */
 @container vak-surface (max-width: 480px) {
-  .stack.horizontal:not(.wrap) { flex-direction: column; align-items: stretch; }
+  .stack.horizontal:not(.wrap) { flex-direction: column; }
+  .stack.horizontal:not(.wrap):not(:is(.align-start, .align-center, .align-end, .align-stretch)) { align-items: stretch; }
   .p-primary { order: -1; }
   .p-tertiary { order: 1; }
 }
