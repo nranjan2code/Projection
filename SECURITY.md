@@ -31,6 +31,10 @@ What the framework protects, from whom, and how. Rules for changing code are in 
 
 The repository is public: <https://github.com/nranjan2code/Projection>. Report a vulnerability privately to the maintainer (Nisheeth Ranjan) rather than in a public issue.
 
+## Dispatch and transport bounds
+
+Native external arguments pass the supported runtime schema/object checks before approval or execution. Duplicate/reserved model-facing names and unfinished native generations dispatch no external operation. Integration changes invalidate existing handles and chat grants; post-approval dispatch rechecks authority and cancellation. Structured failure/denial status stays distinct from returned text. HTTP cancellation, timeout and close abort pending transport work; JSON/SSE bodies and stdio frames have an 8 MiB parsing limit. Remote effects already dispatched cannot be undone by cancellation, and a transport receipt is not proof of source truth or exactly-once execution.
+
 ## Checks that guard this
 
 - `packages/host/test/host.test.ts`: tokens, CORS, foreign Origin, text/plain bodies, rebinding Host names, approvals.
@@ -40,4 +44,5 @@ The repository is public: <https://github.com/nranjan2code/Projection>. Report a
 - `packages/providers/test/net.test.ts`: private IPv4, IPv6 translation prefixes (NAT64, 6to4, mapped, Teredo, link-local/unique-local) and `pinnedFetch` refusing the address it resolved.
 - `packages/email/test/email.test.ts`: escaping in email, Markdown and terminal output.
 - `packages/web/test/*.test.ts`: markdown escaping and safe links, chart and graph normalization, MathML.
+- `packages/mcp/test/dispatch.test.ts`, `transport-limits.test.ts` and `packages/providers/test/http-retry.test.ts`: stale authority, invalid arguments, failure status, incomplete calls, ambiguous names, cancellation/close/timeout, response bounds and finite retries.
 - Before every push: the secret scan in AGENTS.md.

@@ -2,7 +2,7 @@
 
 ## Pipeline audit — 2026-10-27
 
-Governed dispatch now validates supported argument schemas before execution, preserves structured MCP error/denial status, rejects incomplete native generations and duplicate/reserved names, and invalidates old handles/chat grants when integration authority changes. MCP HTTP requests abort on cancellation/timeout/close; body/frame parsing is bounded at8MiB. Provider Retry-After consumes the finite retry allowance. Apps wrapping AgentTool.execute must preserve string or {text,isError} results (CHANGELOG Breaking entry).
+Governed dispatch now validates supported argument schemas before execution, preserves structured MCP error/denial status, rejects incomplete native generations and duplicate/reserved names, and invalidates old handles/chat grants when integration authority changes. MCP HTTP requests abort on cancellation/timeout/close; body/frame parsing is bounded at 8 MiB. Provider Retry-After consumes the finite retry allowance. Apps wrapping AgentTool.execute must preserve string or {text,isError} results (CHANGELOG Breaking entry).
 
 Offline regressions exercise actual adapters/agent dispatch and loopback transports, with no paid or live model calls. Existing primary-provider/source/interaction/receipt failures remain open. Installed app adoption requires its own build; no process restart or installation is implied.
 
@@ -19,7 +19,7 @@ Form submission now preserves repeated record-field names under canonical pointe
 
 ## Evidence and limits
 
-383 framework tests/replay and typecheck pass after removing nine tests of the deleted source execution APIs. Existing transactional security, stale edits, multiple surfaces and record mapping tests remain. Package build passes. Earlier 388-test result predates removal. Live/installed results belong to their recorded revisions; previous source-workspace success is historical and cannot certify this path. Earlier local mapped-table gate2/3 retains an unrequested-total failure. App EVALUATION.md owns current skill/provider and WebKit outcomes.
+393 framework tests/replay, typecheck and package build pass after dispatch hardening. The earlier cleanup removed nine tests of the deleted source execution APIs. Existing transactional security, stale edits, multiple surfaces and record mapping tests remain. Package build passes. Earlier 388-test result predates removal. Live/installed results belong to their recorded revisions; previous source-workspace success is historical and cannot certify this path. Earlier local mapped-table gate2/3 retains an unrequested-total failure. App EVALUATION.md owns current skill/provider and WebKit outcomes.
 
 ## Next work
 

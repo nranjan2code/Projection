@@ -99,6 +99,7 @@ Media results use `media {kind: image|audio|video, src, title?, description?, tr
 ## 4. Providers, agent loop, policy
 
 - **Adapters over `fetch`:** Anthropic, OpenAI (Responses API and Chat Completions), Gemini, Ollama. Each implements `describeModel()`.
+- **Tool dispatch:** `AgentTool.execute` returns text or `{text,isError}`; wrappers preserve explicit failure status. Supported argument schemas and object shape are validated before approval/execution. Incomplete native generations and duplicate/reserved tool names dispatch no external operations. HTTP Retry-After consumes finite transport retries; logical model-request counts remain distinct from wire attempts.
 - **Run completion:** `runAgent` and public `host.run` default to ending on a clean projection. Opt-in `completion: "response"` uses tool generation and lets publication be progress; the same run continues until a response without tool calls, a step bound, error or cancellation. Direct constrained-only generation cannot express that workflow and rejects the combination. Completion of a run does not certify an application outcome.
 - **`runAgent` generation modes:**
   - `tools`: the projection tools.
@@ -151,6 +152,7 @@ Shared chat logic lives in `core/chat.ts`: form fields, reading typed answers, t
 - a child process gets PATH, a private HOME/TMPDIR/cwd and only the variables it declares, never the host's keys (`minimalEnv`)
 - every tool has a policy, `allow` / `ask` / `off`, defaulting from its own annotations: read-only local tools allow; destructive, unknown or open-world (internet) tools ask; `off` tools are never offered to the model
 - `ask` calls go through an approval hook (the host sends an `approval` event and waits for `POST /api/approvals/<id>`: allow, allow for this chat, deny; five minutes or a stopped turn mean deny)
+- cancellation, timeout and close abort pending HTTP requests; JSON/SSE bodies and stdio frames are capped at 8 MiB before parsing
 - results are capped at 12k characters and wrapped as `<tool_output>`, labelled as data not instructions
 Built-in tools with the same shape: `webFetchServer` (https only, public addresses only, every redirect re-checked, 2 MB, text extracted) and `timeServer`.
 
@@ -159,6 +161,7 @@ Built-in tools with the same shape: `webFetchServer` (https only, public address
 - each server runs with `<dataDir>/integrations/<id>/home` as its HOME and only its declared secrets (env or header)
 - folder settings go through `checkFolders` (absolute, existing, never a system root or the home folder)
 - per-tool policies persist in `<dataDir>/integrations.json`; "allow for this chat" lasts for that session; servers the user adds are `custom` (unverified, https or loopback only for remote); calls go to `<dataDir>/logs/tools.jsonl`
+- changing configuration, policies, activation, installation or discovered metadata invalidates captured handles and session grants; authorization/cancellation are rechecked after approval before dispatch
 - `view()` gives a settings screen everything it shows (status, missing setup, tools with policies, recent calls); `toolsFor(session)` gives a turn its tools
 
 ## 8. Host (`@vak/host`)
