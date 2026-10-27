@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased: positional mapped-table totals
+
+- A requested total on a mapped positional table now resolves to a positional final row, preserving its transactional wire shape. A primary local record-view trial reached accepted canonical output for the previously rejected mixed-row case; the broader three-case gate still fails an unsolicited-total semantic check (two pass, one fail). This is a mechanism repair, not a completed outcome gate.
+
 ## Unreleased: responsive content measures
 
 - Common `maxWidth: sm|md|lg|full` gives every component a responsive content measure; this is independent of grid span and never injects arbitrary styling. Web defaults are 320/720/1040 pixels or the available width, capped by the container.
