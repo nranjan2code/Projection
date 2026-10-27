@@ -138,7 +138,6 @@ export interface HostTurn {
   /** Carry on the chat's last turn (one a budget ended) with no new user message. */
   continue?: boolean;
   think?: boolean;
-  schemaMode?: string;
   generation?: string;
   effort?: string;
   history?: number;
@@ -551,7 +550,6 @@ export function createHost(opts: HostOptions): VakHost {
         surfaceSubmission: controls.surfaceSubmission,
         dataSchema: controls.dataSchema,
         surfaceCount: controls.surfaceCount,
-        schemaMode: body.schemaMode === "strict" ? "strict" : "compact",
         // Grammar-constrained output cannot call other tools; integrations need tool calling.
         generation: tools.length || controls.completion === "response" ? "tools" : body.generation === "tools" || body.generation === "constrained" ? body.generation : "auto",
         tools,

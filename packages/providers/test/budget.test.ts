@@ -59,3 +59,23 @@ test("an identical call that already failed this turn is not run again", async (
   assert.equal(runs, 1);
   assert.match(messages.filter((m) => m.role === "tool")[1]!.content, /already failed/);
 });
+
+test("local context remains loadable with zero external rounds and uses counted answer steps", async () => {
+  let loads = 0, external = 0;
+  const { provider, seen } = scripted(step => step === 0 ? call("context", "instructions") : answer("Ready"));
+  const result = await runAgent({ provider, model: "m", store: new SurfaceStore(basicCatalog), messages: [], maxSteps: 2, toolRounds: 0, tools: [
+    { kind: "context", spec: { name: "instructions", description: "Local instructions", inputSchema: { type: "object" } }, execute: () => { loads++; return "Loaded"; } },
+    search(() => { external++; return "External"; }),
+  ], emit: () => {} });
+  assert.equal(result.stop, "end"); assert.equal(loads, 1); assert.equal(external, 0);
+  assert.ok(seen.every(request => request.tools.includes("instructions") && !request.tools.includes("search")));
+});
+
+test("context chaining cannot bypass the answer-step budget", async () => {
+  let loads = 0;
+  const { provider, seen } = scripted(step => call(String(step), "instructions", JSON.stringify({ part: step })));
+  const result = await runAgent({ provider, model: "m", store: new SurfaceStore(basicCatalog), messages: [], maxSteps: 2, toolRounds: 0, tools: [
+    { kind: "context", spec: { name: "instructions", description: "Local instructions", inputSchema: { type: "object" } }, execute: () => { loads++; return "Loaded"; } },
+  ], emit: () => {} });
+  assert.equal(result.stop, "max_steps"); assert.equal(loads, 2); assert.equal(seen.length, 2);
+});

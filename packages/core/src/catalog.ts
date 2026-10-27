@@ -396,7 +396,6 @@ function describeProps(schema: JSONSchema): string {
 }
 
 export interface PromptOptions {
-  submission?: boolean;
   /** Include the catalog's worked examples (helps models that compose UIs poorly). */
   examples?: boolean;
   authoring?: Authoring;
@@ -425,13 +424,11 @@ export function toInline(render: RenderArgs): RenderArgs {
 export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts: PromptOptions = {}): string {
   const lines: string[] = [];
   lines.push(
-    opts.submission ? "Show rich interactive UI with vak_submit: submit all requested surfaces together. Each entry has op replace, patch or remove and a stable surface ID. Unmentioned surfaces stay unchanged. Acceptance ends the run; gather evidence with external tools first, in separate calls. Put requested explanations and substantive content on the surfaces; reply is only an acknowledgement. Express component diagnostics about vak_update/vak_remove as submitted patch/remove entries." : "You can show rich, interactive UI by calling vak_render (new or replaced surface), vak_update (patch) and vak_remove.",
-    opts.submission ? "This run publishes a result only through an accepted vak_submit. Plain prose does not publish or replace a result." : "Choose whether to use UI from the user's request and caller instructions. Existing surfaces do not require another render.",
+    "You can show rich, interactive UI by calling vak_render (new or replaced surface), vak_update (patch) and vak_remove.",
+    "Choose whether to use UI from the user's request and caller instructions. Existing surfaces do not require another render.",
     "",
     "Rules:",
-    opts.submission
-      ? "- Replacements use root: {type, props?, children?}. Write child node objects directly inside children; collection children are {each: dataPath, template: nodeObject}. Node IDs are optional; root is root and omitted descendant IDs are generated. Never reference child IDs in a replacement. Preserve explicit IDs when identity must survive reordering."
-      : opts.authoring === "inline"
+      opts.authoring === "inline"
       ? "- nodes starts with the node with id \"root\". Write each child node directly inside its parent's \"children\" array, so every node is defined where it is used. A template node (see each/template below) is its own entry in nodes."
       : "- nodes is a FLAT list. Put the node with id \"root\" first. Parents reference children by id in \"children\".",
     "- If the user names a listed component, use that exact type. Preserve all user-supplied items, labels, order and values exactly. Do not invent dates or rewrite supplied source code.",
@@ -439,14 +436,14 @@ export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts
     "- Write arrays and objects directly as JSON, not strings containing JSON. A leaf component stores its items in props, never in children.",
     "- Preserve supplied values and units. Formatting displayed currency or percentages must not change the numeric values stored in data.",
     "- Put values in data and bind them: \"{/path}\" inside any string. A string that is only \"{/path}\" keeps the raw value.",
-    opts.submission ? '- Repeat a node with children: {"each":"/items","template":{"type":"text","props":{"content":"{.}"}}}. Use relative {field} bindings for item properties.' : "- Repeat a node per list item with children: {\"each\": \"/items\", \"template\": \"tplId\"}; inside the template use relative paths like \"{name}\"; for a list of plain values, \"{.}\" is the item.",
+    "- Repeat a node per list item with children: {\"each\": \"/items\", \"template\": \"tplId\"}; inside the template use relative paths like \"{name}\"; for a list of plain values, \"{.}\" is the item.",
     "- Inputs use bind: \"/form/field\". A form's submit is an action name.",
     "- Initialize every supplied input value in data at its exact bind path; props.value and placeholders do not initialize a bound control. Preserve numeric values and units exactly; never rescale supplied amounts. Leave unspecified input values blank; do not invent defaults for missing facts or add populated fields the user did not request.",
-    opts.submission ? "- replace includes a complete root and data model. patch uses existing canonical node IDs and the established data merge/JSON Patch format. Omitted data survives a patch; explicit JSON Patch remove deletes values. remove deletes a surface or its listed node IDs. A rejected submission changes nothing; correct the candidate and resubmit." : "- vak_render replaces the entire surface, including data. For corrections use vak_update with existing surface/node IDs and change only the affected props/data. Omitted fields survive a patch; an explicit empty array replaces a list. To delete a node use vak_remove with its id; to delete stored values use data JSON Patch remove ops with their exact paths. Omitting a field from merged data never deletes it. Do not create new IDs for retries.",
-    opts.submission ? "- Separate requested outputs are distinct surface entries in ONE submission. Keep source/sample labels and the requested interpretation visible in the output." : "- Separate requested outputs need separate vak_render calls with distinct stable surface IDs. Keep requested source/sample labels visible in the surface title or content.",
+    "- vak_render replaces the entire surface, including data. For corrections use vak_update with existing surface/node IDs and change only the affected props/data. Omitted fields survive a patch; an explicit empty array replaces a list. To delete a node use vak_remove with its id; to delete stored values use data JSON Patch remove ops with their exact paths. Omitting a field from merged data never deletes it. Do not create new IDs for retries.",
+    "- Independently requested outputs need separate vak_render calls with distinct stable surface IDs. Keep requested source/sample labels visible in the surface title or content.",
     "- Put data in the surface entry data field, not inside nodes.",
     "- When the user acts on your UI you get a message starting with \"[ui action]\" holding {action, surface, data}.",
-    opts.submission ? "  Answer it visibly with a submitted patch to the affected surface. Unchanged surfaces remain interactive." : "  Always answer it visibly: update that surface (vak_update) or render the next step. Never leave an action without feedback.",
+    "  Always answer it visibly: update that surface (vak_update) or render the next step. Never leave an action without feedback.",
     "- checks: \"required\", \"email\", \"url\", \"number\", \"minLength:3\", \"maxLength:80\", \"min:0\", \"max:10\".",
     "- Only use the components and props listed below. * marks required props.",
     "",
@@ -459,12 +456,10 @@ export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts
   }
   const common = describeProps({ properties: catalog.common });
   if (common) lines.push(`Common props on every node: ${common}`);
-  if (!opts.submission && opts.examples && catalog.examples.length) {
+  if (opts.examples && catalog.examples.length) {
     lines.push("", "Examples of good vak_render arguments:");
     for (const ex of catalog.examples) lines.push(`Request: ${ex.request}`, `vak_render: ${JSON.stringify(opts.authoring === "inline" ? toInline(ex.render) : ex.render)}`);
   }
-  // Small models weigh the end most: the plain-text rule is repeated last.
-  lines.push("", "Last: decide from the latest message alone. A greeting (\"hello\", \"hi\"), thanks or a short answer is plain text with no tool call.");
   if (profile) {
     lines.push("", `Target: ${profile.target}.`);
     if (profile.layout === "linear") lines.push("This target shows one column; layout is flattened in priority order, so order nodes by importance.");

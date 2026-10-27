@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased: one active typed protocol and bounded context loading
+
+- **Breaking:** remove host/agent schemaMode and the obsolete transactional variant of the standalone progressive systemPrompt helper. Agent tool schemas are typed; transactional prompting has one owner. Core low-level descriptor formatting remains an implementation option for direct catalog callers, not a runtime reliability setting.
+- Local instruction loaders can declare trusted AgentTool.kind=context. They stay available with zero external rounds and consume answer-step limits; external tools retain their budgets and dispatcher. This prevents skill selection from unlocking an answer without loading its body when external allowance is zero.
+- Prompt cleanup removes context-erasing latest-message-only advice, permits related views on one surface and deletes dead transactional prompt assembly.382 tests/replay, types and package build pass. No model-output facts or outcome checks are relaxed.
+
 ## Unreleased: remove duplicate authoring schema
 
 - Root and descendant trees now reference one node definition instead of repeating the entire catalog for roots. The same native transactional tool schema shrinks from about66k to34k characters. A supplied root ID remains checked as root/omitted before admission. No component, runtime relationship check, source value, permission or outcome requirement is removed.380 tests/replay, typecheck and package build pass.
