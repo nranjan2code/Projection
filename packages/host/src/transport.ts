@@ -62,9 +62,19 @@ export function createFetchHandler(handle: HostHandler): (request: Request) => P
       }
       _write(chunk: Buffer, _encoding: BufferEncoding, callback: (error?: Error | null) => void): void {
         this.flushHeaders();
-        controller.enqueue(new Uint8Array(chunk));
-        if ((controller.desiredSize ?? 0) > 0) callback();
-        else pending = callback;
+        if ([204, 205, 304].includes(this.status) || request.method === "HEAD") { callback(); return; }
+        let offset = 0;
+        const drain = (error?: Error | null): void => {
+          if (error) { callback(error); return; }
+          while (offset < chunk.length && (controller.desiredSize ?? 0) > 0) {
+            const end = Math.min(offset + 64 * 1024, chunk.length);
+            controller.enqueue(new Uint8Array(chunk.subarray(offset, end)));
+            offset = end;
+          }
+          if (offset === chunk.length) callback();
+          else pending = drain;
+        };
+        drain();
       }
       _final(callback: (error?: Error | null) => void): void {
         this.flushHeaders();

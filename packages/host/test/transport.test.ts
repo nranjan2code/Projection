@@ -48,3 +48,13 @@ test("private adapter propagates failures and supports empty responses", async (
   assert.equal(result.status, 204);
   assert.equal(await result.text(), "");
 });
+
+
+test("large final writes respect consumer flow control instead of enqueueing one giant copy", async () => {
+  const request = createFetchHandler((_req, res) => { res.writeHead(200); res.end(Buffer.alloc(2_000_000, 7)); });
+  const response = await request(new Request("http://localhost/api/large"));
+  const reader = response.body!.getReader();
+  let bytes = 0;
+  while (true) { const next = await reader.read(); if (next.done) break; assert.ok(next.value.length <= 65536); bytes += next.value.length; }
+  assert.equal(bytes, 2_000_000);
+});

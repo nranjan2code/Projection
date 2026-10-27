@@ -2,7 +2,7 @@
 
 ## Private transport boundary — 2026-10-27
 
-`createFetchHandler` exposes the existing admitted host/app request path as streaming Web Request/Response without a listener. The transport-neutral structural request/response types also accept the existing Node HTTP adapter. `VakClient` has optional fetch injection. App-specific process pipes, native IPC, pricing and product routes remain outside Projection. 397 framework tests/replay, typecheck and package generation pass. Three adapter regressions cover JSON/admission inputs, binary streaming, early headers, cancellation and failures without a network listener. This changes transport only; existing model/source/interaction/receipt failures remain open.
+`createFetchHandler` exposes the existing admitted host/app request path as streaming Web Request/Response without a listener. The transport-neutral structural request/response types also accept the existing Node HTTP adapter. `VakClient` has optional fetch injection. App-specific process pipes, native IPC, pricing and product routes remain outside Projection. 398 framework tests/replay, typecheck and package generation pass. Four adapter regressions cover JSON/admission inputs, binary streaming, early headers, cancellation and failures without a network listener. This changes transport only; existing model/source/interaction/receipt failures remain open.
 
 
 ## Authoring schema size — 2026-10-27
