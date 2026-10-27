@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased: declared data-to-view relationships
+
+- Closed caller data contracts constrain collection bindings to compatible declared paths. When such a collection exists, authoring references it instead of copying a second collection into view props. Open dictionaries and unions retain ordinary reference handling. Caller-specified `surfaceCount` constrains an initial submission and validates resulting state after targeted edits; it is independent of operation count.
+- JSON Schema `const` and `enum` now compare JSON values structurally instead of by JavaScript identity. This fixes rejection of newly decoded immutable caller records. No source values are coerced or inferred.
+- 382 tests/replay, typecheck and package build pass. The frozen data/table-binding gate passes3/3 in one request each with original caller records declared immutable (`data-binding-2026-10-27T05-07-10.446Z.json`). Earlier0/3 and2/3 probes remain retained; bindings/types alone did not preserve original record names. Immutable-source mode encodes only supplied records, never expected calculations. Full form/chart/calculator outcomes remain separate and open.
+
 ## Unreleased: caller-declared surface data contracts
 
 - Transactional runs accept an optional trusted `dataSchema` through the public provider/host APIs. The same schema constrains replacement decoding and validates complete candidate state after replacements or patches, with no value coercion. Caller-local schema definitions are scoped away from component definitions. Other authoring modes reject this option rather than silently ignoring it.

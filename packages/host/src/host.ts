@@ -146,6 +146,7 @@ export interface HostTurn {
 
 export interface HostRunOptions {
   dataSchema?: import("@vak/core").JSONSchema;
+  surfaceCount?: number;
   tableSources?: import("@vak/core").TableSources;
   tableParameters?: Readonly<Record<string, import("@vak/core").SourceCell>>;
   tableRelations?: Readonly<Record<string, "at_most" | "at_least">>;
@@ -552,6 +553,7 @@ export function createHost(opts: HostOptions): VakHost {
         maxTokens: controls.maxTokens,
         surfaceSubmission: controls.surfaceSubmission,
         dataSchema: controls.dataSchema,
+        surfaceCount: controls.surfaceCount,
         tableSources: controls.tableSources,
         tableParameters: controls.tableParameters,
         tableRelations: controls.tableRelations,

@@ -12,6 +12,16 @@
 
 import { parseLenient } from "./partial-json.ts";
 
+// JSON Schema compares values structurally, including array/object constants.
+// Identity comparison rejected freshly decoded immutable source records.
+function jsonEqual(a: unknown, b: unknown, depth = 0): boolean {
+  if (a === b) return true;
+  if (depth > 128 || a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
+  if (Array.isArray(a) || Array.isArray(b)) return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((value, i) => jsonEqual(value, b[i], depth + 1));
+  const left = Object.keys(a), right = Object.keys(b);
+  return left.length === right.length && left.every(key => Object.hasOwn(b, key) && jsonEqual((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key], depth + 1));
+}
+
 export type SchemaType = "string" | "number" | "integer" | "boolean" | "object" | "array" | "null";
 
 export interface JSONSchema {
@@ -146,10 +156,10 @@ export function validate(
       return errors;
     }
   }
-  if (schema.const !== undefined && value !== schema.const) {
+  if (schema.const !== undefined && !jsonEqual(value, schema.const)) {
     fail(`must be ${JSON.stringify(schema.const)}`);
   }
-  if (schema.enum && !schema.enum.includes(value)) {
+  if (schema.enum && !schema.enum.some(candidate => jsonEqual(candidate, value))) {
     fail(`must be one of ${schema.enum.map((v) => JSON.stringify(v)).join(", ")}`);
   }
 

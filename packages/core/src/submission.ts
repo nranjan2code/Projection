@@ -6,13 +6,15 @@ import { toolDefinitions, propsSchema, type Catalog, type ToolDefinition } from 
 import { SurfaceStore, walk, type SurfaceSnapshot } from "./surface.ts";
 import { TOOL_RENDER, TOOL_UPDATE, TOOL_REMOVE, type VpsNode } from "./vps.ts";
 import { validate, toWireSchema, type JSONSchema } from "./schema.ts";
+import { bindDataContract } from "./data-contract.ts";
 
 export const TOOL_SUBMIT = "vak_submit";
 const generated = "__vak_";
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-export function submissionTool(catalog: Catalog, surfaceIds?: readonly string[], sources: TableSources = {}, parameters: Readonly<Record<string, SourceCell>> = {}, dataSchema?: JSONSchema): ToolDefinition {
+export function submissionTool(catalog: Catalog, surfaceIds?: readonly string[], sources: TableSources = {}, parameters: Readonly<Record<string, SourceCell>> = {}, dataSchema?: JSONSchema, surfaceCount?: number): ToolDefinition {
   if (dataSchema && dataSchema.type !== "object") throw new Error("A surface data schema must describe an object");
+  if (surfaceCount !== undefined && (!Number.isInteger(surfaceCount) || surfaceCount < 1 || surfaceCount > 16)) throw new Error("Surface count must be an integer from 1 to 16");
   // Caller contracts may use local definitions. Scope them away from catalog
   // definitions before embedding the schema in the tool's decoding grammar.
   const dataDefinitions: Record<string, JSONSchema> = Object.create(null);
@@ -42,7 +44,7 @@ export function submissionTool(catalog: Catalog, surfaceIds?: readonly string[],
   const node: JSONSchema = { anyOf: Object.entries(catalog.components).filter(([type]) => !parameterForm || !["input", "select", "checkbox", "textarea", "date"].includes(type)).map(([type, definition]) => ({
     type: "object", required: ["type", ...(propsSchema(catalog, type)?.required?.length || type === "form" && parameterForm ? ["props"] : [])], additionalProperties: false, properties: {
       id: { type: "string", description: "optional stable ID; omit for automatic IDs, never use __vak_ prefix" },
-      type: { type: "string", const: type }, props: type === "form" && parameterForm ? { type: "object", additionalProperties: false, required: ["parameters"], properties: { parameters: { type: "array", minItems: 1, maxItems: 16, items: { type: "string", enum: Object.keys(parameters) } }, submit: { type: "string" }, submitLabel: { type: "string" } } } : type === "table" && Object.keys(sources).length ? sourceTableSchema(sources) : toWireSchema(propsSchema(catalog, type)!),
+      type: { type: "string", const: type }, props: type === "form" && parameterForm ? { type: "object", additionalProperties: false, required: ["parameters"], properties: { parameters: { type: "array", minItems: 1, maxItems: 16, items: { type: "string", enum: Object.keys(parameters) } }, submit: { type: "string" }, submitLabel: { type: "string" } } } : type === "table" && Object.keys(sources).length ? sourceTableSchema(sources) : dataSchema ? bindDataContract(propsSchema(catalog, type)!, dataSchema) : toWireSchema(propsSchema(catalog, type)!),
       ...(definition.children ? { children: { anyOf: [{ type: "array", items: ref }, { type: "object", required: ["each", "template"], additionalProperties: false, properties: { each: { type: "string" }, template: ref } }] } } : {}),
     },
   })) };
@@ -57,7 +59,7 @@ export function submissionTool(catalog: Catalog, surfaceIds?: readonly string[],
   return { name: TOOL_SUBMIT, description: "Submit a complete candidate in one transaction. Replace with inline root trees (children and collection templates are node objects, not ID references). Omit surface and node IDs for new content; the framework generates them. Use a surface ID only when replacing existing content. Patch existing nodes by their canonical IDs; data uses existing merge/JSON Patch semantics. Remove explicitly. Unmentioned surfaces stay. All changes are checked together; rejection changes nothing. Call alone after external work; acceptance ends this run.", inputSchema: {
     $defs: { ...dataDefinitions, vak_calculation: calculation, vak_row_calculation: specialize(false), vak_summary_calculation: specialize(true), vak_node: node, vak_root: { anyOf: node.anyOf!.map((branch) => ({ ...branch, properties: { ...branch.properties, id: { type: "string", const: "root" } } })) } }, type: "object", additionalProperties: false, required: ["surfaces"], properties: {
       reply: { type: "string", maxLength: 8000, description: "Brief acknowledgement only; requested substantive content belongs in the surface documents" },
-      surfaces: { type: "array", minItems: 1, maxItems: 16, items: { anyOf: branches } },
+      surfaces: { type: "array", minItems: surfaceIds?.length === 0 ? surfaceCount ?? 1 : 1, maxItems: surfaceIds?.length === 0 ? surfaceCount ?? 16 : 16, items: { anyOf: branches } },
     },
   } };
 }
@@ -68,11 +70,11 @@ export interface SubmissionCandidate {
   reply: string;
 }
 
-export function prepareSubmission(catalog: Catalog, current: readonly SurfaceSnapshot[], value: unknown, options: { sources?: TableSources; parameters?: Readonly<Record<string, SourceCell>>; dataSchema?: JSONSchema } = {}): SubmissionCandidate {
+export function prepareSubmission(catalog: Catalog, current: readonly SurfaceSnapshot[], value: unknown, options: { sources?: TableSources; parameters?: Readonly<Record<string, SourceCell>>; dataSchema?: JSONSchema; surfaceCount?: number } = {}): SubmissionCandidate {
   try { if (JSON.stringify(value)?.length > 512000) return { issues: ["Submission exceeds 512000 characters"], reply: "" }; }
   catch { return { issues: ["Submission must be bounded JSON data"], reply: "" }; }
   const sources = options.sources ?? {};
-  const issues = validate(submissionTool(catalog, undefined, sources, options.parameters, options.dataSchema).inputSchema, value).map((issue) => `${issue.path}: ${issue.message}`);
+  const issues = validate(submissionTool(catalog, undefined, sources, options.parameters, options.dataSchema, options.surfaceCount).inputSchema, value).map((issue) => `${issue.path}: ${issue.message}`);
   if (issues.length || !object(value)) return { issues, reply: "" };
   const reply = typeof value.reply === "string" ? value.reply : "";
   const candidate = new SurfaceStore(catalog);
@@ -173,5 +175,6 @@ export function prepareSubmission(catalog: Catalog, current: readonly SurfaceSna
       }
     });
   }
+  if (options.surfaceCount !== undefined && candidate.list().length !== options.surfaceCount) issues.push(`Expected ${options.surfaceCount} resulting surfaces, received ${candidate.list().length}`);
   return { ...(issues.length ? {} : { store: candidate }), issues: [...new Set(issues)], reply };
 }

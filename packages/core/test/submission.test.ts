@@ -44,6 +44,53 @@ test("caller definitions cannot collide with recursive component definitions", (
   assert.deepEqual(prepareSubmission(basicCatalog, [], create(12), { dataSchema: caller }).issues, []);
   assert.throws(() => submissionTool(basicCatalog, [], {}, {}, { type: "array" }), /must describe an object/);
 });
+
+test("closed data contracts offer only declared compatible collection bindings", () => {
+  // Retained interactive-skill 2026-10-27T04-55-43.894Z correctly filled
+  // data.rows but repeatedly bound its table to nonexistent /records.
+  const caller: JSONSchema = { type: "object", additionalProperties: false, properties: {
+    rows: { type: "array", items: { type: "array", items: { type: ["string", "number"] } } },
+    labels: { type: "array", items: { type: "string" } },
+    series: { type: "array", items: { type: "object", additionalProperties: false, required: ["values"], properties: { values: { type: "array", items: { type: "number" } } } } },
+  } };
+  const data = { rows: [["One", 4]], labels: ["One"], series: [{ values: [4] }] };
+  const create = (rows: string) => ({ surfaces: [{ op: "replace", root: { type: "table", props: { columns: ["Label", "Value"], rows } }, data }] });
+  const schema = submissionTool(basicCatalog, [], {}, {}, caller).inputSchema;
+  for (const path of ["{/records}", "{/labels}", "{/series}"]) {
+    assert.ok(validate(schema, create(path)).length);
+    assert.ok(prepareSubmission(basicCatalog, [], create(path), { dataSchema: caller }).issues.length);
+  }
+  const accepted = prepareSubmission(basicCatalog, [], create("{/rows}"), { dataSchema: caller });
+  assert.deepEqual(accepted.issues, []);
+  assert.deepEqual(accepted.store!.resolve(accepted.store!.list()[0]!.id)!.root!.props.rows, data.rows);
+  const copied = create("{/rows}");
+  (copied.surfaces[0]!.root.props as Record<string, unknown>).rows = data.rows;
+  assert.ok(prepareSubmission(basicCatalog, [], copied, { dataSchema: caller }).issues.length, "authoritative collections must not be independently copied into view props");
+  const chart = { surfaces: [{ op: "replace", root: { type: "chart", props: { kind: "bar", labels: "{/labels}", series: "{/series}" } }, data }] };
+  assert.deepEqual(prepareSubmission(basicCatalog, [], chart, { dataSchema: caller }).issues, []);
+});
+
+test("surface count constrains initial decoding and complete state without requiring full resubmission", () => {
+  const one = { op: "replace", root: { type: "text", props: { content: "One" } }, data: {} };
+  const two = { op: "replace", root: { type: "text", props: { content: "Two" } }, data: {} };
+  const schema = submissionTool(basicCatalog, [], {}, {}, undefined, 1).inputSchema;
+  assert.ok(validate(schema, { surfaces: [one, two] }).length);
+  const first = prepareSubmission(basicCatalog, [], { surfaces: [one, two] }, { surfaceCount: 2 }).store!;
+  const snapshots = first.list().map(s => first.snapshot(s.id)!);
+  const patch = { surfaces: [{ op: "patch", surface: snapshots[0]!.id, nodes: [{ id: "root", props: { content: "Changed" } }] }] };
+  assert.deepEqual(prepareSubmission(basicCatalog, snapshots, patch, { surfaceCount: 2 }).issues, []);
+  const rejected = prepareSubmission(basicCatalog, snapshots, { surfaces: [{ op: "remove", surface: snapshots[0]!.id }] }, { surfaceCount: 2 });
+  assert.ok(rejected.issues.length); assert.equal(rejected.store, undefined); assert.equal(first.list().length, 2);
+});
+
+test("data binding specialization preserves record-template scopes and open dictionaries", () => {
+  const caller: JSONSchema = { type: "object", additionalProperties: false, properties: { groups: { type: "array", items: { type: "object", additionalProperties: false, properties: { rows: { type: "array", items: { type: "array", items: { type: ["string", "number"] } } } } } } } };
+  const create = { surfaces: [{ op: "replace", root: { type: "stack", children: { each: "/groups", template: { type: "table", props: { columns: ["Label", "Value"], rows: "{rows}" } } } }, data: { groups: [{ rows: [["One", 4]] }] } }] };
+  assert.deepEqual(prepareSubmission(basicCatalog, [], create, { dataSchema: caller }).issues, []);
+  const dynamic: JSONSchema = { type: "object", additionalProperties: { type: "array", items: { type: "array", items: { type: ["string", "number"] } } } };
+  const open = { surfaces: [{ op: "replace", root: { type: "table", props: { columns: ["Label", "Value"], rows: "{/dynamic}" } }, data: { dynamic: [["One", 4]] } }] };
+  assert.deepEqual(prepareSubmission(basicCatalog, [], open, { dataSchema: dynamic }).issues, []);
+});
 test("inline submission compiles identities without changing facts or canonical state", () => {
   const current = new SurfaceStore(basicCatalog);
   const candidate = prepareSubmission(basicCatalog, [], { surfaces: [form, report] });

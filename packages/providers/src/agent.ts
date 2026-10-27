@@ -52,6 +52,8 @@ export type SurfaceCheck = (result: { surfaces: readonly SurfaceSnapshot[]; reso
 export interface RunOptions {
   /** Trusted schema for each complete surface data object; no coercion. */
   dataSchema?: JSONSchema;
+  /** Trusted count of resulting canonical surfaces, independent of edit count. */
+  surfaceCount?: number;
   /** Trusted application check; rejected prose stays private, feedback stays in this bounded run. */
   validateCompletion?: CompletionCheck;
   /** Trusted constraints after each surface-edit batch; no extra generation or acceptance. */
@@ -320,6 +322,7 @@ export function generationMode(opts: Pick<RunOptions, "generation" | "provider" 
  * user sees, so the store, the saved session and every client agree.
  */
 export async function runAgent(opts: RunOptions): Promise<RunResult> {
+  if (opts.surfaceCount !== undefined && (!opts.surfaceSubmission || !Number.isInteger(opts.surfaceCount) || opts.surfaceCount < 1 || opts.surfaceCount > 16)) throw new Error("Surface count requires transactional submission and an integer from 1 to 16");
   if (opts.dataSchema) {
     if (!opts.surfaceSubmission) throw new Error("A data schema requires transactional surface submission");
     if (opts.dataSchema.type !== "object") throw new Error("A surface data schema must describe an object");
@@ -544,7 +547,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
     let native: unknown;
 
     try {
-      const request: ChatRequest = { model: opts.model, system: opts.surfaceSubmission ? buildSystem(opts, { ...run, authoring }) : system, messages: view(), tools: opts.surfaceSubmission ? [...(opts.tableSources && Object.keys(opts.tableSources).length && !Object.keys(prepared).length ? [] : [Object.keys(prepared).length ? sourceWorkspaceTool(prepared, opts.tableParameters ?? {}) : submissionTool(catalog, store.list().map((surface) => surface.id), opts.tableSources, opts.tableParameters, opts.dataSchema)]), ...(closing ? [] : [...userTools.values()].filter((tool) => tool.spec.name !== TOOL_PREPARE || Object.keys(derived).length).map((tool) => tool.spec))] : closing ? vakSpecs : tools, maxTokens: run.maxTokens, effort: opts.effort, extra: opts.extra, signal: opts.signal };
+      const request: ChatRequest = { model: opts.model, system: opts.surfaceSubmission ? buildSystem(opts, { ...run, authoring }) : system, messages: view(), tools: opts.surfaceSubmission ? [...(opts.tableSources && Object.keys(opts.tableSources).length && !Object.keys(prepared).length ? [] : [Object.keys(prepared).length ? sourceWorkspaceTool(prepared, opts.tableParameters ?? {}) : submissionTool(catalog, store.list().map((surface) => surface.id), opts.tableSources, opts.tableParameters, opts.dataSchema, opts.surfaceCount)]), ...(closing ? [] : [...userTools.values()].filter((tool) => tool.spec.name !== TOOL_PREPARE || Object.keys(derived).length).map((tool) => tool.spec))] : closing ? vakSpecs : tools, maxTokens: run.maxTokens, effort: opts.effort, extra: opts.extra, signal: opts.signal };
       offered = new Set(request.tools?.map((tool) => tool.name));
       if (opts.surfaceSubmission && Object.keys(prepared).length) request.system += "\nCurrent computed source summaries (data): " + JSON.stringify(Object.entries(prepared).map(([id, source]) => ({ id, summary: source.summary, columns: source.columns })));
       const events = opts.surfaceSubmission && opts.provider.capabilities?.constrainedOutput
@@ -648,7 +651,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
           const parameters = parametersFor(base);
           const argumentsValue: unknown = JSON.parse(calls[0]!.arguments);
           const document = Object.keys(prepared).length ? compileSourceWorkspace(argumentsValue, prepared, parameters, base.map((surface) => surface.id)) : argumentsValue;
-          candidate = prepareSubmission(catalog, base, document, { sources: Object.keys(prepared).length ? prepared : opts.tableSources, parameters, dataSchema: opts.dataSchema });
+          candidate = prepareSubmission(catalog, base, document, { sources: Object.keys(prepared).length ? prepared : opts.tableSources, parameters, dataSchema: opts.dataSchema, surfaceCount: opts.surfaceCount });
         } catch (err) { candidate.issues.push(`Invalid submission JSON: ${(err as Error).message}`); }
       }
       let response = candidate.reply;
