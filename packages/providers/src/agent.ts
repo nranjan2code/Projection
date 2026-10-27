@@ -32,19 +32,21 @@ import {
   TOOL_UPDATE,
   toolDefinitions,
   submissionTool, prepareSubmission, TOOL_SUBMIT,
-  toWireSchema,
+  toWireSchema, validate,
   ToolCallStream,
   type VpsAction,
 } from "@vak/core";
 import type { ProjectionPlan } from "./policy.ts";
 import { ToolGenerationError, type ChatRequest, type Message, type Provider, type ToolCall, type ToolSpec } from "./types.ts";
 
+export type AgentToolResult = string | { text: string; isError?: boolean };
+
 export interface AgentTool {
   /** Trusted local context loader; consumes answer steps, not external-operation rounds. */
   kind?: "context";
   spec: ToolSpec;
   /** `emit` lets a tool tell the client something mid-call (an approval request). */
-  execute(args: Record<string, unknown>, ctx: { signal?: AbortSignal; emit?: (e: AgentEvent) => void; callId?: string }): Promise<string> | string;
+  execute(args: Record<string, unknown>, ctx: { signal?: AbortSignal; emit?: (e: AgentEvent) => void; callId?: string }): Promise<AgentToolResult> | AgentToolResult;
 }
 
 export type CompletionDecision = readonly string[] | { issues: readonly string[]; response?: string };
@@ -424,7 +426,11 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
   const catalog = run.catalog;
   const authoring = run.authoring;
   const vakSpecs: ToolSpec[] = (opts.surfaceSubmission ? [submissionTool(catalog)] : toolDefinitions(catalog, { mode: "strict", authoring })).map((tool) => ({ ...tool }));
-  const userTools = new Map((opts.tools ?? []).map((t) => [t.spec.name, t]));
+  const userTools = new Map<string, AgentTool>();
+  for (const tool of opts.tools ?? []) {
+    if (userTools.has(tool.spec.name) || VAK_TOOLS.has(tool.spec.name) || tool.spec.name === TOOL_SUBMIT) throw new Error(`Duplicate or reserved tool name: ${tool.spec.name}`);
+    userTools.set(tool.spec.name, tool);
+  }
   const system = buildSystem(opts, { ...run, authoring });
   const runId = `run_${Date.now().toString(36)}_${++runCounter}`;
   const { emit, store } = opts;
@@ -506,7 +512,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
       continue;
     }
 
-    if (opts.surfaceSubmission && (!receivedDone || !["end", "tool_use"].includes(lastStop))) throw new Error("Provider generation did not finish successfully; no submission or external call was applied");
+    if ((opts.surfaceSubmission || calls.some(call => !call.stream)) && (!receivedDone || !["end", "tool_use"].includes(lastStop))) throw new Error("Provider generation did not finish successfully; no submission or external call was applied");
     opts.messages.push({
       role: "assistant",
       content: text,
@@ -628,7 +634,14 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
             } catch {
               args = parseLenient(call.arguments) as Record<string, unknown>;
             }
-            result = await tool.execute(args, { signal: opts.signal, emit, callId: call.id });
+            // Native tool schemas guide generation; validate before any adapter or approval.
+            if (!args || typeof args !== "object" || Array.isArray(args)) throw new Error("Tool arguments must be an object");
+            const errors = validate(tool.spec.inputSchema, args);
+            if (errors.length) throw new Error("Invalid tool arguments: " + errors.slice(0, 8).map(e => `${e.path} ${e.message}`).join("; "));
+            opts.signal?.throwIfAborted();
+            const response = await tool.execute(args, { signal: opts.signal, emit, callId: call.id });
+            result = typeof response === "string" ? response : response.text;
+            isError = typeof response !== "string" && Boolean(response.isError);
           } catch (err) {
             result = `error: ${(err as Error).message}`;
             isError = true;

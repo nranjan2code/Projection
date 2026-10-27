@@ -20,6 +20,8 @@ import { mkdirSync } from "node:fs";
 import { createInterface } from "node:readline";
 
 export const CLIENT_PROTOCOL = "2025-11-25";
+/** Bound transport memory before parsing, independently of model-facing clipping. */
+export const MAX_MCP_RESPONSE_BYTES = 8 * 1024 * 1024;
 
 export interface McpToolInfo {
   name: string;
@@ -51,7 +53,7 @@ export interface McpClientOptions {
 interface Pending {
   resolve(v: unknown): void;
   reject(e: Error): void;
-  timer: ReturnType<typeof setTimeout>;
+  abort(): void;
 }
 
 export class McpError extends Error {
@@ -106,13 +108,22 @@ export class McpClient {
       mkdirSync(t.sandboxDir, { recursive: true });
       const child = spawn(t.command, t.args ?? [], { cwd: t.sandboxDir, env: minimalEnv(t), stdio: ["pipe", "pipe", "pipe"] });
       this.child = child;
-      createInterface({ input: child.stdout! }).on("line", (line) => this.receive(line));
+      let buffer = "";
+      child.stdout!.setEncoding("utf8");
+      child.stdout!.on("data", (chunk: string) => {
+        if (this.child !== child) return;
+        buffer += chunk;
+        if (Buffer.byteLength(buffer) > MAX_MCP_RESPONSE_BYTES) { this.close(); return; }
+        let end: number;
+        while ((end = buffer.indexOf("\n")) >= 0) { this.receive(buffer.slice(0, end)); buffer = buffer.slice(end + 1); }
+      });
       createInterface({ input: child.stderr! }).on("line", (line) => this.opts.log?.(`[mcp ${this.name}] ${line}`));
       child.on("exit", (code) => {
+        if (this.child !== child) return;
         this.opts.log?.(`[mcp ${this.name}] exited (${code})`);
         this.child = undefined;
         this.ready = undefined;
-        for (const p of this.pending.values()) p.reject(new McpError(`${this.name} stopped`));
+        for (const p of [...this.pending.values()]) p.reject(new McpError(`${this.name} stopped`));
         this.pending.clear();
       });
       await new Promise<void>((resolve, reject) => {
@@ -148,7 +159,9 @@ export class McpClient {
   }
 
   async callTool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<{ text: string; isError: boolean }> {
+    signal?.throwIfAborted();
     await this.connect();
+    signal?.throwIfAborted();
     const res = (await this.request("tools/call", { name, arguments: args }, signal)) as { content?: { type: string; text?: string; resource?: { text?: string; uri?: string }; mimeType?: string }[]; structuredContent?: unknown; isError?: boolean };
     const parts = (res.content ?? []).map((c) => {
       if (c.type === "text") return c.text ?? "";
@@ -161,6 +174,7 @@ export class McpClient {
   }
 
   close(): void {
+    for (const p of [...this.pending.values()]) { p.abort(); p.reject(new McpError(`${this.name} stopped`)); }
     this.child?.kill();
     this.child = undefined;
     this.ready = undefined;
@@ -170,32 +184,35 @@ export class McpClient {
 
   // --- JSON-RPC ---------------------------------------------------------------
   private async notify(method: string, params: unknown): Promise<void> {
-    await this.send({ jsonrpc: "2.0", method, params });
+    await this.send({ jsonrpc: "2.0", method, params }, AbortSignal.timeout(this.opts.timeoutMs ?? 60_000));
   }
 
   private request(method: string, params: unknown, signal?: AbortSignal): Promise<unknown> {
+    signal?.throwIfAborted();
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new McpError(`${this.name}: ${method} timed out`));
-      }, this.opts.timeoutMs ?? 60_000);
-      this.pending.set(id, { resolve, reject, timer });
-      signal?.addEventListener("abort", () => {
+      const transport = new AbortController();
+      const finish = (error?: Error, value?: unknown) => {
+        if (!this.pending.delete(id)) return;
         clearTimeout(timer);
-        this.pending.delete(id);
+        signal?.removeEventListener("abort", aborted);
+        if (error) { transport.abort(error); reject(error); } else resolve(value);
+      };
+      const aborted = () => {
+        finish(new McpError("stopped"));
         void this.notify("notifications/cancelled", { requestId: id, reason: "stopped" }).catch(() => {});
-        reject(new McpError("stopped"));
-      }, { once: true });
-      this.send({ jsonrpc: "2.0", id, method, params }).catch((err) => {
-        clearTimeout(timer);
-        this.pending.delete(id);
-        reject(err instanceof McpError ? err : new McpError(`${this.name}: ${(err as Error).message}`));
+      };
+      const timer = setTimeout(() => finish(new McpError(`${this.name}: ${method} timed out`)), this.opts.timeoutMs ?? 60_000);
+      this.pending.set(id, { resolve: value => finish(undefined, value), reject: error => finish(error), abort: () => transport.abort() });
+      signal?.addEventListener("abort", aborted, { once: true });
+      this.send({ jsonrpc: "2.0", id, method, params }, transport.signal).catch((err) => {
+        finish(err instanceof McpError ? err : new McpError(`${this.name}: ${(err as Error).message}`));
       });
     });
   }
 
-  private async send(msg: Record<string, unknown>): Promise<void> {
+  private async send(msg: Record<string, unknown>, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
     const t = this.opts.transport;
     if (t.kind === "stdio") {
       if (!this.child?.stdin?.writable) throw new McpError(`${this.name} is not running`);
@@ -204,6 +221,7 @@ export class McpClient {
     }
     const res = await fetch(t.url, {
       method: "POST",
+      signal,
       // A redirected endpoint must not forward user-configured secret headers.
       redirect: "error",
       headers: {
@@ -222,14 +240,17 @@ export class McpClient {
     const type = res.headers.get("content-type") ?? "";
     if (type.includes("text/event-stream")) {
       // Read events until the reply to this request arrives.
-      const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
-      let buf = "";
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buf = "", bytes = 0;
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
+        bytes += value.byteLength;
+        if (bytes > MAX_MCP_RESPONSE_BYTES) { await reader.cancel(); throw new McpError(`${this.name}: response exceeds size limit`); }
         // SSE lines may end in CRLF or CR as well as LF (Tavily's server sends CRLF); a CR
         // that ends this chunk waits, since its LF may start the next.
-        buf = (buf + value).replace(/\r\n|\r(?!$)/g, "\n");
+        buf = (buf + decoder.decode(value, { stream: true })).replace(/\r\n|\r(?!$)/g, "\n");
         let i: number;
         while ((i = buf.indexOf("\n\n")) >= 0) {
           const frame = buf.slice(0, i);
@@ -238,7 +259,20 @@ export class McpClient {
           if (data && this.receive(data) === msg.id) return void (await reader.cancel());
         }
       }
-    } else this.receive(await res.text());
+    } else {
+      if (!res.body) throw new McpError(`${this.name}: missing response body`);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let raw = "", bytes = 0;
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        bytes += value.byteLength;
+        if (bytes > MAX_MCP_RESPONSE_BYTES) { await reader.cancel(); throw new McpError(`${this.name}: response exceeds size limit`); }
+        raw += decoder.decode(value, { stream: true });
+      }
+      this.receive(raw + decoder.decode());
+    }
   }
 
   /** Handle one message; returns the id it answered, if any. */
@@ -253,8 +287,6 @@ export class McpClient {
     if (typeof msg.id !== "number" || msg.method) return undefined; // notifications and server requests: not used
     const p = this.pending.get(msg.id);
     if (!p) return msg.id;
-    clearTimeout(p.timer);
-    this.pending.delete(msg.id);
     if (msg.error) p.reject(new McpError(`${this.name}: ${msg.error.message ?? "error"}`, msg.error.code));
     else p.resolve(msg.result);
     return msg.id;

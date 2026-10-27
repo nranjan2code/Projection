@@ -47,7 +47,9 @@ export async function postJson(
     if (RETRYABLE.has(res.status) && attempt < retries) {
       const after = Number(res.headers.get("retry-after"));
       await res.body?.cancel();
-      await sleep(Number.isFinite(after) && after > 0 ? after * 1000 : backoff(attempt++), signal);
+      const delay = Number.isFinite(after) && after > 0 ? after * 1000 : backoff(attempt);
+      attempt++;
+      await sleep(delay, signal);
       continue;
     }
     const text = await res.text().catch(() => "");
@@ -67,11 +69,10 @@ function backoff(attempt: number): number {
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    const t = setTimeout(resolve, ms);
-    signal?.addEventListener("abort", () => {
-      clearTimeout(t);
-      reject(signal.reason);
-    }, { once: true });
+    signal?.throwIfAborted();
+    const aborted = () => { clearTimeout(t); reject(signal?.reason); };
+    const t = setTimeout(() => { signal?.removeEventListener("abort", aborted); resolve(); }, ms);
+    signal?.addEventListener("abort", aborted, { once: true });
   });
 }
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased: governed tool dispatch
+
+- **Breaking:** `AgentTool.execute` can return `{text,isError}` as well as text. Wrappers must preserve that result; MCP failures and denials now carry explicit error status into agent messages/events and repeated-failure suppression.
+- Validate native external arguments against the supported schema contract before approval/dispatch, refuse incomplete native generations and reject duplicate/reserved model-facing tool names instead of silently selecting a handler.
+- Integration changes invalidate captured handles and chat grants. Recheck cancellation and authorization after approval, immediately before dispatch.
+- MCP cancellation, timeout and close terminate pending HTTP work; remove settled listeners/timers and cap HTTP JSON/SSE bodies and stdio frames at8MiB before parsing. Cancelled calls never initiate a tool request. Server-side effects remain cooperative/uncertain after dispatch.
+- HTTP Retry-After now consumes the finite retry allowance; cancelled waits cannot start another attempt.
+- Offline dispatch/transport/retry regressions and existing tests/replay, types and package build verify mechanisms. These changes do not certify live model reasoning or close existing user-outcome failures.
+
 ## Unreleased: provider routing regression
 
 - Offline registry regression verifies OpenAI uses /responses with function_call/function_call_output replay and no Chat Completions fallback on a failed request. Compatible-server adapters retain their explicit Chat Completions routes.383 tests/replay and typecheck pass; routing behavior was already in use by the live hosted trials.

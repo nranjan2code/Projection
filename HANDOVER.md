@@ -1,5 +1,11 @@
 # Projection handover — 2026-10-27
 
+## Pipeline audit — 2026-10-27
+
+Governed dispatch now validates supported argument schemas before execution, preserves structured MCP error/denial status, rejects incomplete native generations and duplicate/reserved names, and invalidates old handles/chat grants when integration authority changes. MCP HTTP requests abort on cancellation/timeout/close; body/frame parsing is bounded at8MiB. Provider Retry-After consumes the finite retry allowance. Apps wrapping AgentTool.execute must preserve string or {text,isError} results (CHANGELOG Breaking entry).
+
+Offline regressions exercise actual adapters/agent dispatch and loopback transports, with no paid or live model calls. Existing primary-provider/source/interaction/receipt failures remain open. Installed app adoption requires its own build; no process restart or installation is implied.
+
 ## Current architecture
 
 Runtime schemaMode is removed: host/agent use typed descriptors with one prompt owner per active protocol. Trusted context loaders use counted answer steps, not external rounds. App must adopt the matching kind metadata and avoid charging local skills as external operations.

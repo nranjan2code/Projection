@@ -151,6 +151,12 @@ export class Integrations {
   private calls = new Map<string, ToolCallRecord[]>();
   /** "Allow for this chat": session → server:tool. */
   private chatAllowed = new Map<string, Set<string>>();
+  private revisions = new Map<string, number>();
+
+  private revoke(id: string): void {
+    this.revisions.set(id, (this.revisions.get(id) ?? 0) + 1);
+    for (const allowed of this.chatAllowed.values()) for (const key of allowed) if (key.startsWith(`${id}:`)) allowed.delete(key);
+  }
 
   private opts: IntegrationsOptions;
 
@@ -242,6 +248,7 @@ export class Integrations {
 
   // --- install -------------------------------------------------------------------
   async install(id: string): Promise<void> {
+    this.revoke(id);
     const e = this.entry(id);
     const st = this.state(id);
     if (e.source.kind !== "npm") {
@@ -267,6 +274,7 @@ export class Integrations {
   }
 
   async uninstall(id: string): Promise<void> {
+    this.revoke(id);
     await this.stop(id);
     const e = this.entry(id);
     rmSync(path.join(this.dir, id), { recursive: true, force: true });
@@ -316,6 +324,7 @@ export class Integrations {
   async configure(id: string, change: { enabled?: boolean; config?: Record<string, unknown>; secrets?: Record<string, string | null>; policies?: Record<string, ToolPolicy> }): Promise<void> {
     const e = this.entry(id);
     const st = this.state(id);
+    this.revoke(id);
     let restart = false;
     if (change.config) {
       const config = { ...st.config };
@@ -389,6 +398,7 @@ export class Integrations {
 
   /** Connect and read the tool list (kept, so a settings screen shows tools while a server is stopped). */
   async refresh(id: string): Promise<void> {
+    this.revoke(id);
     try {
       const src = this.source(id);
       const tools = "tools" in src ? src.tools : await src.listTools();
@@ -431,16 +441,17 @@ export class Integrations {
       try {
         if (!st.tools) await this.refresh(e.id);
         if (!this.state(e.id).tools?.length || this.errors.has(e.id)) continue;
+        const revision = this.revisions.get(e.id) ?? 0;
         const allowed = this.chatAllowed.get(session) ?? new Set<string>();
         out.push(
           ...agentTools(this.source(e.id), this.state(e.id).tools!, {
             server: e.id,
             observe: (tool, args, result) => this.opts.observe?.({ session, server: e.id, tool, args }, result),
             label: e.name,
-            policy: (t) => (allowed.has(`${e.id}:${t.name}`) && this.policyOf(e.id, t) === "ask" ? "allow" : this.policyOf(e.id, t)),
+            policy: (t) => (!this.saved.integrations[e.id]?.enabled || revision !== (this.revisions.get(e.id) ?? 0)) ? "off" : (allowed.has(`${e.id}:${t.name}`) && this.policyOf(e.id, t) === "ask" ? "allow" : this.policyOf(e.id, t)),
             approve: async (req, emit, signal) => {
               const d = await this.opts.approve(req, emit, signal);
-              if (d === "allow-chat") {
+              if (d === "allow-chat" && revision === (this.revisions.get(e.id) ?? 0)) {
                 allowed.add(`${e.id}:${req.tool}`);
                 this.chatAllowed.set(session, allowed);
               }

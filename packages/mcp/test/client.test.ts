@@ -81,7 +81,7 @@ test("off tools are never offered; ask waits for approval and a no is reported, 
   const list = agentTools(source, tools, { server: "s", label: "S", policy: (t) => policies[t.name]!, approve: async (req) => (asked.push(req.tool), "deny") });
   assert.deepEqual(list.map((t) => t.spec.name), ["s__read", "s__write"]);
   assert.match(String(await list[0]!.execute({}, {})), /tool_output[\s\S]*done/);
-  assert.match(String(await list[1]!.execute({}, {})), /declined/);
+  assert.match((await list[1]!.execute({}, {}) as { text: string }).text, /declined/);
   assert.deepEqual(ran, ["read"]);
   assert.deepEqual(asked, ["write"]);
 });
