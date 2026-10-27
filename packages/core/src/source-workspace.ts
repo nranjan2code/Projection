@@ -22,6 +22,6 @@ export function compileSourceWorkspace(value: unknown, sources: TableSources, pa
   if (criteria.length) surfaces.push({ op: "replace", surface: "source_criteria", title: "Criteria", root: { type: "form", props: { parameters: criteria, submit: "apply_parameters", submitLabel: "Update criteria" } }, data: {} });
   for (const source of reports) surfaces.push({ op: "replace", surface: `source_report_${source}`, title: sources[source]!.filename, root: { type: "table", props: { source, searchable: true, sortable: true } }, data: {} });
   const kept = new Set(surfaces.map((surface) => surface.surface));
-  for (const surface of canonicalIds) if (!kept.has(surface)) surfaces.push({ op: "remove", surface });
+  for (const surface of canonicalIds) if ((surface === "source_criteria" || surface.startsWith("source_report_")) && !kept.has(surface)) surfaces.push({ op: "remove", surface });
   return { surfaces };
 }

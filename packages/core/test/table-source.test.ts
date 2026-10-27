@@ -75,3 +75,10 @@ test("prepared source workspace compiles separate canonical form/report with fix
   assert.deepEqual(report.children[1]!.props.rows, computed.props.rows);
   assert.equal(report.children[1]!.props.searchable, true); assert.equal(report.children[1]!.props.sortable, true);
 });
+
+test("source workspace cleanup removes its own obsolete slots without deleting other live surfaces", async () => {
+  const { compileSourceWorkspace } = await import("../src/index.ts");
+  const document = compileSourceWorkspace({ reports: ["selected"], criteria: [] }, sources, {}, ["outside_agent_result", "media_asset", "source_report_old", "source_criteria"]) as { surfaces: { op: string; surface: string }[] };
+  const removed = document.surfaces.filter((surface) => surface.op === "remove").map((surface) => surface.surface);
+  assert.deepEqual(removed, ["source_report_old", "source_criteria"]);
+});

@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-27: source workspace ownership
+
+- Cleanup removes only obsolete source-workspace slots, preserving unrelated media or outside-agent surfaces. Regression covers mixed ownership. 373 tests/replay and typecheck pass.
+
 ## 2026-10-27: compile a source workspace from references
 
 - Prepared-source publication names reports and caller criteria rather than authoring a UI graph. The compiler creates distinct interactive report/form surfaces, source evidence and computed explanations. New source-backed tables keep their total footer fixed during local sorting. General graph authoring remains for other tasks.
