@@ -9,7 +9,7 @@ export async function* structuredCall(provider: Provider, request: ChatRequest, 
   const branches: JSONSchema[] = tools.map((tool) => ({ type: "object", additionalProperties: false, required: ["tool", "arguments"], properties: {
     tool: { type: "string", const: tool.name, description: tool.description }, arguments: toWireSchema(tool.inputSchema),
   } }));
-  const definitions: Record<string, JSONSchema> = {};
+  const definitions: Record<string, JSONSchema> = Object.create(null);
   for (const tool of tools) for (const [name, definition] of Object.entries(tool.inputSchema.$defs ?? {})) {
     if (definitions[name] && JSON.stringify(definitions[name]) !== JSON.stringify(definition)) throw new Error("Conflicting tool schema definitions");
     definitions[name] = definition;

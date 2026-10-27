@@ -100,7 +100,8 @@ export function validate(
   opts = { ...opts, root: opts.root ?? schema, depth: (opts.depth ?? 0) + 1 };
   if (schema.$ref) {
     const name = schema.$ref.startsWith("#/$defs/") ? schema.$ref.slice(8) : undefined;
-    const target = name && opts.root?.$defs?.[name];
+    const definitions = opts.root?.$defs;
+    const target = name && definitions && Object.hasOwn(definitions, name) ? definitions[name] : undefined;
     if (!target) return [{ path: path || "/", message: "unsupported or unresolved schema reference" }];
     return validate(target, value, opts, path);
   }

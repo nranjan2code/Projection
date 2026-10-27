@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-27: local schema reference safety
+
+- Local definition references must resolve own keys; inherited prototype names cannot resolve as schemas. Recursive references are depth bounded and conflicting tool definitions fail closed. 361 tests/replay and typecheck pass.
+
 ## 2026-10-27: enforce the submission contract at decoding
 
 - Transactional calls use the actual offered tool schema through advertised provider schema decoding. Recursive local definitions type all inline descendants; state-aware operations do not offer nonexistent patch/remove targets. New surface IDs are generated; replacement data and required component props are required by the request schema. Native calls remain for providers without constrained output. Strict complete validation, existing execution/approvals/accounting and atomic admission remain. Submission instructions describe only the active protocol rather than imposing unrelated layout recipes.

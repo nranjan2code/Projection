@@ -81,3 +81,9 @@ test("request schemas require a leaf's required props and a complete replacement
   assert.ok(validate(schema, { surfaces: [{ op: "replace", root: { type: "text", props: { content: "Visible" } } }] }).length);
   assert.equal(validate(schema, { surfaces: [{ op: "replace", root: { type: "text", props: { content: "Visible" } }, data: {} }] }).length, 0);
 });
+
+
+test("local schema references reject inherited names and remain depth bounded", () => {
+  for (const name of ["constructor", "__proto__", "missing"]) assert.ok(validate({ $ref: `#/$defs/${name}`, $defs: {} }, "anything").length);
+  assert.ok(validate({ $ref: "#/$defs/cycle", $defs: { cycle: { $ref: "#/$defs/cycle" } } }, {}).some((issue) => issue.message.includes("128 levels")));
+});
