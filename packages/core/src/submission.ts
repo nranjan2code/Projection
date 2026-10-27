@@ -41,14 +41,14 @@ export function submissionTool(catalog: Catalog, surfaceIds?: readonly string[],
   })) };
   const entry = (op: string, properties: Record<string, JSONSchema>, required: readonly string[]): JSONSchema => ({ type: "object", additionalProperties: false, required: ["op", ...required], properties: { op: { type: "string", const: op }, ...properties } });
   const branches = [
-    entry("replace", { ...(surfaceIds ? surfaceIds.length ? { surface: { type: "string", enum: surfaceIds, description: "existing surface to replace; omit to create a new surface" } } : {} : { surface: { type: "string", minLength: 1, maxLength: 120 } }), title: { type: "string", maxLength: 500 }, root: { $ref: "#/$defs/vak_root" }, data }, ["root", ...(surfaceIds || dataSchema ? ["data"] : [])]),
+    entry("replace", { ...(surfaceIds ? surfaceIds.length ? { surface: { type: "string", enum: surfaceIds, description: "existing surface to replace; omit to create a new surface" } } : {} : { surface: { type: "string", minLength: 1, maxLength: 120 } }), title: { type: "string", maxLength: 500 }, root: ref, data }, ["root", ...(surfaceIds || dataSchema ? ["data"] : [])]),
     ...(surfaceIds?.length === 0 ? [] : [
       entry("patch", { ...patch.properties!, ...(surfaceIds ? { surface: { type: "string", enum: surfaceIds } } : {}) }, patch.required!),
       entry("remove", { ...remove.properties!, ...(surfaceIds ? { surface: { type: "string", enum: surfaceIds } } : {}) }, remove.required!),
     ]),
   ];
-  return { name: TOOL_SUBMIT, description: "Submit a complete candidate in one transaction. Replace with inline root trees (children and collection templates are node objects, not ID references). Omit surface and node IDs for new content; the framework generates them. Use a surface ID only when replacing existing content. Patch existing nodes by their canonical IDs; data uses existing merge/JSON Patch semantics. Remove explicitly. Unmentioned surfaces stay. All changes are checked together; rejection changes nothing. Call alone after external work; acceptance ends this run.", inputSchema: {
-    $defs: { ...dataDefinitions, vak_node: node, vak_root: { anyOf: node.anyOf!.map((branch) => ({ ...branch, properties: { ...branch.properties, id: { type: "string", const: "root" } } })) } }, type: "object", additionalProperties: false, required: ["surfaces"], properties: {
+  return { name: TOOL_SUBMIT, description: "Submit a complete candidate in one transaction. Replace with inline root trees (children and collection templates are node objects, not ID references). Omit surface and node IDs for new content; a supplied root ID must be root; the framework generates them. Use a surface ID only when replacing existing content. Patch existing nodes by their canonical IDs; data uses existing merge/JSON Patch semantics. Remove explicitly. Unmentioned surfaces stay. All changes are checked together; rejection changes nothing. Call alone after external work; acceptance ends this run.", inputSchema: {
+    $defs: { ...dataDefinitions, vak_node: node }, type: "object", additionalProperties: false, required: ["surfaces"], properties: {
       reply: { type: "string", maxLength: 8000, description: "Brief acknowledgement only; requested substantive content belongs in the surface documents" },
       surfaces: { type: "array", minItems: surfaceIds?.length === 0 ? surfaceCount ?? 1 : 1, maxItems: surfaceIds?.length === 0 ? surfaceCount ?? 16 : 16, items: { anyOf: branches } },
     },

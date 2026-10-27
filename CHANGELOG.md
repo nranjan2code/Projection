@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased: remove duplicate authoring schema
+
+- Root and descendant trees now reference one node definition instead of repeating the entire catalog for roots. The same native transactional tool schema shrinks from about66k to34k characters. A supplied root ID remains checked as root/omitted before admission. No component, runtime relationship check, source value, permission or outcome requirement is removed.380 tests/replay, typecheck and package build pass.
+
 ## Unreleased: preserve repeated form fields
 
 - Form controls with distinct bind paths but the same final field name now submit each value under its canonical absolute path. Unique short names retain their ordinary payload. Repeated controls of one path submit one canonical value. A fresh skill-led garden observation run exposed the previous last-value-only overwrite; the engine regression preserves all three edited values and restore. No prompt or domain-specific repair.380 tests/replay, typecheck and package build pass.
