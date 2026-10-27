@@ -426,8 +426,7 @@ export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts
   const lines: string[] = [];
   lines.push(
     opts.submission ? "Show rich interactive UI with vak_submit: submit all requested surfaces together. Each entry has op replace, patch or remove and a stable surface ID. Unmentioned surfaces stay unchanged. Acceptance ends the run; gather evidence with external tools first, in separate calls. Put requested explanations and substantive content on the surfaces; reply is only an acknowledgement. Express component diagnostics about vak_update/vak_remove as submitted patch/remove entries." : "You can show rich, interactive UI by calling vak_render (new or replaced surface), vak_update (patch) and vak_remove.",
-    "Prefer UI over long prose whenever content has structure: options, comparisons, metrics, steps, forms.",
-    opts.submission ? "This run publishes a result only through an accepted vak_submit. Plain prose does not publish or replace a result." : "Answer in plain text, without any tool, when the reply is conversation or a short answer: greetings, thanks, small talk, questions about you, a fact, definition or explanation of a few sentences, or whenever the user asks for text. Surfaces earlier in the conversation are not a reason to render again: decide from the latest message.",
+    opts.submission ? "This run publishes a result only through an accepted vak_submit. Plain prose does not publish or replace a result." : "Choose whether to use UI from the user's request and caller instructions. Existing surfaces do not require another render.",
     "",
     "Rules:",
     opts.submission
@@ -438,7 +437,7 @@ export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts
     "- If the user names a listed component, use that exact type. Preserve all user-supplied items, labels, order and values exactly. Do not invent dates or rewrite supplied source code.",
     "- Supplied captions and code are source material: copy verbatim, including punctuation and whitespace. Do not paraphrase, embellish or omit parts.",
     "- Write arrays and objects directly as JSON, not strings containing JSON. A leaf component stores its items in props, never in children.",
-    "- Keep currency and percentage values as display strings, including their symbols. Do not turn a percentage into a plain number.",
+    "- Preserve supplied values and units. Formatting displayed currency or percentages must not change the numeric values stored in data.",
     "- Put values in data and bind them: \"{/path}\" inside any string. A string that is only \"{/path}\" keeps the raw value.",
     opts.submission ? '- Repeat a node with children: {"each":"/items","template":{"type":"text","props":{"content":"{.}"}}}. Use relative {field} bindings for item properties.' : "- Repeat a node per list item with children: {\"each\": \"/items\", \"template\": \"tplId\"}; inside the template use relative paths like \"{name}\"; for a list of plain values, \"{.}\" is the item.",
     "- Inputs use bind: \"/form/field\". A form's submit is an action name.",
@@ -450,10 +449,6 @@ export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts
     opts.submission ? "  Answer it visibly with a submitted patch to the affected surface. Unchanged surfaces remain interactive." : "  Always answer it visibly: update that surface (vak_update) or render the next step. Never leave an action without feedback.",
     "- checks: \"required\", \"email\", \"url\", \"number\", \"minLength:3\", \"maxLength:80\", \"min:0\", \"max:10\".",
     "- Only use the components and props listed below. * marks required props.",
-    "",
-    "Layout: compose real layouts, not a single column. Use grid for card collections and dashboards (it adapts 1→4 columns),",
-    "split for primary + secondary content, stack direction:horizontal for toolbars and button rows. Any node accepts",
-    "span (1-4 or \"full\") to make bento-style layouts and priority (primary|secondary|tertiary) for small screens and chat.",
     "",
     `Components (${catalog.id}):`,
   );

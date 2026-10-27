@@ -81,19 +81,20 @@ test("compact prompt exposes rich item contracts and literal source fidelity", (
   const steps = prompt.split("\n").find((s) => s.startsWith("- steps:"))!;
   assert.match(steps, /title\*: string/);
   assert.match(steps, /status: done\|current\|todo\|skipped\|failed/);
-  assert.match(prompt, /Keep currency and percentage values as display strings/);
+  assert.match(prompt, /Formatting displayed currency or percentages must not change the numeric values stored in data/);
   assert.match(prompt, /literal source, copy exactly; no ANSI, fences or extra escaping/);
   assert.match(prompt, /Preserve all user-supplied items, labels, order and values exactly/);
   assert.match(toolDefinitions(basicCatalog, { mode: "compact", authoring: "inline" })[0]!.description, /child node objects directly/);
   assert.doesNotMatch(toolDefinitions(basicCatalog, { authoring: "inline" })[0]!.description, /flat list/);
 });
 
-test("the prompt says when to answer in plain text, not only when to render", () => {
+test("presentation choice belongs to the caller rather than a forced layout recipe", () => {
   // Vakyartha, 2026-10-26: qwen3.5:4b-mlx rendered a "greeting" surface for "hello" and
   // ignored "Plain text only" once the chat held surfaces; the prompt only said when to prefer UI.
   const prompt = systemPrompt(basicCatalog);
-  assert.match(prompt, /Answer in plain text, without any tool, when the reply is conversation or a short answer: greetings/);
-  assert.match(prompt, /Surfaces earlier in the conversation are not a reason to render again/);
+  assert.match(prompt, /Choose whether to use UI from the user's request and caller instructions/);
+  assert.doesNotMatch(prompt, /Layout: compose real layouts|Prefer UI over long prose/);
+  assert.match(prompt, /Existing surfaces do not require another render/);
   assert.match(CONSTRAINED_INSTRUCTIONS, /null when the reply is conversation or a short plain answer/);
 });
 

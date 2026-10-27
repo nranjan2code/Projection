@@ -687,7 +687,7 @@ export const basicCatalog = defineCatalog(
         },
         ["columns", "rows"],
       ),
-      hint: "rows is an array of objects keyed by columns; retain currency and percent symbols in string cells; use props.totals: true for automatic numeric column sums; it replaces a supplied last total row. For a requested custom summary row, keep that row and set totals: false",
+      hint: "Author rows as positional scalar cell arrays in column order, or bind rows to data of that shape. Do not leave rows empty when displaying supplied records. props.totals: true computes numeric column sums and replaces a supplied last total row; use it only for a requested total. For a requested custom summary row, keep that row and set totals: false",
       finalize: finalizeTable,
       aliases: ["datatable", "grid_table", "spreadsheet", "datagrid"],
     },

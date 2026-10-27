@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased: caller-owned presentation guidance
+
+- Presentation and layout choices follow the request and caller instructions instead of a mandatory rich-layout recipe. Display formatting is distinguished from stored numeric values. Table guidance now agrees with the existing positional-cell authoring schema; ingestion support is unchanged. No domain handler, parser repair or new public API.
+- Validation: 373 tests/replay, typecheck and package build pass. The unchanged transactional primary-provider gate passes only 2/3 (`primary-provider-2026-10-27T04-47-06.771Z.json`); that path does not use the changed ordinary-chat prompt. Its numeric type failure remains open. This guidance correction is not a complete authoring or user-outcome repair.
+
 ## 2026-10-27: contract evidence retention
 
 - Provider-contract checks retain a unique receipt for every execution as well as the latest view. Source parameter-form instructions apply only to source-backed workspaces; unrelated graph authoring retains its actual input protocol.
