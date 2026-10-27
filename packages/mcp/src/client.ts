@@ -15,7 +15,7 @@
 // Transports: stdio (newline-delimited JSON-RPC) and Streamable HTTP
 // (POST, JSON or SSE replies, Mcp-Session-Id kept).
 
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, execFileSync } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -112,14 +112,18 @@ export class McpClient {
       // Try vak-sandbox if enabled (OS-level isolation)
       if (this.opts.vakSandbox?.enabled) {
         const sandboxBin = this.opts.vakSandbox.binaryPath || "vaksb";
+        let sandboxAvailable = false;
         try {
-          // Use vak-sandbox process jail if available
-          child = spawnNative(sandboxBin, ["run", "--", t.command, ...(t.args ?? [])], { 
-            cwd: t.sandboxDir, 
-            env: { ...minimalEnv(t), VAK_SANDBOX: "1" }, 
-            stdio: ["pipe", "pipe", "pipe"] 
+          execFileSync(sandboxBin, ["--version"], { stdio: "ignore" });
+          sandboxAvailable = true;
+        } catch { sandboxAvailable = false; }
+        if (sandboxAvailable) {
+          child = spawn(sandboxBin, ["run", "--", t.command, ...(t.args ?? [])], {
+            cwd: t.sandboxDir,
+            env: { ...minimalEnv(t), VAK_SANDBOX: "1" },
+            stdio: ["pipe", "pipe", "pipe"]
           });
-        } catch {
+        } else {
           child = spawn(t.command, t.args ?? [], { cwd: t.sandboxDir, env: minimalEnv(t), stdio: ["pipe", "pipe", "pipe"] });
         }
       } else {
