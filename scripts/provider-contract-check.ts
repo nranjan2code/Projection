@@ -16,6 +16,7 @@ for (const values of [[12, 17], [3, 2], [100, 70]]) {
   const result = await runAgent({ provider, model, store, catalog: { ...basicCatalog, components: { text: basicCatalog.components.text! } },
     messages,
     surfaceSubmission: true, completion: "response", maxSteps: 2, maxTokens: 1200, signal: AbortSignal.timeout(60000),
+    dataSchema: { type: "object", additionalProperties: false, required: ["value"], properties: { value: { type: "number" } } },
     validateCompletion: ({ surfaces, resolved }) => surfaces.length === values.length && values.every((value) => surfaces.some((surface, index) => surface.data.value === value && String(resolved[index]?.root?.props.content).split(/[^\d.-]+/).includes(String(value)))) ? [] : ["Each original numeric value must be stored in data.value and visible on its own text surface."], emit: (event) => { if (event.type === "tool_end" || event.type === "error") diagnostics.push(event.type === "error" ? event.message : event.result); },
   });
   results.push({ values, pass: result.stop === "end", requests, seconds: (Date.now() - started) / 1000, stop: result.stop, diagnostics, messages, surfaces: store.list().map((surface) => store.snapshot(surface.id)) });

@@ -8,6 +8,34 @@ async function* call(name: string, args: unknown, id = "call"): AsyncIterable<Pr
   yield { type: "tool_start", id, name }; yield { type: "tool_args", id, delta: JSON.stringify(args) }; yield { type: "tool_end", id };
 }
 const options = { model: "test", surfaceSubmission: true, completion: "response" as const, maxSteps: 6 };
+
+test("data contracts cannot be silently ignored by a progressive run", async () => {
+  let requests = 0;
+  const provider: Provider = { id: "scripted", async *stream() { requests++; yield { type: "done", stop: "end" }; } };
+  await assert.rejects(() => runAgent({ provider, model: "test", store: new SurfaceStore(basicCatalog), messages: [], dataSchema: { type: "object" }, emit: () => {} }), /requires transactional/);
+  await assert.rejects(() => runAgent({ ...options, provider, store: new SurfaceStore(basicCatalog), messages: [], dataSchema: { type: "array" }, emit: () => {} }), /must describe an object/);
+  assert.equal(requests, 0);
+});
+
+test("the same caller data schema reaches provider decoding and native candidate validation", async () => {
+  const dataSchema = { type: "object" as const, additionalProperties: false, required: ["value"], properties: { value: { type: "number" as const } } };
+  for (const constrainedOutput of [false, true]) {
+    const store = new SurfaceStore(basicCatalog); let requests = 0;
+    const provider: Provider = { id: "scripted", capabilities: { constrainedOutput }, async *stream(req) {
+      requests++;
+      if (constrainedOutput) {
+        assert.ok(JSON.stringify(req.responseSchema).includes('"value":{"type":"number"}'));
+        yield { type: "text", delta: JSON.stringify({ tool: "vak_submit", arguments: { surfaces: [{ op: "replace", root: { type: "text", props: { content: "Value" } }, data: { value: 12 } }] } }) };
+        yield { type: "done", stop: "end" }; return;
+      }
+      yield* call("vak_submit", { surfaces: [{ op: "replace", root: { type: "text", props: { content: "Value" } }, data: { value: requests === 1 ? "12" : 12 } }] });
+      yield { type: "done", stop: "tool_use" };
+    } };
+    const result = await runAgent({ ...options, provider, store, dataSchema, messages: [], emit: () => {} });
+    assert.equal(result.stop, "end"); assert.equal(store.snapshot(store.list()[0]!.id)!.data.value, 12);
+    assert.equal(requests, constrainedOutput ? 1 : 2);
+  }
+});
 test("one accepted submission validates a complete candidate and commits before emitting without another generation", async () => {
   const store = new SurfaceStore(basicCatalog), events: AgentEvent[] = [];
   let requests = 0, checks = 0;

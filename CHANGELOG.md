@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased: caller-declared surface data contracts
+
+- Transactional runs accept an optional trusted `dataSchema` through the public provider/host APIs. The same schema constrains replacement decoding and validates complete candidate state after replacements or patches, with no value coercion. Caller-local schema definitions are scoped away from component definitions. Other authoring modes reject this option rather than silently ignoring it.
+- Retained numeric path/type regressions pass, along with 378 framework tests/replay and typecheck. Small primary-provider gate passes3/3 in one request each (`primary-provider-2026-10-27T04-52-45.159Z.json`), preserving the original value/display checks. This proves the bounded data contract, not complete interactive authoring or the original app calculator.
+
 ## Unreleased: caller-owned presentation guidance
 
 - Presentation and layout choices follow the request and caller instructions instead of a mandatory rich-layout recipe. Display formatting is distinguished from stored numeric values. Table guidance now agrees with the existing positional-cell authoring schema; ingestion support is unchanged. No domain handler, parser repair or new public API.

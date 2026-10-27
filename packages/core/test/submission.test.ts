@@ -1,9 +1,49 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { basicCatalog, SurfaceStore, prepareSubmission, submissionTool, validate } from "../src/index.ts";
+import { basicCatalog, SurfaceStore, prepareSubmission, submissionTool, validate, type JSONSchema } from "../src/index.ts";
 
 const form = { op: "replace", surface: "criteria", data: { budget: 18 }, root: { type: "form", props: { submit: "apply" }, children: [{ type: "input", props: { label: "Budget", kind: "number", bind: "/budget" } }] } };
 const report = { op: "replace", surface: "report", root: { type: "table", props: { columns: ["name", "value"], rows: [["One", 9]] } } };
+const dataSchema: JSONSchema = { type: "object", additionalProperties: false, required: ["value"], properties: { value: { type: "number" } } };
+
+test("caller data paths and types are enforced before publication without coercing facts", () => {
+  // Retained primary-provider 2026-10-27T04-47-06.771Z used data['/']
+  // instead of the required data.value; earlier receipts used numeric strings.
+  const create = (data: unknown) => ({ surfaces: [{ op: "replace", surface: "one", root: { type: "text", props: { content: "3" } }, data }] });
+  const schema = submissionTool(basicCatalog, [], {}, {}, dataSchema).inputSchema;
+  for (const data of [{ "/": 3 }, { value: "3" }, {}, { value: 3, extra: 9 }]) {
+    assert.ok(validate(schema, create(data)).length);
+    const candidate = prepareSubmission(basicCatalog, [], create(data), { dataSchema });
+    assert.ok(candidate.issues.length); assert.equal(candidate.store, undefined);
+    assert.deepEqual(create(data).surfaces[0]!.data, data);
+  }
+  const accepted = prepareSubmission(basicCatalog, [], create({ value: 3 }), { dataSchema });
+  assert.deepEqual(accepted.issues, []);
+  assert.deepEqual(accepted.store!.snapshot("one")!.data, { value: 3 });
+});
+
+test("data contracts validate complete patched state and retain canonical state on failure", () => {
+  const first = prepareSubmission(basicCatalog, [], { surfaces: [{ op: "replace", surface: "one", root: { type: "text", props: { content: "{/value}" } }, data: { value: 9 } }] }, { dataSchema }).store!;
+  const before = first.snapshot("one")!;
+  for (const data of [{ value: "12" }, [{ op: "remove", path: "/value" }]]) {
+    const result = prepareSubmission(basicCatalog, [before], { surfaces: [{ op: "patch", surface: "one", data }] }, { dataSchema });
+    assert.ok(result.issues.length); assert.equal(result.store, undefined);
+    assert.deepEqual(first.snapshot("one"), before);
+  }
+  const result = prepareSubmission(basicCatalog, [before], { surfaces: [{ op: "patch", surface: "one", data: { value: 12 } }] }, { dataSchema });
+  assert.deepEqual(result.issues, []);
+  assert.equal(result.store!.resolve("one")!.root!.props.content, 12);
+});
+
+test("caller definitions cannot collide with recursive component definitions", () => {
+  const caller: JSONSchema = { type: "object", required: ["value"], properties: { value: { $ref: "#/$defs/vak_node" } }, $defs: { vak_node: { type: "number" } } };
+  const schema = submissionTool(basicCatalog, [], {}, {}, caller).inputSchema;
+  const create = (value: unknown) => ({ surfaces: [{ op: "replace", root: { type: "text", props: { content: "Value" } }, data: { value } }] });
+  assert.deepEqual(validate(schema, create(12)), []);
+  assert.ok(validate(schema, create("12")).length);
+  assert.deepEqual(prepareSubmission(basicCatalog, [], create(12), { dataSchema: caller }).issues, []);
+  assert.throws(() => submissionTool(basicCatalog, [], {}, {}, { type: "array" }), /must describe an object/);
+});
 test("inline submission compiles identities without changing facts or canonical state", () => {
   const current = new SurfaceStore(basicCatalog);
   const candidate = prepareSubmission(basicCatalog, [], { surfaces: [form, report] });
