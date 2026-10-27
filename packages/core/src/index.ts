@@ -24,7 +24,3 @@ export * from "./ansi-projector.ts";
 export * from "./title.ts";
 
 export * from "./submission.ts";
-
-export * from "./table-source.ts";
-
-export * from "./source-workspace.ts";

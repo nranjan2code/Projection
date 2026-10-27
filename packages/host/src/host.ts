@@ -147,9 +147,6 @@ export interface HostTurn {
 export interface HostRunOptions {
   dataSchema?: import("@vak/core").JSONSchema;
   surfaceCount?: number;
-  tableSources?: import("@vak/core").TableSources;
-  tableParameters?: Readonly<Record<string, import("@vak/core").SourceCell>>;
-  tableRelations?: Readonly<Record<string, "at_most" | "at_least">>;
   surfaceSubmission?: boolean;
   validateCompletion?: CompletionCheck;
   validateEdits?: SurfaceCheck;
@@ -554,9 +551,6 @@ export function createHost(opts: HostOptions): VakHost {
         surfaceSubmission: controls.surfaceSubmission,
         dataSchema: controls.dataSchema,
         surfaceCount: controls.surfaceCount,
-        tableSources: controls.tableSources,
-        tableParameters: controls.tableParameters,
-        tableRelations: controls.tableRelations,
         schemaMode: body.schemaMode === "strict" ? "strict" : "compact",
         // Grammar-constrained output cannot call other tools; integrations need tool calling.
         generation: tools.length || controls.completion === "response" ? "tools" : body.generation === "tools" || body.generation === "constrained" ? body.generation : "auto",

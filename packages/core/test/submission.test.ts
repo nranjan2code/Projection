@@ -10,7 +10,7 @@ test("caller data paths and types are enforced before publication without coerci
   // Retained primary-provider 2026-10-27T04-47-06.771Z used data['/']
   // instead of the required data.value; earlier receipts used numeric strings.
   const create = (data: unknown) => ({ surfaces: [{ op: "replace", surface: "one", root: { type: "text", props: { content: "3" } }, data }] });
-  const schema = submissionTool(basicCatalog, [], {}, {}, dataSchema).inputSchema;
+  const schema = submissionTool(basicCatalog, [], { dataSchema: dataSchema }).inputSchema;
   for (const data of [{ "/": 3 }, { value: "3" }, {}, { value: 3, extra: 9 }]) {
     assert.ok(validate(schema, create(data)).length);
     const candidate = prepareSubmission(basicCatalog, [], create(data), { dataSchema });
@@ -37,12 +37,12 @@ test("data contracts validate complete patched state and retain canonical state 
 
 test("caller definitions cannot collide with recursive component definitions", () => {
   const caller: JSONSchema = { type: "object", required: ["value"], properties: { value: { $ref: "#/$defs/vak_node" } }, $defs: { vak_node: { type: "number" } } };
-  const schema = submissionTool(basicCatalog, [], {}, {}, caller).inputSchema;
+  const schema = submissionTool(basicCatalog, [], { dataSchema: caller }).inputSchema;
   const create = (value: unknown) => ({ surfaces: [{ op: "replace", root: { type: "text", props: { content: "Value" } }, data: { value } }] });
   assert.deepEqual(validate(schema, create(12)), []);
   assert.ok(validate(schema, create("12")).length);
   assert.deepEqual(prepareSubmission(basicCatalog, [], create(12), { dataSchema: caller }).issues, []);
-  assert.throws(() => submissionTool(basicCatalog, [], {}, {}, { type: "array" }), /must describe an object/);
+  assert.throws(() => submissionTool(basicCatalog, [], { dataSchema: { type: "array" } }), /must describe an object/);
 });
 
 test("closed data contracts offer only declared compatible collection bindings", () => {
@@ -55,7 +55,7 @@ test("closed data contracts offer only declared compatible collection bindings",
   } };
   const data = { rows: [["One", 4]], labels: ["One"], series: [{ values: [4] }] };
   const create = (rows: string) => ({ surfaces: [{ op: "replace", root: { type: "table", props: { columns: ["Label", "Value"], rows } }, data }] });
-  const schema = submissionTool(basicCatalog, [], {}, {}, caller).inputSchema;
+  const schema = submissionTool(basicCatalog, [], { dataSchema: caller }).inputSchema;
   for (const path of ["{/records}", "{/labels}", "{/series}"]) {
     assert.ok(validate(schema, create(path)).length);
     assert.ok(prepareSubmission(basicCatalog, [], create(path), { dataSchema: caller }).issues.length);
@@ -73,7 +73,7 @@ test("closed data contracts offer only declared compatible collection bindings",
 test("surface count constrains initial decoding and complete state without requiring full resubmission", () => {
   const one = { op: "replace", root: { type: "text", props: { content: "One" } }, data: {} };
   const two = { op: "replace", root: { type: "text", props: { content: "Two" } }, data: {} };
-  const schema = submissionTool(basicCatalog, [], {}, {}, undefined, 1).inputSchema;
+  const schema = submissionTool(basicCatalog, [], { surfaceCount: 1 }).inputSchema;
   assert.ok(validate(schema, { surfaces: [one, two] }).length);
   const first = prepareSubmission(basicCatalog, [], { surfaces: [one, two] }, { surfaceCount: 2 }).store!;
   const snapshots = first.list().map(s => first.snapshot(s.id)!);

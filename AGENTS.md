@@ -52,7 +52,7 @@ Node 24 runs `.ts` directly (type stripping); there is no build step for develop
 
 ## Acceptance gate for model-output work
 
-- Start with the smallest real primary-provider contract that exercises the failing boundary; use `scripts/source-contract-check.ts --run-local` for source-backed workspaces and `scripts/provider-contract-check.ts --run-local` for free-form graph authoring. Keep failures in other capabilities explicitly open; verify types, original values, stop/usage and canonical dispatch before expanding the workflow.
+- Start with the smallest real primary-provider contract that exercises the failing boundary; use `scripts/record-view-check.ts --run-local --table-only` for record/view mappings and `scripts/provider-contract-check.ts --run-local` for free-form graph authoring; source-backed tasks additionally require the original caller source/value/receipt checks. Keep failures in other capabilities explicitly open; verify types, original values, stop/usage and canonical dispatch before expanding the workflow.
 - Native tool schema descriptions are not constrained decoding. Verify the actual provider wire mode rather than assuming schema enforcement.
 - Keep source facts and deterministic calculations separate from presentation. Never repair invented values or reshape results in an app to obtain a pass.
 - Preserve the original failing transcript and add its deterministic regression. Freeze the intended outcome checks before running the full flow; do not weaken them after a failure.

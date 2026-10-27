@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased: remove source-specific execution
+
+- **Breaking:** remove tableSources/tableParameters/tableRelations on host/agent, source table/workspace exports, derive/prepare tools and compiled form/report layouts. Apps pass selected inputs as ordinary untrusted context and author shared records/views through the existing transaction. submissionTool(catalog, surfaceIds?, options?) now takes {dataSchema?,surfaceCount?}; the removed positional source arguments have no shim.
+- User explicitly authorized removal before replacement outcome parity. Nine obsolete API tests and the source-only provider script are removed;379 retained tests/replay, typecheck and package build pass. Independent source facts/calculation/continuation/receipt checks remain caller obligations. Historical successes are not current evidence.
+
 ## Unreleased: display value refresh
 
 - WebKit shared-record regression found that DOM reconciliation excluded every `value`, leaving display stats stale after a field edit. Only nodes with an explicit value synchronizer now preserve DOM across value changes; other nodes refresh from their complete resolved props. Controls retain their focus-preserving synchronization. 388 tests/replay, types and package build pass; app wide/narrow WebKit verification follows.
