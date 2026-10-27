@@ -15,18 +15,20 @@ export interface TurnRequest {
 export class VakClient {
   readonly store: SurfaceStore;
   readonly endpoint: string;
+  readonly request: typeof fetch;
   /** Sent with every turn (a host that requires a bearer token). */
   headers: Record<string, string>;
 
-  constructor(endpoint: string, catalog: Catalog = basicCatalog, headers: Record<string, string> = {}) {
+  constructor(endpoint: string, catalog: Catalog = basicCatalog, headers: Record<string, string> = {}, request: typeof fetch = fetch) {
     this.endpoint = endpoint;
+    this.request = request;
     this.store = new SurfaceStore(catalog);
     this.headers = headers;
   }
 
   /** Run one turn; `onEvent` sees every event after the store is updated. */
   async turn(req: TurnRequest, onEvent: (e: AgentEvent) => void, signal?: AbortSignal): Promise<void> {
-    const res = await fetch(this.endpoint, {
+    const res = await this.request(this.endpoint, {
       method: "POST",
       headers: { "content-type": "application/json", ...this.headers },
       body: JSON.stringify(req),

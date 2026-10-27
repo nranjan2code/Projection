@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased: private streaming transports
+
+- `createFetchHandler` adapts the canonical host and app routes to Web Request/Response streams without opening a socket. It preserves admission checks, binary responses, streaming headers, producer backpressure, cancellation and close cleanup; slow-consumer buffering is bounded at 8 MiB.
+- `VakClient` accepts an optional fetch-compatible transport. Existing HTTP callers retain their defaults.
+- **Breaking:** route hooks and `readJson`/`json` now use the structural `HostRequest`/`HostResponse` contracts. Node HTTP requests/responses remain compatible; apps with explicit route annotations should import these public types.
+
+
 ## Unreleased: compact common-property authoring guidance
 
 - Strict inline tool schemas keep every common property's type and validation while describing those shared fields once in the system prompt instead of repeating their prose in every component branch. The primary local core-tier tool definition measures 24,270 → 19,878 characters (4,392 fewer); this is a schema-size measurement, not an input-token or latency claim. The focused type/schema regression and 394 tests/replay pass. The required local record-view check aborted at initial shared values (`record-view-2026-10-27T14-22-47.420Z.json`); no model-outcome repair is claimed.

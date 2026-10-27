@@ -17,7 +17,7 @@
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import { appendFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import type { IncomingMessage, ServerResponse } from "node:http";
+import type { HostRequest, HostResponse } from "./transport.ts";
 import path from "node:path";
 import { basicCatalog, type AgentEvent, type Catalog, encodeSse, formatDiagnostics, projectText, type SurfaceSnapshot, SurfaceStore, type VpsAction } from "@vak/core";
 import {
@@ -94,7 +94,7 @@ export interface HostOptions {
   /** Optional application ownership policy for HTTP session mutations; trusted run() is unaffected. */
   allowSessionMutation?: (session: string) => boolean;
   /** App-specific routes, run after auth; return true when handled. */
-  routes?: (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<boolean>;
+  routes?: (req: HostRequest, res: HostResponse, url: URL) => Promise<boolean>;
   log?: (line: string) => void;
 }
 
@@ -170,7 +170,7 @@ export interface VakHost {
   /** Delete an idle session and its raw transcript; running sessions must be stopped first. */
   remove(id: string): Promise<void>;
   /** Handle a request; false when the path is not the host's (serve it yourself). */
-  handle(req: IncomingMessage, res: ServerResponse): Promise<boolean>;
+  handle(req: HostRequest, res: HostResponse): Promise<boolean>;
   /**
    * Ask the user before a tool runs: sends an approval event to the client
    * running the turn and waits for POST /api/approvals/<id>. No answer within
@@ -189,7 +189,7 @@ function calibrationConfigs(constrained: boolean): ProjectionConfig[] {
   return configs;
 }
 
-export async function readJson(req: IncomingMessage): Promise<Record<string, any>> {
+export async function readJson(req: HostRequest): Promise<Record<string, any>> {
   let raw = "";
   for await (const chunk of req) {
     raw += chunk;
@@ -198,7 +198,7 @@ export async function readJson(req: IncomingMessage): Promise<Record<string, any
   return raw ? JSON.parse(raw) : {};
 }
 
-export function json(res: ServerResponse, status: number, body: unknown): void {
+export function json(res: HostResponse, status: number, body: unknown): void {
   res.writeHead(status, { "content-type": "application/json" });
   res.end(JSON.stringify(body));
 }
@@ -616,7 +616,7 @@ export function createHost(opts: HostOptions): VakHost {
     });
   }
 
-  async function handleChat(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  async function handleChat(req: HostRequest, res: HostResponse): Promise<void> {
     const body = await readJson(req);
     const entry = provider(body.provider);
     if (!entry?.available) return json(res, 400, { error: `provider ${body.provider} unavailable` });
@@ -657,7 +657,7 @@ export function createHost(opts: HostOptions): VakHost {
   }
 
   // --- calibration ------------------------------------------------------------
-  async function handleCalibrate(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  async function handleCalibrate(req: HostRequest, res: HostResponse): Promise<void> {
     const body = await readJson(req);
     const entry = provider(body.provider);
     if (!entry?.available || typeof body.model !== "string") return json(res, 400, { error: "provider/model required" });
@@ -713,7 +713,7 @@ export function createHost(opts: HostOptions): VakHost {
       url: opts.viewerUrl?.(sessionId),
     };
   }
-  async function handleProject(req: IncomingMessage, res: ServerResponse): Promise<void> {
+  async function handleProject(req: HostRequest, res: HostResponse): Promise<void> {
     const body = await readJson(req);
     try {
       const result = await project({ session: String(body.session ?? "default"), tool: body.tool, args: body.args ?? {} });
@@ -721,7 +721,7 @@ export function createHost(opts: HostOptions): VakHost {
     } catch (err) { json(res, 409, { error: (err as Error).message }); }
   }
 
-  async function handleActions(res: ServerResponse, url: URL): Promise<void> {
+  async function handleActions(res: HostResponse, url: URL): Promise<void> {
     const s = await session(url.searchParams.get("session") ?? "default");
     const timeout = Math.min(Number(url.searchParams.get("timeout") ?? 0), 600) * 1000;
     const only = url.searchParams.get("surface");
@@ -750,7 +750,7 @@ export function createHost(opts: HostOptions): VakHost {
     json(res, 200, { actions: taken });
   }
 
-  async function handleEvents(res: ServerResponse, url: URL): Promise<void> {
+  async function handleEvents(res: HostResponse, url: URL): Promise<void> {
     const s = await session(url.searchParams.get("session") ?? "default");
     res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
     res.flushHeaders();
@@ -773,7 +773,7 @@ export function createHost(opts: HostOptions): VakHost {
    * browser's Origin must be this server or a listed one, and request bodies
    * must be JSON, which forces a preflight that unlisted origins fail.
    */
-  function admit(req: IncomingMessage, res: ServerResponse): boolean {
+  function admit(req: HostRequest, res: HostResponse): boolean {
     const host = req.headers.host ?? "";
     if (!(opts.hosts ?? LOOPBACK).includes(host.replace(/:\d+$/, ""))) {
       json(res, 403, { error: "host not allowed" });

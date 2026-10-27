@@ -1,5 +1,10 @@
 # Projection handover — 2026-10-27
 
+## Private transport boundary — 2026-10-27
+
+`createFetchHandler` exposes the existing admitted host/app request path as streaming Web Request/Response without a listener. The transport-neutral structural request/response types also accept the existing Node HTTP adapter. `VakClient` has optional fetch injection. App-specific process pipes, native IPC, pricing and product routes remain outside Projection. 397 framework tests/replay, typecheck and package generation pass. Three adapter regressions cover JSON/admission inputs, binary streaming, early headers, cancellation and failures without a network listener. This changes transport only; existing model/source/interaction/receipt failures remain open.
+
+
 ## Authoring schema size — 2026-10-27
 
 Common component properties retain strict schema types, but their repeated descriptions now appear once in `systemPrompt`. For the primary local core tier, the tool definitions measure 24,270 → 19,878 characters. Focused regression, typecheck and 394 tests/replay pass. The required local record-view check aborted at its first initial-values case before accepted output; receipt `.vak/contracts/record-view-2026-10-27T14-22-47.420Z.json`. This is a context-size mechanism improvement only. The app owns the 37,190-character total request measurement, the separate integration-tool schema cost and end-to-end latency checks. Do not treat this as an outcome or latency pass.
