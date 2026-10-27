@@ -13,7 +13,7 @@ Form submission now preserves repeated record-field names under canonical pointe
 
 ## Evidence and limits
 
-382 framework tests/replay and typecheck pass after removing nine tests of the deleted source execution APIs. Existing transactional security, stale edits, multiple surfaces and record mapping tests remain. Package build passes. Earlier 388-test result predates removal. Live/installed results belong to their recorded revisions; previous source-workspace success is historical and cannot certify this path. Earlier local mapped-table gate2/3 retains an unrequested-total failure. App EVALUATION.md owns current skill/provider and WebKit outcomes.
+383 framework tests/replay and typecheck pass after removing nine tests of the deleted source execution APIs. Existing transactional security, stale edits, multiple surfaces and record mapping tests remain. Package build passes. Earlier 388-test result predates removal. Live/installed results belong to their recorded revisions; previous source-workspace success is historical and cannot certify this path. Earlier local mapped-table gate2/3 retains an unrequested-total failure. App EVALUATION.md owns current skill/provider and WebKit outcomes.
 
 ## Next work
 

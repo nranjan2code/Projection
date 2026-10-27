@@ -427,3 +427,29 @@ test("a core-tier run still offers an extended component the user names, or one 
   shown.render({ surface: "m", nodes: [{ id: "root", type: "graph", props: { nodes: ["You"] } }] } as never);
   assert.ok(types("add Pune to it", shown).includes("graph"));
 });
+
+test("OpenAI registry uses Responses with typed tool replay and never falls back to Chat Completions", async () => {
+  routes["/responses-registry/responses"] = sse([
+    { type: "response.output_text.delta", delta: "Ready" },
+    { type: "response.completed", response: { output: [], usage: { input_tokens: 7, output_tokens: 2 } } },
+  ]);
+  const provider = providersFromEnv({ OPENAI_API_KEY: "test-key", OPENAI_BASE_URL: `${base}/responses-registry` }).find(entry => entry.id === "openai")!.make();
+  const events = await collect(provider, [
+    { role: "user", content: "Review" },
+    { role: "assistant", content: "", toolCalls: [{ id: "call-one", name: "t", arguments: "{}" }] },
+    { role: "tool", content: "receipt", toolCallId: "call-one", toolName: "t" },
+  ]);
+  const request = seen.at(-1)!;
+  assert.equal(request.url, "/responses-registry/responses");
+  assert.equal(request.body.messages, undefined);
+  assert.equal(request.body.store, false);
+  assert.deepEqual(request.body.input.slice(1), [
+    { type: "function_call", call_id: "call-one", name: "t", arguments: "{}" },
+    { type: "function_call_output", call_id: "call-one", output: "receipt" },
+  ]);
+  assert.equal(events.at(-1)?.type, "done");
+  const before = seen.length;
+  const unavailable = providersFromEnv({ OPENAI_API_KEY: "test-key", OPENAI_BASE_URL: `${base}/no-responses` }).find(entry => entry.id === "openai")!.make();
+  await assert.rejects(() => collect(unavailable), /404/);
+  assert.deepEqual(seen.slice(before).map(request => request.url), ["/no-responses/responses"]);
+});

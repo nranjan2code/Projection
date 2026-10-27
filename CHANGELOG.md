@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased: provider routing regression
+
+- Offline registry regression verifies OpenAI uses /responses with function_call/function_call_output replay and no Chat Completions fallback on a failed request. Compatible-server adapters retain their explicit Chat Completions routes.383 tests/replay and typecheck pass; routing behavior was already in use by the live hosted trials.
+
 ## Unreleased: one active typed protocol and bounded context loading
 
 - **Breaking:** remove host/agent schemaMode and the obsolete transactional variant of the standalone progressive systemPrompt helper. Agent tool schemas are typed; transactional prompting has one owner. Core low-level descriptor formatting remains an implementation option for direct catalog callers, not a runtime reliability setting.
