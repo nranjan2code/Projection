@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased: display value refresh
+
+- WebKit shared-record regression found that DOM reconciliation excluded every `value`, leaving display stats stale after a field edit. Only nodes with an explicit value synchronizer now preserve DOM across value changes; other nodes refresh from their complete resolved props. Controls retain their focus-preserving synchronization. 388 tests/replay, types and package build pass; app wide/narrow WebKit verification follows.
+
 ## Unreleased: shared record views
 
 - Tables, charts and stat aggregates select named fields from the same bound records. Form edits and canonical patches resolve every view from that collection. No new data store, renderer protocol, dependencies or executable expression strings. Closed caller contracts reject copied/empty view arrays when the declared collection requires field mapping. Multiple series, scatter coordinates and independent surfaces retain their existing execution paths.

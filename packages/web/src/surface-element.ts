@@ -204,18 +204,22 @@ export class VakSurfaceElement extends HTMLElement {
   #node(node: ResolvedNode, live: Set<string>): HTMLElement {
     live.add(node.key);
     const { value: _value, ...stable } = node.props;
-    const sig = JSON.stringify([
+    let built = this.#cache.get(node.key);
+    // Only controls with an explicit synchronizer preserve DOM across value
+    // edits. Excluding display values left bound stats stale in real WebKit.
+    const signature = (sync: boolean) => JSON.stringify([
       node.type,
-      stable,
+      sync ? stable : node.props,
       node.error,
       this.#errors[node.key],
       node.type === "tabs" ? [this.#tabs.get(node.key), node.children.map((c) => str(c.props.title))] : 0,
       this.#busyKey === node.key || this.#busyKey?.startsWith(`${node.key}#`),
     ]);
-    let built = this.#cache.get(node.key);
+    const sig = signature(Boolean(built?.sync));
     if (!built || built.sig !== sig) {
       built?.release?.();
       built = { ...this.#build(node), sig };
+      built.sig = signature(Boolean(built.sync));
       const { span, priority } = node.props;
       if (span !== undefined) built.el.classList.add(span === "full" || Number(span) >= 5 ? "span-full" : `span-${Math.max(1, Math.min(4, Number(span) || 1))}`);
       if (typeof priority === "string") built.el.classList.add(`p-${priority}`);
