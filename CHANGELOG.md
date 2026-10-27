@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased: compact common-property authoring guidance
+
+- Strict inline tool schemas keep every common property's type and validation while describing those shared fields once in the system prompt instead of repeating their prose in every component branch. The primary local core-tier tool definition measures 24,270 → 19,878 characters (4,392 fewer); this is a schema-size measurement, not an input-token or latency claim. The focused type/schema regression and 394 tests/replay pass. The required local record-view check aborted at initial shared values (`record-view-2026-10-27T14-22-47.420Z.json`); no model-outcome repair is claimed.
+
 ## Unreleased: positional mapped-table totals
 
 - A requested total on a mapped positional table now resolves to a positional final row, preserving its transactional wire shape. A primary local record-view trial reached accepted canonical output for the previously rejected mixed-row case; the broader three-case gate still fails an unsolicited-total semantic check (two pass, one fail). This is a mechanism repair, not a completed outcome gate.

@@ -13,6 +13,20 @@ test("strict tool schema accepts a valid render and rejects bad props", () => {
   assert.ok(validate(render!.inputSchema, bad).length > 0);
 });
 
+test("common property guidance appears once while strict node types remain", () => {
+  const render = toolDefinitions(basicCatalog, { mode: "strict", authoring: "inline" })[0]!.inputSchema;
+  const branches = render.properties!.nodes!.items!.anyOf!;
+  for (const branch of branches) {
+    const common = branch.properties!.props!.properties!;
+    for (const key of Object.keys(basicCatalog.common)) if (common[key]) {
+      assert.equal(common[key]!.description, undefined);
+      assert.equal(common[key]!.type, basicCatalog.common[key]!.type);
+    }
+  }
+  const prompt = systemPrompt(basicCatalog);
+  for (const [key, schema] of Object.entries(basicCatalog.common)) if (schema.description) assert.ok(prompt.includes(`${key}:`) && prompt.includes(schema.description));
+});
+
 test("narrowing removes unsupported components from tools and prompt", () => {
   const telegram = narrow(basicCatalog, { target: "telegram", layout: "linear", streaming: "edit", markup: "html", components: { chart: "none" } });
   const names = (toolDefinitions(telegram)[0]!.inputSchema.properties!.nodes!.items!.anyOf ?? []).map((b) => b.properties!.type!.const);

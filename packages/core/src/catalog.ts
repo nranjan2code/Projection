@@ -277,10 +277,18 @@ function nodeSchema(catalog: Catalog, mode: "strict" | "compact", partial: boole
     anyOf: names.map((name) => {
       const def = catalog.components[name]!;
       const props = propsSchema(catalog, name)!;
+      const wireProps = toWireSchema(props);
+      // Common prop descriptions repeat in every branch of the model's
+      // component union. Keep their types here and explain them once in the
+      // system prompt; a local card request otherwise sends that prose 18x.
+      for (const key of Object.keys(catalog.common)) {
+        const property = wireProps.properties?.[key];
+        if (property) delete property.description;
+      }
       const properties: Record<string, JSONSchema> = {
         id: { type: "string" },
         type: { const: name, type: "string" },
-        props: toWireSchema(props),
+        props: wireProps,
       };
       if (def.children) properties.children = CHILDREN_SCHEMA;
       return { type: "object", properties, required: ["id", "type"], additionalProperties: false };
@@ -454,7 +462,7 @@ export function systemPrompt(catalog: Catalog, profile?: CapabilityProfile, opts
     const extra = [def.children ? "has children" : "", def.hint ?? ""].filter(Boolean).join("; ");
     lines.push(`- ${name}: ${def.description}${props ? ` props: ${props}` : ""}${extra ? ` (${extra})` : ""}`);
   }
-  const common = describeProps({ properties: catalog.common });
+  const common = Object.entries(catalog.common).map(([name, schema]) => `${name}: ${describeType(schema)}${schema.description ? ` (${schema.description})` : ""}`).join(", ");
   if (common) lines.push(`Common props on every node: ${common}`);
   if (opts.examples && catalog.examples.length) {
     lines.push("", "Examples of good vak_render arguments:");

@@ -1,5 +1,9 @@
 # Projection handover — 2026-10-27
 
+## Authoring schema size — 2026-10-27
+
+Common component properties retain strict schema types, but their repeated descriptions now appear once in `systemPrompt`. For the primary local core tier, the tool definitions measure 24,270 → 19,878 characters. Focused regression, typecheck and 394 tests/replay pass. The required local record-view check aborted at its first initial-values case before accepted output; receipt `.vak/contracts/record-view-2026-10-27T14-22-47.420Z.json`. This is a context-size mechanism improvement only. The app owns the 37,190-character total request measurement, the separate integration-tool schema cost and end-to-end latency checks. Do not treat this as an outcome or latency pass.
+
 ## Surface layout checkpoint — 2026-10-27
 
 Common `maxWidth: sm|md|lg|full` adds a responsive measure to every component independently of span. Explicit numeric grids preserve unused tracks; automatic grids remain fluid. Horizontal panels default to top alignment and honor explicit alignment at narrow widths. Charts have a readable default cap, an explicit full-width option and deferred/cancellable resize drawing with observer cleanup. No arbitrary CSS, dependency, new data path or computation semantics.
