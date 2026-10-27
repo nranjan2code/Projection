@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased: preserve repeated form fields
+
+- Form controls with distinct bind paths but the same final field name now submit each value under its canonical absolute path. Unique short names retain their ordinary payload. Repeated controls of one path submit one canonical value. A fresh skill-led garden observation run exposed the previous last-value-only overwrite; the engine regression preserves all three edited values and restore. No prompt or domain-specific repair.380 tests/replay, typecheck and package build pass.
+
 ## Unreleased: remove source-specific execution
 
 - **Breaking:** remove tableSources/tableParameters/tableRelations on host/agent, source table/workspace exports, derive/prepare tools and compiled form/report layouts. Apps pass selected inputs as ordinary untrusted context and author shared records/views through the existing transaction. submissionTool(catalog, surfaceIds?, options?) now takes {dataSchema?,surfaceCount?}; the removed positional source arguments have no shim.

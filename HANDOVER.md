@@ -6,9 +6,11 @@ Generic transactional authoring and progressive rendering share one catalog, can
 
 At the user's explicit request the source-specific derive/prepare/workspace pipeline is removed, including table source/parameter/relation options, compiled form/report layout, CSV bridge consumer, obsolete tests and its provider script. There is no compatibility shim or parallel replacement stack. submissionTool now takes an options object for dataSchema/surfaceCount. App callers must move their dependency pin and remove the old options.
 
+Form submission now preserves repeated record-field names under canonical pointer keys instead of retaining only the last value. A fresh skill-led provider run exposed this general boundary; skill/request/checks remain unchanged for its mechanism rerun.
+
 ## Evidence and limits
 
-379 framework tests/replay and typecheck pass after removing nine tests of the deleted source execution APIs. Existing transactional security, stale edits, multiple surfaces and record mapping tests remain. Package build passes. Earlier 388-test result predates removal. Live/installed results belong to their recorded revisions; previous source-workspace success is historical and cannot certify this path. Earlier local mapped-table gate2/3 retains an unrequested-total failure. App EVALUATION.md owns current skill/provider and WebKit outcomes.
+380 framework tests/replay and typecheck pass after removing nine tests of the deleted source execution APIs. Existing transactional security, stale edits, multiple surfaces and record mapping tests remain. Package build passes. Earlier 388-test result predates removal. Live/installed results belong to their recorded revisions; previous source-workspace success is historical and cannot certify this path. Earlier local mapped-table gate2/3 retains an unrequested-total failure. App EVALUATION.md owns current skill/provider and WebKit outcomes.
 
 ## Next work
 

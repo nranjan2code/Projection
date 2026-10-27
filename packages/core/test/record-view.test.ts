@@ -79,3 +79,16 @@ test("mapped tables retain ordinary explicitly requested totals semantics", () =
   assert.deepEqual(issues.filter(d => d.severity === "error"), []);
   assert.deepEqual(store.resolve("totals")!.root!.props.rows, [["East", 9], ["West", 14], { Label: "Total", Reading: 23 }]);
 });
+
+test("submitting repeated record fields preserves every distinct path and edited value", () => {
+  // Retained fresh-skill/garden run: three controls ended in /value; the
+  // canonical action silently retained only the last value (9).
+  const store = new SurfaceStore(basicCatalog);
+  store.apply("vak_render", { surface: "observations", data: { records: [{ value: 7 }, { value: 4 }, { value: 9 }] }, nodes: [
+    { id: "root", type: "form", props: { submit: "review" }, children: [0, 1, 2].map(i => ({ id: `count-${i}`, type: "input", props: { kind: "number", bind: `/records/${i}/value`, label: `Observation ${i + 1}` } })) },
+  ] });
+  store.setValue("observations", "/records/1/value", 8);
+  assert.deepEqual(store.submit("observations", "root").action!.data, { "/records/0/value": 7, "/records/1/value": 8, "/records/2/value": 9 });
+  const restored = new SurfaceStore(basicCatalog); restored.load(store.snapshot("observations")!);
+  assert.deepEqual(restored.submit("observations", "root").action, store.submit("observations", "root").action);
+});

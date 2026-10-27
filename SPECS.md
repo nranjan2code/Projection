@@ -16,7 +16,7 @@ A **surface** is one interface: `{ surface, title?, nodes, data? }`.
   - `\{`: escapes a brace.
   - A string that is exactly one placeholder yields the raw value; otherwise values are stringified, and lists of plain values read "a, b".
 - **Inputs:** `bind` a pointer; named checks (`"required"`, `"email"`, `"minLength:3"`); `visibleIf`.
-- **Actions:** buttons and forms submit. The model receives `[ui action] {action, surface, source, target, data}`, with data scoped to the form or the item.
+- **Actions:** buttons and forms submit. Distinct form bindings with repeated final field names use absolute pointer keys in action data (for example `/records/0/value` and `/records/1/value`); unique names use short keys. No submitted field is discarded by name flattening. The model receives `[ui action] {action, surface, source, target, data}`, with data scoped to the form or the item.
 
 **Tools:**
 - `vak_render`: create or replace a surface.

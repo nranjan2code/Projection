@@ -1304,6 +1304,7 @@ export class SurfaceStore {
     const errors: Record<string, string[]> = {};
 
     if (form) {
+      const fields = new Map<string, { name: string; value: unknown }>();
       if (!name || source === form) name = typeof form.props.submit === "string" ? form.props.submit : (name ?? "submit");
       walk(form, (n) => {
         if (!n.bindPath) return;
@@ -1311,8 +1312,14 @@ export class SurfaceStore {
         const fails = runChecks(value, n.props.checks);
         if (fails.length) errors[n.key] = fails;
         const segs = parsePointer(n.bindPath);
-        data[segs[segs.length - 1] ?? n.id] = value;
+        fields.set(n.bindPath, { name: segs[segs.length - 1] ?? n.id, value });
       });
+      // Repeated record fields share a leaf name. Flattening them silently
+      // lost every value except the last in the retained garden-log run.
+      // Use their canonical paths whenever a short name is ambiguous.
+      const counts = new Map<string, number>();
+      for (const field of fields.values()) counts.set(field.name, (counts.get(field.name) ?? 0) + 1);
+      for (const [path, field] of fields) data[counts.get(field.name)! > 1 ? path : field.name] = field.value;
     }
     if (Object.keys(errors).length) return { errors };
     if (!name) return { errors: { [sourceId]: ["control has no action"] } };
