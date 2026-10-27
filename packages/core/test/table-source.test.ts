@@ -59,3 +59,19 @@ test("one selected total drives a factual budget explanation without another aut
   assert.match(compiled.data.explanation, /Within budget: yes/);
   assert.throws(() => compileSourceTable({ ...plan, comparisons: [{ column: "cost", parameter: "/criteria/budget", relation: "at_most" }] }, sources, { "/criteria/budget": 100 }));
 });
+
+test("prepared source workspace compiles separate canonical form/report with fixed source cells", async () => {
+  const { compileSourceWorkspace, sourceWorkspaceTool, validate } = await import("../src/index.ts");
+  const computed = compileSourceTable({ ...plan, summary: [], comparisons: [{ parameter: "/criteria/budget", relation: "at_most" }] }, sources, { "/criteria/budget": 100 });
+  const prepared: TableSources = { selected: { ...sources.selected!, columns: computed.props.columns, rows: computed.props.rows, prepared: true, totalRow: true, explanation: computed.data.explanation, summary: computed.data.summary } };
+  const parameters = { "/criteria/budget": 100 };
+  const args = { reports: ["selected"], criteria: ["/criteria/budget"] };
+  assert.deepEqual(validate(sourceWorkspaceTool(prepared, parameters).inputSchema, args), []);
+  const candidate = prepareSubmission(basicCatalog, [], compileSourceWorkspace(args, prepared, parameters, []), { sources: prepared, parameters });
+  assert.deepEqual(candidate.issues, []); assert.equal(candidate.store!.list().length, 2);
+  assert.equal(candidate.store!.get("source_criteria")!.data.criteria && (candidate.store!.get("source_criteria")!.data.criteria as { budget: number }).budget, 100);
+  const report = candidate.store!.resolve("source_report_selected")!.root!;
+  assert.match(String(report.children[0]!.props.content), /Remaining budget: 30/);
+  assert.deepEqual(report.children[1]!.props.rows, computed.props.rows);
+  assert.equal(report.children[1]!.props.searchable, true); assert.equal(report.children[1]!.props.sortable, true);
+});

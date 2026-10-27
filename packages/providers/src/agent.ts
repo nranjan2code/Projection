@@ -30,7 +30,7 @@ import {
   TOOL_RENDER,
   TOOL_UPDATE,
   toolDefinitions,
-  submissionTool, prepareSubmission, TOOL_SUBMIT, validateTableSources, compileSourceTable, sourceTableSchema, validate, getAt, type TableSource, type TableSources, type SourceCell,
+  submissionTool, prepareSubmission, TOOL_SUBMIT, sourceWorkspaceTool, compileSourceWorkspace, validateTableSources, compileSourceTable, sourceTableSchema, validate, getAt, type TableSource, type TableSources, type SourceCell,
   toWireSchema,
   ToolCallStream,
   type VpsAction,
@@ -71,6 +71,7 @@ export interface RunOptions {
   surfaceSubmission?: boolean;
   tableSources?: TableSources;
   tableParameters?: Readonly<Record<string, SourceCell>>;
+  tableRelations?: Readonly<Record<string, "at_most" | "at_least">>;
   /**
    * How the model produces UI:
    * - "tools": native tool calling, with engine repair and diagnostics fed back
@@ -185,7 +186,7 @@ export function buildSystem(opts: RunOptions, run: ResolvedRun = resolveRun(opts
     "Follow the tool's typed component schema. Use the simplest structure the request needs. Children and collection templates are inline objects, never references. Node IDs may be omitted; preserve explicit IDs for stable identity. A leaf has no children.",
     'Data is separate from presentation. Put supplied input defaults in data at their exact bind paths. Props bind using {/path}; a whole binding preserves the raw value. Inputs use bind: /path and belong inside a form with submit: actionName. Do not add unrequested populated fields. Collection children use {each: "/items", template: nodeObject}, with relative {field} bindings.',
     opts.tableParameters && Object.keys(opts.tableParameters).length ? "Forms declare props.parameters as a list of caller parameter paths. The compiler creates bound controls, numeric types and authoritative defaults. Do not author input nodes or duplicate parameter values in data. Form children may contain explanatory text." : undefined,
-    opts.tableSources && Object.keys(opts.tableSources).length ? "Tables reference immutable selected sources instead of copying cells. The compiler inserts data.sources; do not author or copy that reserved field. First use vak_derive_columns for per-row calculations, then vak_prepare_table for aggregate summaries and the total row. These are separate typed stages without UI bookkeeping. Then submit tables using only props.source and local interaction settings. Prepared cells cannot be authored or changed by presentation. The compiler displays factual comparison explanations and source context automatically; do not re-enter calculated numbers as text. Row expressions use {column: name}; summary expressions use {sum: columnName} or {parameter: callerPath}; operations are {op: add|subtract|multiply|divide|lte,args:[left,right]}. Compiler bindings are {/sources/<source>/summary/<key>}, filename and sha256. Display all requested interpretation and source/limitation labels on the report, with the table inside a stack if needed. Available parameters: " + JSON.stringify(opts.tableParameters ?? {}) : undefined,
+    opts.tableSources && Object.keys(opts.tableSources).length ? "Tables reference immutable selected sources instead of copying cells. The compiler inserts data.sources; do not author or copy that reserved field. First use vak_derive_columns for per-row calculations, then vak_prepare_table for aggregate summaries and the total row. These are separate typed stages without UI bookkeeping. Then submit the workspace using reports:[preparedSourceIds] and criteria:[callerParameterPaths]. The compiler creates separate interactive report and criteria surfaces; do not author nodes or binding data. Prepared cells cannot be authored or changed by presentation. The compiler displays factual comparison explanations and source context automatically; do not re-enter calculated numbers as text. Row expressions use {column: name}; summary expressions use {sum: columnName} or {parameter: callerPath}; operations are {op: add|subtract|multiply|divide|lte,args:[left,right]}. Compiler bindings are {/sources/<source>/summary/<key>}, filename and sha256. Display all requested interpretation and source/limitation labels on the report, with the table inside a stack if needed. Available parameters: " + JSON.stringify(opts.tableParameters ?? {}) : undefined,
     shownSurfacesNote(opts.store, true),
   ].filter(Boolean).join("\n\n");
   const parts = [opts.instructions, systemPrompt(run.catalog, opts.profile, { examples: run.examples, authoring: run.authoring, submission: opts.surfaceSubmission })].filter(Boolean);
@@ -320,7 +321,8 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   if (opts.tableSources) {
     validateTableSources(opts.tableSources);
     if (Object.keys(opts.tableParameters ?? {}).length > 16 || Object.entries(opts.tableParameters ?? {}).some(([key, value]) => !key || key.length > 120 || !(value === null || typeof value === "boolean" || typeof value === "string" && value.length <= 500 || typeof value === "number" && Number.isFinite(value)))) throw new Error("Invalid bounded table parameters");
-    opts = { ...opts, tableSources: structuredClone(opts.tableSources), tableParameters: structuredClone(opts.tableParameters ?? {}) };
+    if (Object.entries(opts.tableRelations ?? {}).some(([path, relation]) => !Object.hasOwn(opts.tableParameters ?? {}, path) || typeof opts.tableParameters![path] !== "number" || !["at_most", "at_least"].includes(relation))) throw new Error("Invalid declared table relation");
+    opts = { ...opts, tableSources: structuredClone(opts.tableSources), tableParameters: structuredClone(opts.tableParameters ?? {}), tableRelations: structuredClone(opts.tableRelations ?? {}) };
   }
   const publisher = opts.surfaceSubmission ? undefined : new SurfacePublisher(opts.store);
   const emit = opts.emit;
@@ -444,7 +446,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
     }
     return parameters;
   };
-  const sourceFrom = (id: string, compiled: ReturnType<typeof compileSourceTable>, prepared = false): TableSource => ({ ...opts.tableSources![id]!, columns: compiled.props.columns, rows: compiled.props.rows, prepared, explanation: String(compiled.data.explanation ?? ""), summary: compiled.data.summary });
+  const sourceFrom = (id: string, compiled: ReturnType<typeof compileSourceTable>, prepared = false): TableSource => ({ ...opts.tableSources![id]!, columns: compiled.props.columns, rows: compiled.props.rows, prepared, totalRow: compiled.props.totalsRow, explanation: String(compiled.data.explanation ?? ""), summary: compiled.data.summary });
   const refreshPrepared = (parameters: Readonly<Record<string, SourceCell>>) => {
     for (const [id, plan] of derivedPlans) derived[id] = sourceFrom(id, compileSourceTable(plan, opts.tableSources!, parameters));
     for (const [id, plan] of preparedPlans) prepared[id] = sourceFrom(id, compileSourceTable(plan, derived, parameters), true);
@@ -465,9 +467,14 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
         schema.required = ["source", "comparisons"]; comparisons.minItems = 1;
         comparisons.items!.properties!.column = { type: "string", enum: names };
         comparisons.items!.properties!.parameter = { type: "string", enum: parameters };
+        if (Object.keys(opts.tableRelations ?? {}).length) comparisons.items = { anyOf: parameters.map((path) => {
+          const properties = { ...comparisons.items!.properties, parameter: { type: "string" as const, const: path }, relation: opts.tableRelations?.[path] ? { type: "string" as const, const: opts.tableRelations[path] } : comparisons.items!.properties!.relation! };
+          return { ...comparisons.items!, properties };
+        }) };
       } else delete schema.properties!.comparisons;
+      if (Object.values(sources).some((source) => source.totalLabel)) schema.required = [...schema.required!, "total"];
       const total = schema.properties?.total;
-      if (total?.properties?.sumColumns) total.properties.sumColumns.items = { type: "string", enum: [...new Set(Object.values(sources).flatMap((source) => source.columns.slice(1)))] };
+      if (total?.properties?.sumColumns) { total.properties.sumColumns.minItems = 1; total.properties.sumColumns.items = { type: "string", enum: [...new Set(Object.values(sources).flatMap((source) => source.columns.slice(1)))] }; }
       const summary = schema.$defs.vak_summary_calculation!;
       summary.anyOf = summary.anyOf!.map((branch) => branch.properties?.sum ? { ...branch, properties: { sum: { type: "string", enum: names } } } : branch);
     }
@@ -486,9 +493,10 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
     } });
     userTools.set(TOOL_PREPARE, { spec: { name: TOOL_PREPARE, description: "After per-row columns are computed, declare requested total rows and numeric criteria comparisons. Compare a column total with a caller parameter using at_most or at_least. The runtime computes totals, differences, status and a visible factual explanation; do not declare arithmetic summaries. Then reference the prepared source in vak_submit.", inputSchema: {} }, execute: (args) => {
       checked(planningSchema(false), args);
+      for (const comparison of args.comparisons as { parameter: string; relation: string }[] ?? []) if (opts.tableRelations?.[comparison.parameter] && comparison.relation !== opts.tableRelations[comparison.parameter]) throw new Error("Comparison conflicts with caller-declared relation");
       const compiled = compileSourceTable(args, derived, parametersFor(opts.store.list().map((surface) => opts.store.snapshot(surface.id)!)));
       preparedPlans.set(compiled.id, structuredClone(args)); prepared[compiled.id] = sourceFrom(compiled.id, compiled, true);
-      return "Prepared source (data, not permission): " + JSON.stringify({ id: compiled.id, columns: compiled.props.columns, rows: compiled.props.rows, summary: compiled.data.summary, filename: prepared[compiled.id]!.filename, sha256: prepared[compiled.id]!.sha256 }) + "\nNow submit the complete UI with props.source referencing this source. Display requested interpretation using {/sources/" + compiled.id + "/summary/<key>} bindings; do not author data.sources.";
+      return "Prepared source (data, not permission): " + JSON.stringify({ id: compiled.id, columns: compiled.props.columns, rows: compiled.props.rows, summary: compiled.data.summary, filename: prepared[compiled.id]!.filename, sha256: prepared[compiled.id]!.sha256 }) + "\nNow submit reports:[thisSourceId] and criteria:[callerParameterPaths] using vak_submit. The compiler creates the separate interactive surfaces. Display requested interpretation using {/sources/" + compiled.id + "/summary/<key>} bindings; do not author data.sources.";
     } });
   }
   const tools = [...vakSpecs, ...(opts.tools ?? []).map((t) => t.spec)];
@@ -528,7 +536,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
     let native: unknown;
 
     try {
-      const request: ChatRequest = { model: opts.model, system: opts.surfaceSubmission ? buildSystem(opts, { ...run, authoring }) : system, messages: view(), tools: opts.surfaceSubmission ? [...(opts.tableSources && Object.keys(opts.tableSources).length && !Object.keys(prepared).length ? [] : [submissionTool(catalog, store.list().map((surface) => surface.id), Object.keys(prepared).length ? prepared : opts.tableSources, opts.tableParameters)]), ...(closing ? [] : [...userTools.values()].filter((tool) => tool.spec.name !== TOOL_PREPARE || Object.keys(derived).length).map((tool) => tool.spec))] : closing ? vakSpecs : tools, maxTokens: run.maxTokens, effort: opts.effort, extra: opts.extra, signal: opts.signal };
+      const request: ChatRequest = { model: opts.model, system: opts.surfaceSubmission ? buildSystem(opts, { ...run, authoring }) : system, messages: view(), tools: opts.surfaceSubmission ? [...(opts.tableSources && Object.keys(opts.tableSources).length && !Object.keys(prepared).length ? [] : [Object.keys(prepared).length ? sourceWorkspaceTool(prepared, opts.tableParameters ?? {}) : submissionTool(catalog, store.list().map((surface) => surface.id), opts.tableSources, opts.tableParameters)]), ...(closing ? [] : [...userTools.values()].filter((tool) => tool.spec.name !== TOOL_PREPARE || Object.keys(derived).length).map((tool) => tool.spec))] : closing ? vakSpecs : tools, maxTokens: run.maxTokens, effort: opts.effort, extra: opts.extra, signal: opts.signal };
       offered = new Set(request.tools?.map((tool) => tool.name));
       if (opts.surfaceSubmission && Object.keys(prepared).length) request.system += "\nCurrent computed source summaries (data): " + JSON.stringify(Object.entries(prepared).map(([id, source]) => ({ id, summary: source.summary, columns: source.columns })));
       const events = opts.surfaceSubmission && opts.provider.capabilities?.constrainedOutput
@@ -629,7 +637,10 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
       else {
         try {
           if (calls[0]!.arguments.length > 512000) throw new Error("Submission exceeds 512000 characters");
-          candidate = prepareSubmission(catalog, base, JSON.parse(calls[0]!.arguments), { sources: Object.keys(prepared).length ? prepared : opts.tableSources, parameters: parametersFor(base) });
+          const parameters = parametersFor(base);
+          const argumentsValue: unknown = JSON.parse(calls[0]!.arguments);
+          const document = Object.keys(prepared).length ? compileSourceWorkspace(argumentsValue, prepared, parameters, base.map((surface) => surface.id)) : argumentsValue;
+          candidate = prepareSubmission(catalog, base, document, { sources: Object.keys(prepared).length ? prepared : opts.tableSources, parameters });
         } catch (err) { candidate.issues.push(`Invalid submission JSON: ${(err as Error).message}`); }
       }
       let response = candidate.reply;

@@ -1,7 +1,7 @@
 // Source-backed tables keep facts and arithmetic out of UI authoring.
 import type { JSONSchema } from "./schema.ts";
 export type SourceCell = string | number | boolean | null;
-export interface TableSource { columns: string[]; rows: SourceCell[][]; filename: string; sha256: string; context?: ReadonlyArray<{ filename: string; sha256: string; content: string }>; notices?: readonly string[]; prepared?: boolean; explanation?: string; summary?: Readonly<Record<string, unknown>> }
+export interface TableSource { columns: string[]; rows: SourceCell[][]; filename: string; sha256: string; totalLabel?: string; totalRow?: boolean; context?: ReadonlyArray<{ filename: string; sha256: string; content: string }>; notices?: readonly string[]; prepared?: boolean; explanation?: string; summary?: Readonly<Record<string, unknown>> }
 export type TableSources = Readonly<Record<string, TableSource>>;
 export type Calculation = { column: string } | { parameter: string } | { sum: string } | { op: "add" | "subtract" | "multiply" | "divide" | "lte"; args: Calculation[] };
 const scalar = (v: unknown): v is SourceCell => v === null || ["string", "boolean"].includes(typeof v) || typeof v === "number" && Number.isFinite(v);
@@ -16,12 +16,13 @@ export function validateTableSources(sources: TableSources): void {
 }
 export function sourceTableSchema(sources: TableSources): JSONSchema {
   const prepared = Object.values(sources).every((source) => source.prepared);
+  const labels = [...new Set(Object.values(sources).flatMap((source) => source.totalLabel ? [source.totalLabel] : []))];
   const schema: JSONSchema = { type: "object", required: ["source"], additionalProperties: false, properties: {
     source: { type: "string", enum: Object.keys(sources), description: "Immutable selected dataset; columns/rows are compiled from it, never copied. Source metadata: " + JSON.stringify(Object.entries(sources).map(([id, value]) => ({ id, filename: value.filename, columns: value.columns, rows: value.rows.length }))) },
     derive: { type: "array", description: "Append computed columns. Each key names a new column; its expression is evaluated for each source row using {column: originalColumnName} and numeric operations.", maxItems: 16, items: { type: "object", required: ["key", "expression"], additionalProperties: false, properties: { key: { type: "string", minLength: 1, maxLength: 80 }, expression: { $ref: "#/$defs/vak_row_calculation" } } } },
     summary: { type: "array", maxItems: 16, description: "Named summary calculations. Display requested interpretation in text using {/sources/<source>/summary/<key>}; source filename/hash are at {/sources/<source>/filename} and {/sources/<source>/sha256}.", items: { type: "object", required: ["key", "expression"], additionalProperties: false, properties: { key: { type: "string", minLength: 1, maxLength: 80 }, expression: { $ref: "#/$defs/vak_summary_calculation" } } } },
     comparisons: { type: "array", maxItems: 16, items: { type: "object", additionalProperties: false, required: ["parameter", "relation"], properties: { column: { type: "string", description: "optional when total.sumColumns selects one column; that total is used automatically" }, parameter: { type: "string" }, relation: { type: "string", enum: ["at_most", "at_least"] }, label: { type: "string", maxLength: 120 } } } },
-    total: { type: "object", description: "Append a total row: label in the first column, sums in sumColumns, and otherCells text in every nonsummed remaining cell.", additionalProperties: false, required: ["label", "sumColumns", "otherCells"], properties: { label: { type: "string", maxLength: 120 }, sumColumns: { type: "array", maxItems: 16, items: { type: "string" } }, otherCells: { type: "string", maxLength: 120 } } },
+    total: { type: "object", description: "Append a total row: label in the first column, sums in sumColumns, and otherCells text in every nonsummed remaining cell.", additionalProperties: false, required: ["label", "sumColumns", "otherCells"], properties: { label: { type: "string", maxLength: 120, ...(labels.length ? { enum: labels } : {}) }, sumColumns: { type: "array", maxItems: 16, items: { type: "string" } }, otherCells: { type: "string", maxLength: 120 } } },
     sortable: { type: "boolean" }, searchable: { type: "boolean" },
   } };
   if (prepared) for (const key of ["derive", "summary", "total", "comparisons"]) delete schema.properties![key];
@@ -31,7 +32,7 @@ export const calculationSchema: JSONSchema = { anyOf: [
   ...["column", "parameter", "sum"].map((key) => ({ type: "object" as const, required: [key], additionalProperties: false, properties: { [key]: { type: "string" as const, minLength: 1, maxLength: 120 } } })),
   { type: "object", required: ["op", "args"], additionalProperties: false, properties: { op: { type: "string", enum: ["add", "subtract", "multiply", "divide", "lte"] }, args: { type: "array", minItems: 2, maxItems: 2, items: { $ref: "#/$defs/vak_calculation" } } } },
 ] };
-export function compileSourceTable(raw: Record<string, unknown>, sources: TableSources, parameters: Readonly<Record<string, SourceCell>>): { props: { columns: string[]; rows: SourceCell[][]; totals: boolean; sortable?: boolean; searchable?: boolean }; data: { filename: string; sha256: string; summary: Record<string, unknown>; explanation: string }; id: string } {
+export function compileSourceTable(raw: Record<string, unknown>, sources: TableSources, parameters: Readonly<Record<string, SourceCell>>): { props: { columns: string[]; rows: SourceCell[][]; totals: boolean; totalsRow: boolean; sortable?: boolean; searchable?: boolean }; data: { filename: string; sha256: string; summary: Record<string, unknown>; explanation: string }; id: string } {
   if (raw.sortable !== undefined && typeof raw.sortable !== "boolean" || raw.searchable !== undefined && typeof raw.searchable !== "boolean") throw new Error("Source interaction settings must be boolean");
   const id = String(raw.source), source = sources[id];
   if (!source) throw new Error("Unknown selected table source");
@@ -91,6 +92,7 @@ export function compileSourceTable(raw: Record<string, unknown>, sources: TableS
   if (comparisonResults.length) summary.comparisons = comparisonResults;
   if (object(raw.total)) {
     const total = raw.total;
+    if (source.totalLabel && total.label !== source.totalLabel) throw new Error("Total label must match the caller declaration");
     if (typeof total.label !== "string" || typeof total.otherCells !== "string" || !Array.isArray(total.sumColumns) || total.sumColumns.some((key) => typeof key !== "string" || !columns.includes(key)) || total.sumColumns.includes(columns[0])) throw new Error("Invalid total row declaration");
     const totals = columns.map((key, index): SourceCell => index === 0 ? total.label as string : (total.sumColumns as string[]).includes(key) ? evaluate({ sum: key }) : total.otherCells as string);
     rows.push(totals);
@@ -100,5 +102,5 @@ export function compileSourceTable(raw: Record<string, unknown>, sources: TableS
     `Source snapshot: ${source.filename}`,
     ...(source.context ?? []).map((context) => `Context snapshot: ${context.filename}\n${context.content}`),
   ];
-  return { id, props: { columns, rows, totals: false, ...(raw.sortable === undefined ? {} : { sortable: raw.sortable as boolean }), ...(raw.searchable === undefined ? {} : { searchable: raw.searchable as boolean }) }, data: { filename: source.filename, sha256: source.sha256, summary, explanation: [...descriptions, ...evidence].filter(Boolean).join("\n\n") || source.explanation || "" } };
+  return { id, props: { columns, rows, totals: false, totalsRow: Boolean(raw.total) || source.totalRow === true, ...(raw.sortable === undefined ? {} : { sortable: raw.sortable as boolean }), ...(raw.searchable === undefined ? {} : { searchable: raw.searchable as boolean }) }, data: { filename: source.filename, sha256: source.sha256, summary, explanation: [...descriptions, ...evidence].filter(Boolean).join("\n\n") || source.explanation || "" } };
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-27: compile a source workspace from references
+
+- Prepared-source publication names reports and caller criteria rather than authoring a UI graph. The compiler creates distinct interactive report/form surfaces, source evidence and computed explanations. New source-backed tables keep their total footer fixed during local sorting. General graph authoring remains for other tasks.
+- Trusted parameter relation declarations constrain aggregate direction; declared source summary labels constrain total-row identity. These carry caller intent, never precomputed answers or inferred facts.
+
 ## 2026-10-27: compile parameter forms and factual explanations
 
 - Source-backed forms declare caller parameter references; the compiler creates bound controls, numeric types and defaults from authoritative/current values. Presentation no longer coordinates bind paths with copied data.
