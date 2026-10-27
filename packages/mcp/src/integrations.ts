@@ -120,6 +120,8 @@ export interface IntegrationsOptions {
   npm?: string;
   /** Built-in entries switched on at first run (they run no outside code). */
   enabledAtFirstRun?: string[];
+  /** Use vak-sandbox for OS-level process isolation of stdio MCP servers (macOS Seatbelt). */
+  vakSandbox?: { enabled?: boolean; binaryPath?: string };
 }
 
 /** The npm arguments for a pinned, script-free install of `pkg@version` into `target`. */
@@ -386,9 +388,9 @@ export class Integrations {
       const script = path.join(this.dir, id, "pkg", "node_modules", e.source.package, e.source.bin);
       if (!existsSync(script)) throw new Error("not installed");
       Object.assign(env, e.source.env?.(path.join(this.dir, id)) ?? {});
-      c = new McpClient({ name: e.name, log, transport: { kind: "stdio", command: process.execPath, args: [script, ...(e.source.args?.(st.config, path.join(this.dir, id)) ?? [])], env, sandboxDir: home } });
+      c = new McpClient({ name: e.name, log, transport: { kind: "stdio", command: process.execPath, args: [script, ...(e.source.args?.(st.config, path.join(this.dir, id)) ?? [])], env, sandboxDir: home }, vakSandbox: this.opts.vakSandbox });
     } else if (e.source.kind === "stdio") {
-      c = new McpClient({ name: e.name, log, transport: { kind: "stdio", command: e.source.command, args: e.source.args, env, sandboxDir: home } });
+      c = new McpClient({ name: e.name, log, transport: { kind: "stdio", command: e.source.command, args: e.source.args, env, sandboxDir: home }, vakSandbox: this.opts.vakSandbox });
     } else {
       c = new McpClient({ name: e.name, log, transport: { kind: "http", url: typeof e.source.url === "function" ? e.source.url(structuredClone(st.config)) : e.source.url, headers } });
     }

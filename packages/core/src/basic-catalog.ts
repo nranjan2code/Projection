@@ -135,7 +135,10 @@ function finalizeTable(p: Record<string, unknown>): Record<string, unknown> {
   const labelled = (r: unknown) => cols.some((c, i) => /^(grand\s+)?totals?\b/i.test(String(cell(r, c, i) ?? "")));
   const body = rows.length && labelled(rows.at(-1)) ? rows.slice(0, -1) : rows;
   const total = totalsRow(body as Row[], cols);
-  return total ? { ...p, columns, rows: [...body, total], totalsRow: true } : { ...p, columns, rows: body };
+  // Record views project positional rows. Keep the computed total positional
+  // too, so transactional wire validation accepts the same table it renders.
+  const totalRow = total && body.every(Array.isArray) ? columns.map(c => total[c.key as string] ?? null) : total;
+  return totalRow ? { ...p, columns, rows: [...body, totalRow], totalsRow: true } : { ...p, columns, rows: body };
 }
 
 const numeric = (v: unknown) => typeof v === "number" || (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v)));
@@ -1173,6 +1176,7 @@ export const basicCatalog = defineCatalog(
   {
     span: { type: ["integer", "string"], description: "1-4 or \"full\"", aliases: ["colSpan", "colspan", "width"] },
     priority: oneOf(["primary", "secondary", "tertiary"], { aliases: ["importance"], enumAliases: { high: "primary", medium: "secondary", low: "tertiary" } }),
+    maxWidth: oneOf(["sm", "md", "lg", "full"], { description: "Responsive content measure: sm for compact summaries, md for forms/charts, lg for detailed views, full for available width. Never exceeds its container." }),
     visibleIf: str({ description: "{/path}: shown when truthy", aliases: ["showIf", "if", "when"] }),
   },
   {

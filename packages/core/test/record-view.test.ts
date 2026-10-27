@@ -77,7 +77,10 @@ test("mapped tables retain ordinary explicitly requested totals semantics", () =
   const table = { ...nodes[3]!, id: "root", props: { ...nodes[3]!.props, totals: true } };
   const issues = store.apply("vak_render", { surface: "totals", nodes: [table], data });
   assert.deepEqual(issues.filter(d => d.severity === "error"), []);
-  assert.deepEqual(store.resolve("totals")!.root!.props.rows, [["East", 9], ["West", 14], { Label: "Total", Reading: 23 }]);
+  assert.deepEqual(store.resolve("totals")!.root!.props.rows, [["East", 9], ["West", 14], ["Total", 23]]);
+  const submitted = prepareSubmission(basicCatalog, [], { surfaces: [{ op: "replace", root: { type: "table", props: { columns: [{ key: "label" }, { key: "value" }], rows: { records: "{/records}", fields: ["label", "value"] }, totals: true } }, data }] });
+  assert.deepEqual(submitted.issues, []);
+  assert.deepEqual(submitted.store!.resolve("__vak_surface_1")!.root!.props.rows, [["East", 9], ["West", 14], ["Total", 23]]);
 });
 
 test("submitting repeated record fields preserves every distinct path and edited value", () => {
