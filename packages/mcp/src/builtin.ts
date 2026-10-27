@@ -180,3 +180,13 @@ export function timeServer(): BuiltinServer {
     },
   };
 }
+
+/** Sandbox capability: reports OS-level process isolation status. No tools. */
+export function sandboxServer(): BuiltinServer {
+  return {
+    tools: [],
+    async callTool() {
+      return { text: "Sandbox is a system capability, not a tool provider.", isError: false };
+    },
+  };
+}
