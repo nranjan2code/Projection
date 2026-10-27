@@ -1,4 +1,4 @@
-import { getAt } from "./pointer.ts";
+import { getAt, setAt } from "./pointer.ts";
 import { sourceTableSchema, calculationSchema, compileSourceTable, type TableSources, type SourceCell } from "./table-source.ts";
 // Complete inline documents remove reference bookkeeping from initial authoring.
 // A private candidate prevents a rejected repair from damaging accepted surfaces.
@@ -22,11 +22,12 @@ export function submissionTool(catalog: Catalog, surfaceIds?: readonly string[],
     return [branch];
   }) } : calculationSchema;
   const specialize = (summary: boolean): JSONSchema => ({ anyOf: calculation.anyOf!.filter((branch) => summary ? !branch.properties?.column : !branch.properties?.sum).map((branch) => branch.properties?.args ? { ...branch, properties: { ...branch.properties, args: { ...branch.properties.args, items: { $ref: summary ? "#/$defs/vak_summary_calculation" : "#/$defs/vak_row_calculation" } } } } : branch) });
+  const parameterForm = Object.keys(sources).length > 0 && Object.keys(parameters).length > 0;
   const ref: JSONSchema = { $ref: "#/$defs/vak_node" };
-  const node: JSONSchema = { anyOf: Object.entries(catalog.components).map(([type, definition]) => ({
-    type: "object", required: ["type", ...(propsSchema(catalog, type)?.required?.length ? ["props"] : [])], additionalProperties: false, properties: {
+  const node: JSONSchema = { anyOf: Object.entries(catalog.components).filter(([type]) => !parameterForm || !["input", "select", "checkbox", "textarea", "date"].includes(type)).map(([type, definition]) => ({
+    type: "object", required: ["type", ...(propsSchema(catalog, type)?.required?.length || type === "form" && parameterForm ? ["props"] : [])], additionalProperties: false, properties: {
       id: { type: "string", description: "optional stable ID; omit for automatic IDs, never use __vak_ prefix" },
-      type: { type: "string", const: type }, props: type === "table" && Object.keys(sources).length ? sourceTableSchema(sources) : toWireSchema(propsSchema(catalog, type)!),
+      type: { type: "string", const: type }, props: type === "form" && parameterForm ? { type: "object", additionalProperties: false, required: ["parameters"], properties: { parameters: { type: "array", minItems: 1, maxItems: 16, items: { type: "string", enum: Object.keys(parameters) } }, submit: { type: "string" }, submitLabel: { type: "string" } } } : type === "table" && Object.keys(sources).length ? sourceTableSchema(sources) : toWireSchema(propsSchema(catalog, type)!),
       ...(definition.children ? { children: { anyOf: [{ type: "array", items: ref }, { type: "object", required: ["each", "template"], additionalProperties: false, properties: { each: { type: "string" }, template: ref } }] } } : {}),
     },
   })) };
@@ -95,6 +96,7 @@ export function prepareSubmission(catalog: Catalog, current: readonly SurfaceSna
           if (computedSources[compiled.id]) throw new Error("A source appears in more than one table in this surface");
           computedSources[compiled.id] = compiled.data; props = compiled.props;
         }
+        const explanation = raw.type === "table" && Object.keys(sources).length && props ? String((computedSources[String((raw.props as Record<string, unknown>).source)] as Record<string, unknown>)?.explanation ?? "") : "";
         const node: VpsNode = { id, type: raw.type, ...(props === undefined ? {} : { props }) };
         nodes.push(node);
         if (raw.children !== undefined) {
@@ -102,6 +104,28 @@ export function prepareSubmission(catalog: Catalog, current: readonly SurfaceSna
           if (Array.isArray(raw.children)) node.children = raw.children.map((child, index) => compile(child, `${path}_${index}`, depth + 1));
           else if (object(raw.children) && Object.keys(raw.children).every((key) => ["each", "template"].includes(key)) && typeof raw.children.each === "string" && object(raw.children.template)) node.children = { each: raw.children.each, template: compile(raw.children.template, `${path}_template`, depth + 1) };
           else throw new Error(`${surface}/${path}: children must be inline node objects or {each, template: node}`);
+        }
+        if (raw.type === "form" && Array.isArray(props?.parameters)) {
+          const fields = props.parameters as string[];
+          if (new Set(fields).size !== fields.length) throw new Error("Duplicate form parameter");
+          const children = Array.isArray(node.children) ? node.children : [];
+          for (const [index, path] of fields.entries()) {
+            const value = options.parameters?.[path];
+            if (getAt(data, path) !== undefined && getAt(data, path) !== value) throw new Error("Model data cannot override a declared parameter");
+            if (value === undefined || !setAt(data, path, value)) throw new Error("Invalid declared form parameter");
+            const fieldId = `${generated}${id}_parameter_${index}`;
+            if (ids.has(fieldId)) throw new Error("Generated field identity collision"); ids.add(fieldId);
+            const label = path.split("/").filter(Boolean).at(-1)!.replaceAll("_", " ");
+            nodes.push({ id: fieldId, type: typeof value === "boolean" ? "checkbox" : "input", props: { label, bind: path, ...(typeof value === "number" ? { kind: "number" } : {}) } }); children.push(fieldId);
+          }
+          node.children = children;
+          node.props = { ...node.props, submit: node.props?.submit ?? "apply_parameters" }; delete node.props.parameters;
+        }
+        if (explanation) {
+          const tableId = `${generated}${id}_table`, textId = `${generated}${id}_explanation`;
+          if (ids.has(tableId) || ids.has(textId)) throw new Error("Generated summary identity collision"); ids.add(tableId); ids.add(textId);
+          nodes.push({ id: tableId, type: "table", props }, { id: textId, type: "text", props: { content: explanation } });
+          node.type = "stack"; node.props = {}; node.children = [textId, tableId];
         }
         return id;
       };

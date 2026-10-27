@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-10-27: compile parameter forms and factual explanations
+
+- Source-backed forms declare caller parameter references; the compiler creates bound controls, numeric types and defaults from authoritative/current values. Presentation no longer coordinates bind paths with copied data.
+- Table preparation uses typed aggregate comparisons rather than model-authored summary arithmetic. The compiler displays totals, limits, differences/status and source/context evidence; prepared records remain immutable. One selected total supplies its comparison column automatically.
+
 ## 2026-10-27: source-backed table computation
 
 - Trusted table sources preserve selected records independently of presentation. Bounded typed row calculations and aggregate/total preparation run before UI authoring in the existing counted loop. Presentation references prepared tables and computed summary bindings; it cannot copy, shift or replace their facts. Canonical user parameters win over stale unused data and model defaults cannot revise them. No new persistence owner, dependency, IPC or external authority.

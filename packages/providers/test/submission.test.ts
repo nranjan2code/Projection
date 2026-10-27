@@ -124,11 +124,11 @@ test("source tables use validated canonical control values instead of stale unus
   let requests = 0;
   const provider: Provider = { id: "source", async *stream() {
     if (++requests === 1) { yield* call("vak_derive_columns", { source: "selected", derive: [] }); yield { type: "done", stop: "tool_use" }; return; }
-    if (requests === 2) { yield* call("vak_prepare_table", { source: "selected", summary: [{ key: "budget", expression: { parameter: "/criteria/budget" } }] }); yield { type: "done", stop: "tool_use" }; return; }
+    if (requests === 2) { yield* call("vak_prepare_table", { source: "selected", comparisons: [{ column: "value", parameter: "/criteria/budget", relation: "at_most" }] }); yield { type: "done", stop: "tool_use" }; return; }
     yield* call(TOOL_SUBMIT, { surfaces: [{ op: "replace", surface: "report", root: { type: "table", props: { source: "selected" } }, data: {} }] }); yield { type: "done", stop: "tool_use" };
   } };
   const result = await runAgent({ ...options, provider, store, messages: [], tableSources: { selected: { filename: "selected.csv", sha256: "b".repeat(64), columns: ["value"], rows: [[12]] } }, tableParameters: { "/criteria/budget": 100 }, emit: () => {} });
   assert.equal(result.stop, "end");
-  assert.deepEqual(store.get("report")!.data.sources, { selected: { filename: "selected.csv", sha256: "b".repeat(64), summary: { budget: 50 } } });
+  assert.equal(((store.get("report")!.data.sources as Record<string, { summary: { comparisons: { limit: number }[] } }>).selected!.summary.comparisons[0]!).limit, 50);
   assert.equal(store.get("criteria")!.data.criteria && (store.get("criteria")!.data.criteria as { budget: number }).budget, 50);
 });

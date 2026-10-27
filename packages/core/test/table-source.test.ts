@@ -26,7 +26,7 @@ test("source-backed tables and visible summary bindings share one canonical cand
   assert.deepEqual(candidate.issues, []);
   const root = candidate.store!.resolve("__vak_surface_1")!.root!;
   assert.equal(root.children[0]!.props.content, "Total 70; remaining 30. Source items.csv");
-  assert.deepEqual(root.children[1]!.props.rows, [["A", 3, 12, 36], ["B", 2, 17, 34], ["Total", "Not applicable", "Not applicable", 70]]);
+  assert.deepEqual(root.children[1]!.children.at(-1)!.props.rows, [["A", 3, 12, 36], ["B", 2, 17, 34], ["Total", "Not applicable", "Not applicable", 70]]);
 });
 test("source-backed facts cannot be replaced by authored values, source-column redefinitions or unsafe arithmetic", () => {
   for (const props of [
@@ -40,13 +40,22 @@ test("source-backed facts cannot be replaced by authored values, source-column r
 });
 
 test("caller parameters cannot be revised by model-authored control defaults", () => {
-  const value = { surfaces: [{ op: "replace", root: { type: "form", props: { submit: "apply" }, children: [{ type: "input", props: { label: "Budget", bind: "/criteria/budget" } }] }, data: { criteria: { budget: 999 } } }] };
+  const value = { surfaces: [{ op: "replace", root: { type: "form", props: { submit: "apply", parameters: ["/criteria/budget"] } }, data: { criteria: { budget: 999 } } }] };
   const result = prepareSubmission(basicCatalog, [], value, { sources, parameters: { "/criteria/budget": 100 } });
-  assert.ok(result.issues.some((issue) => issue.includes("cannot revise"))); assert.equal(result.store, undefined);
+  assert.ok(result.issues.some((issue) => /cannot override|cannot revise/.test(issue))); assert.equal(result.store, undefined);
 });
 
 test("numeric caller parameters produce numeric controls without changing their values", () => {
-  const result = prepareSubmission(basicCatalog, [], { surfaces: [{ op: "replace", root: { type: "form", props: { submit: "apply" }, children: [{ type: "input", props: { label: "Budget", bind: "/criteria/budget" } }] }, data: { criteria: { budget: 100 } } }] }, { sources, parameters: { "/criteria/budget": 100 } });
+  const result = prepareSubmission(basicCatalog, [], { surfaces: [{ op: "replace", root: { type: "form", props: { submit: "apply", parameters: ["/criteria/budget"] } }, data: { criteria: { budget: 100 } } }] }, { sources, parameters: { "/criteria/budget": 100 } });
   assert.deepEqual(result.issues, []);
   assert.equal(result.store!.resolve("__vak_surface_1")!.root!.children[0]!.props.kind, "number");
+});
+
+test("one selected total drives a factual budget explanation without another authored formula", () => {
+  const compiled = compileSourceTable({ ...plan, summary: [], comparisons: [{ parameter: "/criteria/budget", relation: "at_most", label: "Total cost" }] }, sources, { "/criteria/budget": 100 });
+  assert.match(compiled.data.explanation, /Total cost: 70/);
+  assert.match(compiled.data.explanation, /Available budget: 100/);
+  assert.match(compiled.data.explanation, /Remaining budget: 30/);
+  assert.match(compiled.data.explanation, /Within budget: yes/);
+  assert.throws(() => compileSourceTable({ ...plan, comparisons: [{ column: "cost", parameter: "/criteria/budget", relation: "at_most" }] }, sources, { "/criteria/budget": 100 }));
 });

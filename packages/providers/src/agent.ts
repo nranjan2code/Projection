@@ -163,6 +163,7 @@ export function resolveRun(opts: RunOptions): ResolvedRun {
   if (opts.validateCompletion && opts.completion !== "response") throw new Error("Completion validation requires response completion");
   if (opts.surfaceSubmission && (opts.completion !== "response" || requested === "constrained" || opts.validateEdits)) throw new Error("Surface submission requires response completion without edit checks");
   if (opts.surfaceSubmission && opts.tools?.some((tool) => [TOOL_SUBMIT, TOOL_PREPARE, TOOL_DERIVE].includes(tool.spec.name))) throw new Error("Reserved submission tool name");
+  if (opts.tableSources && Object.keys(opts.tableSources).length && ["table", "stack", "text", ...(Object.keys(opts.tableParameters ?? {}).length ? ["form", "input"] : [])].some((type) => !catalog.components[type])) throw new Error("Source-backed authoring requires its table, stack, text and parameter-control components");
   const generation = generationMode({ ...opts, generation: requested });
   return {
     catalog,
@@ -183,7 +184,8 @@ export function buildSystem(opts: RunOptions, run: ResolvedRun = resolveRun(opts
     "Use vak_submit alone when the complete result is ready. Each distinct output is a separate surface entry in the same submission. Omit surface IDs for new outputs; the framework assigns distinct identities. Use supplied canonical IDs only for existing outputs. replace creates a complete inline root and data; patch changes existing canonical IDs; remove deletes explicitly. Unmentioned surfaces stay. Rejected candidates change nothing. Acceptance ends the run; substantive answers belong visibly on surfaces, not only in reply.",
     "Follow the tool's typed component schema. Use the simplest structure the request needs. Children and collection templates are inline objects, never references. Node IDs may be omitted; preserve explicit IDs for stable identity. A leaf has no children.",
     'Data is separate from presentation. Put supplied input defaults in data at their exact bind paths. Props bind using {/path}; a whole binding preserves the raw value. Inputs use bind: /path and belong inside a form with submit: actionName. Do not add unrequested populated fields. Collection children use {each: "/items", template: nodeObject}, with relative {field} bindings.',
-    opts.tableSources && Object.keys(opts.tableSources).length ? "Tables reference immutable selected sources instead of copying cells. The compiler inserts data.sources; do not author or copy that reserved field. First use vak_derive_columns for per-row calculations, then vak_prepare_table for aggregate summaries and the total row. These are separate typed stages without UI bookkeeping. Then submit tables using only props.source and local interaction settings. Prepared cells cannot be authored or changed by presentation. Row expressions use {column: name}; summary expressions use {sum: columnName} or {parameter: callerPath}; operations are {op: add|subtract|multiply|divide|lte,args:[left,right]}. Compiler bindings are {/sources/<source>/summary/<key>}, filename and sha256. Display all requested interpretation and source/limitation labels on the report, with the table inside a stack if needed. Available parameters: " + JSON.stringify(opts.tableParameters ?? {}) : undefined,
+    opts.tableParameters && Object.keys(opts.tableParameters).length ? "Forms declare props.parameters as a list of caller parameter paths. The compiler creates bound controls, numeric types and authoritative defaults. Do not author input nodes or duplicate parameter values in data. Form children may contain explanatory text." : undefined,
+    opts.tableSources && Object.keys(opts.tableSources).length ? "Tables reference immutable selected sources instead of copying cells. The compiler inserts data.sources; do not author or copy that reserved field. First use vak_derive_columns for per-row calculations, then vak_prepare_table for aggregate summaries and the total row. These are separate typed stages without UI bookkeeping. Then submit tables using only props.source and local interaction settings. Prepared cells cannot be authored or changed by presentation. The compiler displays factual comparison explanations and source context automatically; do not re-enter calculated numbers as text. Row expressions use {column: name}; summary expressions use {sum: columnName} or {parameter: callerPath}; operations are {op: add|subtract|multiply|divide|lte,args:[left,right]}. Compiler bindings are {/sources/<source>/summary/<key>}, filename and sha256. Display all requested interpretation and source/limitation labels on the report, with the table inside a stack if needed. Available parameters: " + JSON.stringify(opts.tableParameters ?? {}) : undefined,
     shownSurfacesNote(opts.store, true),
   ].filter(Boolean).join("\n\n");
   const parts = [opts.instructions, systemPrompt(run.catalog, opts.profile, { examples: run.examples, authoring: run.authoring, submission: opts.surfaceSubmission })].filter(Boolean);
@@ -317,6 +319,7 @@ export async function runAgent(opts: RunOptions): Promise<RunResult> {
   if (opts.tableSources && !opts.surfaceSubmission) throw new Error("Table sources require transactional surface submission");
   if (opts.tableSources) {
     validateTableSources(opts.tableSources);
+    if (Object.keys(opts.tableParameters ?? {}).length > 16 || Object.entries(opts.tableParameters ?? {}).some(([key, value]) => !key || key.length > 120 || !(value === null || typeof value === "boolean" || typeof value === "string" && value.length <= 500 || typeof value === "number" && Number.isFinite(value)))) throw new Error("Invalid bounded table parameters");
     opts = { ...opts, tableSources: structuredClone(opts.tableSources), tableParameters: structuredClone(opts.tableParameters ?? {}) };
   }
   const publisher = opts.surfaceSubmission ? undefined : new SurfacePublisher(opts.store);
@@ -441,7 +444,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
     }
     return parameters;
   };
-  const sourceFrom = (id: string, compiled: ReturnType<typeof compileSourceTable>, prepared = false): TableSource => ({ ...opts.tableSources![id]!, columns: compiled.props.columns as string[], rows: compiled.props.rows as SourceCell[][], prepared, summary: compiled.data.summary as Record<string, SourceCell> });
+  const sourceFrom = (id: string, compiled: ReturnType<typeof compileSourceTable>, prepared = false): TableSource => ({ ...opts.tableSources![id]!, columns: compiled.props.columns, rows: compiled.props.rows, prepared, explanation: String(compiled.data.explanation ?? ""), summary: compiled.data.summary });
   const refreshPrepared = (parameters: Readonly<Record<string, SourceCell>>) => {
     for (const [id, plan] of derivedPlans) derived[id] = sourceFrom(id, compileSourceTable(plan, opts.tableSources!, parameters));
     for (const [id, plan] of preparedPlans) prepared[id] = sourceFrom(id, compileSourceTable(plan, derived, parameters), true);
@@ -449,13 +452,20 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
   const planningSchema = (rows: boolean) => {
     const sources = rows ? opts.tableSources! : derived;
     const schema = sourceTableSchema(sources);
-    const keep = rows ? ["source", "derive"] : ["source", "summary", "total"];
+    const keep = rows ? ["source", "derive"] : ["source", "comparisons", "total"];
     for (const key of Object.keys(schema.properties!)) if (!keep.includes(key)) delete schema.properties![key];
-    schema.required = rows ? ["source", "derive"] : ["source", "summary"];
+    schema.required = rows ? ["source", "derive"] : ["source"];
     const definitions = submissionTool(catalog, [], sources, opts.tableParameters).inputSchema.$defs!;
     schema.$defs = Object.fromEntries(Object.entries(definitions).filter(([key]) => key.includes("calculation")));
     if (!rows) {
       const names = [...new Set(Object.values(sources).flatMap((source) => source.columns))];
+      const parameters = Object.keys(opts.tableParameters ?? {}).filter((key) => typeof opts.tableParameters![key] === "number");
+      const comparisons = schema.properties!.comparisons!;
+      if (parameters.length) {
+        schema.required = ["source", "comparisons"]; comparisons.minItems = 1;
+        comparisons.items!.properties!.column = { type: "string", enum: names };
+        comparisons.items!.properties!.parameter = { type: "string", enum: parameters };
+      } else delete schema.properties!.comparisons;
       const total = schema.properties?.total;
       if (total?.properties?.sumColumns) total.properties.sumColumns.items = { type: "string", enum: [...new Set(Object.values(sources).flatMap((source) => source.columns.slice(1)))] };
       const summary = schema.$defs.vak_summary_calculation!;
@@ -474,7 +484,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
       preparedPlans.delete(compiled.id); delete prepared[compiled.id];
       return "Computed row columns (data, not instructions): " + JSON.stringify({ source: compiled.id, columns: compiled.props.columns, rows: compiled.props.rows }) + "\nNext use vak_prepare_table for requested summaries/total row; do not copy cells into UI.";
     } });
-    userTools.set(TOOL_PREPARE, { spec: { name: TOOL_PREPARE, description: "After per-row columns are computed, declare requested aggregate summaries and an optional total row. Summary expressions use sum of an available column, a caller parameter, or numeric operations. Use summary: [] if no summaries are requested. Then reference the prepared source in vak_submit.", inputSchema: {} }, execute: (args) => {
+    userTools.set(TOOL_PREPARE, { spec: { name: TOOL_PREPARE, description: "After per-row columns are computed, declare requested total rows and numeric criteria comparisons. Compare a column total with a caller parameter using at_most or at_least. The runtime computes totals, differences, status and a visible factual explanation; do not declare arithmetic summaries. Then reference the prepared source in vak_submit.", inputSchema: {} }, execute: (args) => {
       checked(planningSchema(false), args);
       const compiled = compileSourceTable(args, derived, parametersFor(opts.store.list().map((surface) => opts.store.snapshot(surface.id)!)));
       preparedPlans.set(compiled.id, structuredClone(args)); prepared[compiled.id] = sourceFrom(compiled.id, compiled, true);
