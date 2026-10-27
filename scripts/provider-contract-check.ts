@@ -22,5 +22,10 @@ for (const values of [[12, 17], [3, 2], [100, 70]]) {
   console.log(JSON.stringify({ values, pass: result.stop === "end", requests, stop: result.stop, diagnostics }));
 }
 await mkdir(".vak/contracts", { recursive: true });
-await writeFile(".vak/contracts/primary-provider.json", JSON.stringify({ model, at: new Date().toISOString(), results }, null, 2));
+const at = new Date().toISOString();
+const receipt = `.vak/contracts/primary-provider-${at.replaceAll(":", "-")}.json`;
+const report = JSON.stringify({ model, at, results }, null, 2);
+await writeFile(receipt, report, { flag: "wx" });
+await writeFile(".vak/contracts/primary-provider.json", report);
+console.log(`Contract receipt: ${receipt}`);
 if (results.some((result) => !result.pass)) process.exitCode = 1;

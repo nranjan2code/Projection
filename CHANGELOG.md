@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-10-27: contract evidence retention
+
+- Provider-contract checks retain a unique receipt for every execution as well as the latest view. Source parameter-form instructions apply only to source-backed workspaces; unrelated graph authoring retains its actual input protocol.
+
 ## 2026-10-27: source workspace ownership
 
 - Cleanup removes only obsolete source-workspace slots, preserving unrelated media or outside-agent surfaces. Regression covers mixed ownership. 373 tests/replay and typecheck pass.
