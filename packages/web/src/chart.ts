@@ -6,6 +6,7 @@ const NS = "http://www.w3.org/2000/svg";
 
 export interface ChartSpec {
   kind: "bar" | "stacked" | "line" | "area" | "pie" | "scatter" | "heatmap" | "radar" | "candlestick";
+  error?: string;
   title?: string;
   orientation?: "vertical" | "horizontal";
   yScale?: "auto" | "zero";
@@ -49,6 +50,12 @@ function fmt(v: number): string {
 export function normalizeChart(props: Record<string, unknown>): ChartSpec {
   const kind = (["bar", "stacked", "line", "area", "pie", "scatter", "heatmap", "radar", "candlestick"].includes(String(props.kind)) ? props.kind : "bar") as ChartSpec["kind"];
   const rawSeries = Array.isArray(props.series) ? props.series : [];
+  // Direct projector callers share the canonical OHLC missing-value rule:
+  // Number(null/false/empty) must never manufacture an observed zero.
+  if (kind === "candlestick" && rawSeries.length && rawSeries.some(raw => {
+    const values = Array.isArray(raw) ? raw : raw && typeof raw === "object" ? (raw as { values?: unknown }).values : undefined;
+    return !Array.isArray(values) || values.some(v => !(typeof v === "number" && Number.isFinite(v)) && !(typeof v === "string" && v.trim() && Number.isFinite(Number(v))));
+  })) return { kind, labels: [], series: [], error: "Invalid OHLC data: every price must be a finite number" };
   const series = rawSeries
     .map((s) => {
       if (Array.isArray(s)) return { values: s.map(Number) };
@@ -84,6 +91,7 @@ export function renderChart(spec: ChartSpec, doc: Document = document, width = 6
     const title = doc.createElement("figcaption"); title.className = "chart-heading";
     title.textContent = spec.title; wrap.append(title);
   }
+  if (spec.error) { const error = doc.createElement("span"); error.textContent = spec.error; wrap.append(error); return wrap; }
   if (!spec.series.length) {
     const empty = doc.createElement("span"); empty.textContent = "No data"; wrap.append(empty);
     return wrap;

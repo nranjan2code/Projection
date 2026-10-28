@@ -40,3 +40,12 @@ test('catalog accepts mapped candles and compact density but rejects impossible 
   }
   const s=new SurfaceStore(basicCatalog);assert.ok(s.render({surface:'invalid',nodes:[{id:'root',type:'chart',props:{kind:'candlestick',labels:['A'],series:[{values:[1]},{values:[2]},{values:[0]}]}}]}).some(d=>d.severity==='error'));
 });
+
+test('OHLC shorthand never coerces missing, boolean or blank prices into observed zero',()=>{
+  for (const value of [null, false, ""]) {
+    const series = [[value], [2], [0], [1]];
+    const store = new SurfaceStore(basicCatalog);
+    assert.ok(store.render({surface:'invalid',nodes:[{id:'root',type:'chart',props:{kind:'candlestick',labels:['A'],series}}]}).some(d=>d.severity==='error'));
+    assert.match(textOf(renderChart(normalizeChart({kind:'candlestick',labels:['A'],series}),fakeDoc())),/Invalid OHLC data/);
+  }
+});

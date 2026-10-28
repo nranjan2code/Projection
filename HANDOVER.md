@@ -56,3 +56,7 @@ Changes made in Projection:
 1. Removed the 2-step chokehold in `policy.ts`: models under 2B now receive the standard 4-step budget with core-tier worked examples.
 2. `ollama.ts` automatically enables `think: true` for models reporting thinking support, routes thinking to `native`, and adds a streaming `ThinkFilter` to strip raw `<think>...</think>` tags from content. Non-thinking models safely fall back if Ollama returns 400.
 3. 404 framework tests/replay and typecheck pass with zero errors. No installed app or public release is produced.
+
+## Exact observation and OHLC integrity checkpoint — 2026-10-29
+
+The analytical reference revealed that native SVG hover titles were insufficient for keyboard/touch inspection. Line/area/bar/candlestick figures now expose canonical exact observations through an output readout and pointer/touch/keyboard controls without agent dispatch. A final shorthand audit found null/boolean/blank nested OHLC prices could become zero; these now retain missingness for canonical rejection, with direct-projector rejection too. No source fact synthesis or new dependency. 405 tests/replay, typecheck and package builds pass. The narrow local mapped-table gate on preceding `fae8a41` passed 3/3 (receipt `.vak/contracts/record-view-2026-10-28T15-52-05.942Z.json`); this does not establish candle/graph model-authoring reliability. Vakyartha owns full live source/interaction/WebKit and installed-delivery evidence.

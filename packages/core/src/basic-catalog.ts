@@ -179,7 +179,9 @@ function normalizeChart(p: Record<string, unknown>): Record<string, unknown> {
   const s = p.series;
   if (!Array.isArray(s) || s.length === 0) return p;
   if (s.every(numeric)) return { ...p, series: [{ values: s.map(Number) }] };
-  if (s.every((v) => Array.isArray(v))) return { ...p, series: (s as unknown[][]).map((values) => ({ values: values.map(Number) })) };
+  // OHLC shorthand must preserve missing/boolean/blank prices for validation,
+  // rather than inventing an observed zero through Number coercion.
+  if (s.every((v) => Array.isArray(v))) return { ...p, series: (s as unknown[][]).map((values) => ({ values: values.map(v => p.kind === "candlestick" && !numeric(v) ? v : Number(v)) })) };
   // A series of annotations ("Peak Day": ["N/A", ..., "Fri peak"]) beside real
   // ones (4B, bench web-analytics) has nothing to plot: it is dropped rather
   // than failing the whole chart.

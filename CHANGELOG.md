@@ -438,3 +438,8 @@ From a Vakyartha run on the 4B model ("compare three hotels in Kyoto"): four ren
 - Line and candlestick axes fit observed values by default and disclose when zero can be excluded; `yScale: zero` explicitly retains it. Bars, stacked bars and area keep their zero reference. Flat/signed datasets retain finite ranges. This is a visual-scale change: clients needing the old line baseline should set `yScale: zero`.
 - `chart.orientation: horizontal` for bars keeps every long category in a readable row with exact values; `colorBy: sign` uses semantic positive/negative colours without removing signed numbers. `height: sm|md|lg` provides semantic 180/260/360px plot heights, with horizontal rankings expanding for readable rows. Chart `title`, `xLabel` and `yLabel` are visible/accessible context.
 - Common `density: compact|comfortable` controls inherited spacing and padding without shrinking the user's text or removing labels. Existing surfaces retain their density unless they opt in. No external dependencies, data calculations, web grants or app-specific renderer are added.
+
+## Unreleased: exact observation inspection and OHLC integrity
+
+- Categorical line/area/bar/candlestick figures expose an exact-value readout using pointer/touch and left/right/Home/End keyboard controls, without dispatching an action or invoking a model. Full observation labels remain in the readout even when axis labels are shortened.
+- OHLC shorthand retains null, boolean and blank entries for canonical rejection rather than coercing them to observed zero. Direct web normalization reports invalid OHLC input as well. 405 framework tests/replay, typecheck and package generation pass.
