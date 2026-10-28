@@ -85,6 +85,7 @@ export class McpClient {
   private nextId = 1;
   private pending = new Map<number, Pending>();
   private sessionId?: string;
+  private cookies: string[] = [];
   private protocolVersion = CLIENT_PROTOCOL;
   private ready?: Promise<void>;
   serverInfo?: { name?: string; version?: string };
@@ -201,6 +202,7 @@ export class McpClient {
     this.child = undefined;
     this.ready = undefined;
     this.sessionId = undefined;
+    this.cookies = [];
     this.protocolVersion = CLIENT_PROTOCOL;
   }
 
@@ -241,21 +243,49 @@ export class McpClient {
       this.child.stdin.write(`${JSON.stringify(msg)}\n`);
       return;
     }
-    const res = await fetch(t.url, {
-      method: "POST",
-      signal,
-      // A redirected endpoint must not forward user-configured secret headers.
-      redirect: "error",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json, text/event-stream",
-        "mcp-protocol-version": this.protocolVersion,
-        ...(this.sessionId ? { "mcp-session-id": this.sessionId } : {}),
-        ...t.headers,
-      },
-      body: JSON.stringify(msg),
-    });
-    this.sessionId = res.headers.get("mcp-session-id") ?? this.sessionId;
+    let res: Response | undefined;
+    // Multi-instance clusters without sticky sessions (such as Spring WebFlux MCP behind round-robin balancers)
+    // can return transient 404 "Session not found" when a follow-up request hits a different backend instance.
+    const maxAttempts = this.sessionId ? 8 : 1;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      signal?.throwIfAborted();
+      res = await fetch(t.url, {
+        method: "POST",
+        signal,
+        // A redirected endpoint must not forward user-configured secret headers.
+        redirect: "error",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+          "mcp-protocol-version": this.protocolVersion,
+          ...(this.sessionId ? { "mcp-session-id": this.sessionId } : {}),
+          ...(this.cookies.length ? { cookie: this.cookies.join("; ") } : {}),
+          ...t.headers,
+        },
+        body: JSON.stringify(msg),
+      });
+      const setCookies = (res.headers as unknown as { getSetCookie?: () => string[] }).getSetCookie?.() ?? [];
+      if (setCookies.length) {
+        for (const c of setCookies) {
+          const pair = c.split(";")[0]?.trim();
+          if (!pair) continue;
+          const name = pair.split("=")[0]?.trim();
+          this.cookies = this.cookies.filter((existing) => !existing.startsWith(`${name}=`));
+          this.cookies.push(pair);
+        }
+      }
+      this.sessionId = res.headers.get("mcp-session-id") ?? this.sessionId;
+      if (res.status === 404 && this.sessionId && attempt < maxAttempts) {
+        const cloned = res.clone();
+        const text = await cloned.text().catch(() => "");
+        if (/session not found/i.test(text)) {
+          await new Promise((r) => setTimeout(r, 25 * Math.pow(1.5, attempt)));
+          continue;
+        }
+      }
+      break;
+    }
+    if (!res) throw new McpError(`${this.name}: no response`);
     if (res.status === 401 || res.status === 403) throw new McpError(`${this.name} refused the credentials (${res.status})`, res.status);
     if (!res.ok && res.status !== 202) throw new McpError(`${this.name}: HTTP ${res.status}`, res.status);
     if (res.status === 202 || !("id" in msg)) return void (await res.body?.cancel());

@@ -141,3 +141,48 @@ test("HTTP uses the negotiated protocol, resets sessions on reconnect and refuse
     await assert.rejects(redirect.listTools());assert.equal(redirected,0);
   } finally { c.close();redirect.close();server.closeAllConnections();server.close(); }
 });
+
+test("HTTP preserves cookies and retries transient session-not-found across round-robin backends", async () => {
+  let toolCalls = 0;
+  const server = createServer((req, res) => {
+    let body = "";
+    req.on("data", (d) => (body += d));
+    req.on("end", () => {
+      const msg = JSON.parse(body);
+      if (msg.method === "initialize") {
+        return void res
+          .writeHead(200, {
+            "content-type": "application/json",
+            "mcp-session-id": "session-cluster-1",
+            "set-cookie": "cluster_node=node_1; Path=/",
+          })
+          .end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: "2025-06-18", capabilities: { tools: {} } } }));
+      }
+      assert.match(req.headers.cookie ?? "", /cluster_node=node_1/);
+      assert.equal(req.headers["mcp-session-id"], "session-cluster-1");
+      if (msg.method === "notifications/initialized") {
+        res.writeHead(202).end();
+        return;
+      }
+      toolCalls++;
+      if (toolCalls === 1) {
+        // First tool attempt simulates hitting another backend node where session is absent.
+        res.writeHead(404, { "content-type": "application/json" }).end(JSON.stringify({ message: "Session not found: session-cluster-1" }));
+        return;
+      }
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { tools: [] } }));
+    });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/mcp`;
+  const c = new McpClient({ name: "cluster", transport: { kind: "http", url } });
+  try {
+    const tools = await c.listTools();
+    assert.deepEqual(tools, []);
+    assert.equal(toolCalls, 2);
+  } finally {
+    c.close();
+    server.closeAllConnections();
+    server.close();
+  }
+});
