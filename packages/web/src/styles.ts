@@ -175,6 +175,17 @@ pre code { background: none; padding: 0; }
 .tablist button:focus-visible { outline: 2px solid var(--vak-accent, var(--_vak-accent)); outline-offset: -2px; border-radius: var(--vak-radius-sm, var(--_vak-radius-sm)); }
 .tablist button[aria-selected="true"] { color: var(--vak-fg, var(--_vak-fg)); border-bottom-color: var(--vak-accent, var(--_vak-accent)); }
 
+/* Density is an inherited semantic choice, independent of theme and font size. */
+.density-compact { --vak-card-padding: 10px; --vak-control-height: 32px; --gap-sm: 6px; --gap-md: 10px; --gap-lg: 16px; }
+.density-comfortable { --vak-card-padding: 16px; --vak-control-height: 36px; --gap-sm: 8px; --gap-md: 12px; --gap-lg: 20px; }
+.density-compact .stat .value { font-size: 1.35em; }
+.density-compact :is(td, th) { padding-block: 7px; }
+.density-compact .chart { padding: 10px; }
+.density-compact .form { gap: 10px; }
+.chart-heading { display: block; margin: 0 0 8px; font-size: 0.9em; font-weight: var(--vak-weight-heading, var(--_vak-weight-heading)); }
+.chart .axis-label { fill: var(--vak-muted, var(--_vak-muted)); font: 11px var(--vak-font, var(--_vak-font)); }
+.chart .zero-line { stroke: var(--vak-muted, var(--_vak-muted)); stroke-width: 1; }
+.chart .scale-note { font-size: 0.78em; color: var(--vak-muted, var(--_vak-muted)); margin-top: 4px; }
 /* ---- content --------------------------------------------------------- */
 .card {
   position: relative; display: flex; flex-direction: column; min-width: 0; overflow: hidden;

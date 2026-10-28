@@ -226,7 +226,8 @@ export class VakSurfaceElement extends HTMLElement {
       built?.release?.();
       built = { ...this.#build(node), sig };
       built.sig = signature(Boolean(built.sync));
-      const { span, priority, maxWidth } = node.props;
+      const { span, priority, maxWidth, density } = node.props;
+      if (["compact", "comfortable"].includes(String(density))) built.el.classList.add(`density-${density}`);
       if (["sm", "md", "lg", "full"].includes(String(maxWidth))) built.el.classList.add(`measure-${maxWidth}`);
       if (span !== undefined) built.el.classList.add(span === "full" || Number(span) >= 5 ? "span-full" : `span-${Math.max(1, Math.min(4, Number(span) || 1))}`);
       if (typeof priority === "string") built.el.classList.add(`p-${priority}`);

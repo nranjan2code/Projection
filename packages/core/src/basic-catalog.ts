@@ -199,7 +199,7 @@ function normalizeChart(p: Record<string, unknown>): Record<string, unknown> {
  * bindings resolve, so the shorthands normalizeChart reads apply here too.
  * A record of numbers is one series, a point per key.
  */
-function finalizeChart(p: Record<string, unknown>): Record<string, unknown> {
+function prepareChart(p: Record<string, unknown>): Record<string, unknown> {
   p = finalizeRecordView(p, "series");
   if (p.$error) return p;
   const s = p.series;
@@ -220,6 +220,22 @@ function finalizeChart(p: Record<string, unknown>): Record<string, unknown> {
   const series = numbers.map((k) => ({ name: k, values: s.map((r) => (r[k] === undefined ? null : Number(r[k]))) }));
   const labels = Array.isArray(p.labels) && p.labels.length ? p.labels : label ? s.map((r) => r[label]) : p.labels;
   return { ...p, series, ...(labels !== undefined ? { labels } : {}) };
+}
+
+/** OHLC is an interval, not four independent trends. Reject impossible bars
+ * before any projector can imply a market observation that was not supplied. */
+function finalizeChart(p: Record<string, unknown>): Record<string, unknown> {
+  p = prepareChart(p);
+  if (p.$error || p.kind !== "candlestick") return p;
+  const series = p.series as { values?: unknown[] }[];
+  if (!Array.isArray(series) || series.length !== 4 || series.some(s => !s || !Array.isArray(s.values))) return { ...p, $error: "Candlestick needs four series in open, high, low, close order" };
+  const count = series[0]!.values!.length;
+  if (series.some(s => s.values!.length !== count) || !Array.isArray(p.labels) || p.labels.length !== count) return { ...p, $error: "Candlestick labels and OHLC series must have matching lengths" };
+  for (let i = 0; i < count; i++) {
+    const [open, high, low, close] = series.map(s => s.values![i]);
+    if (![open, high, low, close].every(v => typeof v === "number" && Number.isFinite(v)) || (low as number) > Math.min(open as number, close as number) || (high as number) < Math.max(open as number, close as number) || (low as number) > (high as number)) return { ...p, $error: `Invalid OHLC interval at observation ${i + 1}` };
+  }
+  return p;
 }
 
 const graphNode = props({
@@ -714,14 +730,20 @@ export const basicCatalog = defineCatalog(
     },
     chart: {
       description: "Chart.",
-      hint: "For shared records use series:{records:'{/records}',label:'label',fields:['value']} with no separate labels array. Multiple numeric fields become series; scatter can add x:'numericField'. kind: bar, stacked, line, area, pie, scatter, heatmap, radar",
+      hint: "For shared records use series:{records:'{/records}',label:'label',fields:['value']} with no separate labels array. Multiple numeric fields become series; scatter can add x:'numericField'. kind: bar, stacked, line, area, pie, scatter, heatmap, radar, candlestick. Candlestick maps fields [open,high,low,close] in that order; separate volume. Long category labels use horizontal bars.",
       props: props(
         {
-          kind: oneOf(["bar", "stacked", "line", "area", "pie", "scatter", "heatmap", "radar"], {
+          kind: oneOf(["bar", "stacked", "line", "area", "pie", "scatter", "heatmap", "radar", "candlestick"], {
             default: "bar",
             aliases: ["chartType", "variant"],
             enumAliases: { column: "bar", columns: "bar", barchart: "bar", histogram: "bar", linechart: "line", trend: "line", areachart: "area", piechart: "pie", donut: "pie", doughnut: "pie", stackedbar: "stacked", stackedbars: "stacked", stackedcolumn: "stacked", stack: "stacked", scatterplot: "scatter", bubble: "scatter", points: "scatter", xy: "scatter", heat: "heatmap", habit: "heatmap", habits: "heatmap", calendarheatmap: "heatmap", matrix: "heatmap", spider: "radar", web: "radar", polar: "radar" },
           }),
+          title: str(),
+          orientation: oneOf(["vertical", "horizontal"], { description: "Horizontal bar chart keeps long category names readable." }),
+          yScale: oneOf(["auto", "zero"], { description: "Line/candlestick auto fits the observed range with visible ticks; zero includes zero. Bar/area always include zero." }),
+          colorBy: oneOf(["series", "sign"], { description: "Bars: sign uses semantic positive/negative colour; exact signed values remain visible." }),
+          height: oneOf(["sm", "md", "lg"], { description: "Plot height 180/260/360px; horizontal bars grow to preserve readable rows." }),
+          xLabel: str(), yLabel: str(),
           labels: listOr({ type: "array", items: { type: "string" } }, { aliases: ["categories", "xAxis", "x", "keys"] }),
           series: {
             description: "[{name, values}], or shorthand: a list of numbers (one series) or of number lists",
@@ -1177,6 +1199,7 @@ export const basicCatalog = defineCatalog(
     span: { type: ["integer", "string"], description: "1-4 or \"full\"", aliases: ["colSpan", "colspan", "width"] },
     priority: oneOf(["primary", "secondary", "tertiary"], { aliases: ["importance"], enumAliases: { high: "primary", medium: "secondary", low: "tertiary" } }),
     maxWidth: oneOf(["sm", "md", "lg", "full"], { description: "Responsive content measure: sm for compact summaries, md for forms/charts, lg for detailed views, full for available width. Never exceeds its container." }),
+    density: oneOf(["comfortable", "compact"], { description: "Inherited spacing density; compact fits analytic workspaces without shrinking text or removing labels." }),
     visibleIf: str({ description: "{/path}: shown when truthy", aliases: ["showIf", "if", "when"] }),
   },
   {

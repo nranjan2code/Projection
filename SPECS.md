@@ -226,3 +226,9 @@ Trusted local context loaders may declare AgentTool.kind=context. They use the e
 ## Responsive content measures
 
 The basic catalog exposes common `maxWidth: sm|md|lg|full` on every node, independent of grid `span`. Web measures are container-capped at 320, 720 or 1040 pixels, or use the available width. Explicit numeric grid columns preserve unused tracks; automatic grids fit occupied tracks. Horizontal stacks default to top alignment and honor explicit alignment. Charts use a 720-pixel default measure, overridable through the common prop or inherited `--vak-chart-max-width`; text/channel content is unchanged. Theme tokens remain application-owned.
+
+## Analytical presentation additions — 2026-10-28
+
+Charts support `candlestick` as actual OHLC intervals: `series` has four equal-length numeric series in open/high/low/close order, and matching labels. A mapped view uses `fields:["open","high","low","close"]`. Invalid intervals fail canonical validation; the projector does not manufacture or repair market facts. There is no volume combo axis, intraday interpolation or price adjustment computation.
+
+`yScale:auto|zero` controls line/candlestick domains (auto by default); fitted domains show ticks and a visible note that zero may be excluded. Magnitude bars/stacked bars/area always include zero. `orientation:horizontal` on bar charts shows every category as a row. `colorBy:sign` optionally colours bars by semantic positive/negative tones while retaining exact signed numbers. `height:sm|md|lg` selects plot height; horizontal rankings grow to preserve readable rows. `title`, `xLabel`, `yLabel` provide visible chart context. Common `density:compact|comfortable` changes inherited spacing without changing font sizes. These are web geometry choices; text/voice/channel projections retain canonical observations and explanations through existing lowering.

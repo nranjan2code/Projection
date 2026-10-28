@@ -5,7 +5,13 @@
 const NS = "http://www.w3.org/2000/svg";
 
 export interface ChartSpec {
-  kind: "bar" | "stacked" | "line" | "area" | "pie" | "scatter" | "heatmap" | "radar";
+  kind: "bar" | "stacked" | "line" | "area" | "pie" | "scatter" | "heatmap" | "radar" | "candlestick";
+  title?: string;
+  orientation?: "vertical" | "horizontal";
+  yScale?: "auto" | "zero";
+  colorBy?: "series" | "sign";
+  height?: "sm" | "md" | "lg";
+  xLabel?: string; yLabel?: string;
   labels: string[];
   series: { name?: string; values: number[]; x?: number[] }[];
 }
@@ -41,7 +47,7 @@ function fmt(v: number): string {
 }
 
 export function normalizeChart(props: Record<string, unknown>): ChartSpec {
-  const kind = (["bar", "stacked", "line", "area", "pie", "scatter", "heatmap", "radar"].includes(String(props.kind)) ? props.kind : "bar") as ChartSpec["kind"];
+  const kind = (["bar", "stacked", "line", "area", "pie", "scatter", "heatmap", "radar", "candlestick"].includes(String(props.kind)) ? props.kind : "bar") as ChartSpec["kind"];
   const rawSeries = Array.isArray(props.series) ? props.series : [];
   const series = rawSeries
     .map((s) => {
@@ -59,24 +65,37 @@ export function normalizeChart(props: Record<string, unknown>): ChartSpec {
   const n = Math.max(0, ...series.map((s) => s.values.length));
   const labels = Array.isArray(props.labels) ? props.labels.map(String) : [];
   while (labels.length < n) labels.push(String(labels.length + 1));
-  return { kind, labels: labels.slice(0, n), series };
+  return { kind, labels: labels.slice(0, n), series,
+    ...(typeof props.title === "string" ? { title: props.title } : {}),
+    ...(props.orientation === "horizontal" ? { orientation: "horizontal" as const } : {}),
+    ...(props.yScale === "zero" ? { yScale: "zero" as const } : {}),
+    ...(props.colorBy === "sign" ? { colorBy: "sign" as const } : {}),
+    ...(["sm", "md", "lg"].includes(String(props.height)) ? { height: props.height as ChartSpec["height"] } : {}),
+    ...(typeof props.xLabel === "string" ? { xLabel: props.xLabel } : {}),
+    ...(typeof props.yLabel === "string" ? { yLabel: props.yLabel } : {}),
+  };
 }
 
 /** `width`: actual pixel width, so text and strokes stay crisp at any size. */
 export function renderChart(spec: ChartSpec, doc: Document = document, width = 640): HTMLElement {
   const wrap = doc.createElement("figure");
   wrap.className = "chart";
+  if (spec.title) {
+    const title = doc.createElement("figcaption"); title.className = "chart-heading";
+    title.textContent = spec.title; wrap.append(title);
+  }
   if (!spec.series.length) {
-    wrap.textContent = "No data";
+    const empty = doc.createElement("span"); empty.textContent = "No data"; wrap.append(empty);
     return wrap;
   }
-  if (spec.kind === "pie") wrap.append(pie(spec, doc));
+  if (spec.kind === "bar" && spec.orientation === "horizontal") wrap.append(horizontalBars(spec, doc, width));
+  else if (spec.kind === "pie") wrap.append(pie(spec, doc));
   else if (spec.kind === "scatter") wrap.append(scatter(spec, doc, width));
   else if (spec.kind === "heatmap") wrap.append(heatmap(spec, doc, width));
   else if (spec.kind === "radar") wrap.append(radar(spec, doc));
   else wrap.append(cartesian(spec, doc, width));
 
-  const names = spec.kind === "heatmap" ? [] : spec.kind === "pie" ? spec.labels : spec.series.map((s, i) => s.name ?? `Series ${i + 1}`);
+  const names = spec.kind === "heatmap" || spec.kind === "candlestick" ? [] : spec.kind === "pie" ? spec.labels : spec.series.map((s, i) => s.name ?? `Series ${i + 1}`);
   if (names.length > 1) {
     const legend = doc.createElement("figcaption");
     legend.className = "legend";
@@ -89,18 +108,64 @@ export function renderChart(spec: ChartSpec, doc: Document = document, width = 6
     });
     wrap.append(legend);
   }
+  if ((spec.kind === "line" || spec.kind === "candlestick") && spec.yScale !== "zero") {
+    const note = doc.createElement("div"); note.className = "scale-note";
+    note.textContent = "Y-axis fits observed values; baseline may exclude zero."; wrap.append(note);
+  }
   return wrap;
 }
 
-function cartesian(spec: ChartSpec, doc: Document, width: number): SVGSVGElement {
-  const W = Math.max(200, Math.round(width)), H = Math.round(Math.min(320, Math.max(180, W * 0.5))), L = 44, R = 12, T = 12, B = 34;
-  const svg = svgEl(doc, "svg", { viewBox: `0 0 ${W} ${H}`, role: "img", width: W, height: H });
-  // Stacked bars scale to the tallest stack, positive and negative apart.
+/** General quantitative scales: intervals/trends need detail, magnitude bars
+ * need a zero reference. A flat series still gets a finite visible range. */
+export function chartDomain(spec: ChartSpec): [number, number] {
   const all = spec.kind === "stacked"
-    ? spec.labels.flatMap((_, i) => [spec.series.reduce((a, s) => a + Math.max(s.values[i] ?? 0, 0), 0), spec.series.reduce((a, s) => a + Math.min(s.values[i] ?? 0, 0), 0)])
-    : spec.series.flatMap((s) => s.values);
-  const min = Math.min(0, ...all);
-  const max = niceMax(Math.max(...all, 0));
+    ? spec.labels.flatMap((_, i) => [spec.series.reduce((a,s) => a + Math.max(s.values[i] ?? 0,0),0), spec.series.reduce((a,s) => a + Math.min(s.values[i] ?? 0,0),0)])
+    : spec.series.flatMap(s => s.values).filter(Number.isFinite);
+  if (!all.length) return [0, 1];
+  let low = Math.min(...all), high = Math.max(...all);
+  const zero = spec.yScale === "zero" || !["line", "candlestick"].includes(spec.kind);
+  if (zero) { low = Math.min(0, low); high = Math.max(0, high); }
+  const padding = zero ? 0 : ((high - low) || Math.abs(high) * 0.02 || 1) * 0.08;
+  const step = niceMax(((high - low + padding * 2) || 1) / 4);
+  const min = Math.floor((low - padding) / step) * step;
+  const max = Math.ceil((high + padding) / step) * step;
+  return [min, max > min ? max : min + step];
+}
+const plotHeight = (spec: ChartSpec, width: number) => spec.height ? ({ sm: 180, md: 260, lg: 360 }[spec.height]) : Math.round(Math.min(320, Math.max(180, width * 0.5)));
+const valueColor = (spec: ChartSpec, value: number, series: number) => spec.colorBy === "sign"
+  ? value > 0 ? "var(--vak-success, var(--_vak-success))" : value < 0 ? "var(--vak-danger, var(--_vak-danger))" : "var(--vak-muted, var(--_vak-muted))"
+  : color(series);
+
+function horizontalBars(spec: ChartSpec, doc: Document, width: number): SVGSVGElement {
+  const W = Math.max(200, Math.round(width)), L = Math.min(176, W * 0.4), R = 50, T = 24, B = 28;
+  const H = Math.max(plotHeight(spec, W), spec.labels.length * Math.max(24, spec.series.length * 16) + T + B);
+  const [min, max] = chartDomain(spec), x = (v: number) => L + (v - min) / (max - min) * (W - L - R);
+  const svg = svgEl(doc, "svg", { viewBox: `0 0 ${W} ${H}`, role: "img", width: W, height: H, "aria-label": spec.title ?? "Horizontal bar chart" });
+  const band = (H - T - B) / spec.labels.length;
+  for (let i = 0; i <= 4; i++) {
+    const v = min + (max-min)*i/4, px = x(v);
+    svg.append(svgEl(doc,"line",{x1:px,x2:px,y1:T,y2:H-B,class:"gridline"}));
+    const tick=svgEl(doc,"text",{x:px,y:H-8,"text-anchor":"middle",class:"axis"});tick.textContent=fmt(v);svg.append(tick);
+  }
+  svg.append(svgEl(doc,"line",{x1:x(0),x2:x(0),y1:T,y2:H-B,class:"zero-line"}));
+  spec.labels.forEach((label,i)=>{
+    const cy=T+band*(i+0.5), t=svgEl(doc,"text",{x:L-8,y:cy+4,"text-anchor":"end",class:"axis"});
+    const limit=Math.max(6,Math.floor((L-12)/6.5)); t.textContent=label.length>limit?label.slice(0,limit-1)+"…":label; svg.append(titled(doc,t,label));
+    spec.series.forEach((series,si)=>{
+      const value=series.values[i];if(value===undefined)return;
+      const h=Math.min(16,band*0.7/spec.series.length), top=cy-band*0.35+si*h;
+      svg.append(titled(doc,svgEl(doc,"rect",{x:Math.min(x(0),x(value)),y:top,width:Math.max(0.5,Math.abs(x(value)-x(0))),height:h-1,rx:2,fill:valueColor(spec,value,si)}),`${label} · ${series.name??"Value"}: ${value}`));
+      const val=svgEl(doc,"text",{x:W-2,y:top+h-3,"text-anchor":"end",class:"axis"});val.textContent=(spec.colorBy==="sign" && value>0?"+":"")+fmt(value);svg.append(val);
+    });
+  });
+  return svg;
+}
+
+function cartesian(spec: ChartSpec, doc: Document, width: number): SVGSVGElement {
+  const W = Math.max(200, Math.round(width)), H = plotHeight(spec, W), L = spec.yLabel ? 62 : 48, R = 16, T = 16, B = spec.xLabel ? 48 : 34;
+  const svg = svgEl(doc, "svg", { viewBox: `0 0 ${W} ${H}`, role: "img", width: W, height: H });
+  const [min, max] = chartDomain(spec);
+  svg.setAttribute("aria-label", spec.title ?? `${spec.kind} chart`);
   const span = max - min || 1;
   const y = (v: number) => T + (H - T - B) * (1 - (v - min) / span);
   const n = spec.labels.length;
@@ -122,7 +187,27 @@ function cartesian(spec: ChartSpec, doc: Document, width: number): SVGSVGElement
     svg.append(t);
   });
 
-  if (spec.kind === "stacked") {
+  if (spec.yLabel) {
+    const label = svgEl(doc,"text",{x:12,y:T+(H-T-B)/2,transform:`rotate(-90 12 ${T+(H-T-B)/2})`,"text-anchor":"middle",class:"axis-label"}); label.textContent=spec.yLabel;svg.append(label);
+  }
+  if (spec.xLabel) {
+    const label = svgEl(doc,"text",{x:L+(W-L-R)/2,y:H-2,"text-anchor":"middle",class:"axis-label"}); label.textContent=spec.xLabel;svg.append(label);
+  }
+  if (spec.kind === "candlestick") {
+    if (spec.series.length !== 4 || spec.series.some(s=>s.values.length!==n)) {
+      const error=svgEl(doc,"text",{x:L,y:24,class:"axis"});error.textContent="Invalid OHLC series";svg.append(error);return svg;
+    }
+    spec.labels.forEach((label,i)=>{
+      const [open,high,low,close]=spec.series.map(s=>s.values[i]!);
+      if (![open,high,low,close].every(Number.isFinite) || low!>Math.min(open!,close!) || high!<Math.max(open!,close!) || low!>high!) return;
+      const x=L+band*(i+0.5), bw=Math.max(1,Math.min(18,band*0.65));
+      const tone=close!>=open!?"var(--vak-success, var(--_vak-success))":"var(--vak-danger, var(--_vak-danger))";
+      const mark=svgEl(doc,"g",{"aria-label":`${label}: open ${open}, high ${high}, low ${low}, close ${close}`});
+      mark.append(svgEl(doc,"line",{x1:x,x2:x,y1:y(high!),y2:y(low!),stroke:tone,"stroke-width":1.25}));
+      mark.append(svgEl(doc,"rect",{x:x-bw/2,y:y(Math.max(open!,close!)),width:bw,height:Math.max(1,Math.abs(y(open!)-y(close!))),fill:tone,stroke:tone}));
+      svg.append(titled(doc,mark,`${label}: Open ${open} · High ${high} · Low ${low} · Close ${close}`));
+    });
+  } else if (spec.kind === "stacked") {
     const bw = band * 0.62;
     spec.labels.forEach((label, i) => {
       let up = 0, down = 0;
@@ -145,7 +230,7 @@ function cartesian(spec: ChartSpec, doc: Document, width: number): SVGSVGElement
         const x = L + band * i + (band - inner) / 2 + bw * si;
         const y0 = y(Math.max(v, 0));
         const h = Math.abs(y(v) - y(0));
-        svg.append(titled(doc, svgEl(doc, "rect", { x: x + 1, y: y0, width: Math.max(bw - 2, 1), height: Math.max(h, 0.5), rx: 3, fill: color(si) }), `${s.name ? `${s.name} · ` : ""}${spec.labels[i]}: ${v}`));
+        svg.append(titled(doc, svgEl(doc, "rect", { x: x + 1, y: y0, width: Math.max(bw - 2, 1), height: Math.max(h, 0.5), rx: 3, fill: valueColor(spec, v, si) }), `${s.name ? `${s.name} · ` : ""}${spec.labels[i]}: ${v}`));
       });
     });
   } else {

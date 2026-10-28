@@ -41,3 +41,9 @@ Form submission now preserves repeated record-field names under canonical pointe
 ## Next work
 
 Finish the app pin/caller cleanup, verify ordinary task input/continuation/export and shared views, run the user's authorized hosted model comparison with frozen checks, and document all failures. Keep local primary-provider failures open; do not tune a fixture or expand retry limits. No installation or release implied. AGENTS.md and RELEASING.md apply.
+
+## Analytical workspace capability checkpoint — 2026-10-28
+
+The market reference app exposed general geometry gaps: zero-baseline price trends concealed variation, long signed rankings lost category labels, and all surfaces shared loose spacing. The public catalog/projector now supports validated OHLC candlesticks, fitted/disclosed line/candle scales, horizontal signed bars with exact values, semantic plot heights/axis context and inherited compact density. Implemented in the framework owner, with no app-specific branches, dependency or source calculation.
+
+403 framework tests/replay and typecheck pass at this checkpoint; WebKit/source-backed app evidence is recorded by Vakyartha after adopting the pin. No new primary-model outcome or reliability pass is implied. Existing provider/source/value/interaction failures remain open. No installed app or public release is produced by this commit.

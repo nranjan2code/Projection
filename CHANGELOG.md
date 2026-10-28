@@ -424,3 +424,10 @@ From a Vakyartha run on the 4B model ("compare three hotels in Kyoto"): four ren
 - **Bench:** 30 scenarios, rubrics, Wilson intervals, cassettes and the replay gate.
 - **Projectors:** web, text, Telegram (rich messages, conversational forms, saved chats), Slack (Block Kit, modals), Discord (Components V2, paged modals).
 - **MCP server** (`@vak/mcp`), the capability policy and calibration, the playground.
+
+## Unreleased: analytical surface geometry and OHLC
+
+- `chart.kind: candlestick` renders actual open/high/low/close intervals using four equal-length series in that order; record mappings can name the four fields. Canonical validation rejects impossible OHLC intervals and mismatched labels/lengths. Rising/falling bodies use semantic theme colours, with exact values in SVG titles and accessible labels.
+- Line and candlestick axes fit observed values by default and disclose when zero can be excluded; `yScale: zero` explicitly retains it. Bars, stacked bars and area keep their zero reference. Flat/signed datasets retain finite ranges. This is a visual-scale change: clients needing the old line baseline should set `yScale: zero`.
+- `chart.orientation: horizontal` for bars keeps every long category in a readable row with exact values; `colorBy: sign` uses semantic positive/negative colours without removing signed numbers. `height: sm|md|lg` provides semantic 180/260/360px plot heights, with horizontal rankings expanding for readable rows. Chart `title`, `xLabel` and `yLabel` are visible/accessible context.
+- Common `density: compact|comfortable` controls inherited spacing and padding without shrinking the user's text or removing labels. Existing surfaces retain their density unless they opt in. No external dependencies, data calculations, web grants or app-specific renderer are added.
