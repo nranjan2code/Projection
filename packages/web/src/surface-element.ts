@@ -146,7 +146,13 @@ export class VakSurfaceElement extends HTMLElement {
     queueMicrotask(() => { if (!this.isConnected) { for (const built of this.#cache.values()) built.release?.(); this.#cache.clear(); } });
   }
 
-  connectedCallback(): void { this.refresh(); }
+  connectedCallback(): void {
+    if (!this.hasAttribute("theme")) {
+      const mode = this.closest("[data-mode]")?.getAttribute("data-mode") ?? document.documentElement.dataset.mode;
+      if (mode === "light" || mode === "dark") this.setAttribute("theme", mode);
+    }
+    this.refresh();
+  }
 
   /** The action owner finished, rejected or queued the submission without a surface update. */
   releaseAction(): void {
@@ -658,12 +664,26 @@ export class VakSurfaceElement extends HTMLElement {
     if (totals !== undefined) rows = rows.slice(0, -1);
     const mode = tableInteraction(p, rows.length);
     const view = this.#view(key);
-    const align = (c: Record<string, unknown>) => (c.align === "end" ? "a-end" : c.align === "center" ? "a-center" : undefined);
+    const isNumCol = (c: Record<string, unknown>, colIdx: number) => {
+      let count = 0;
+      for (const r of rows) {
+        const v = Array.isArray(r) ? r[colIdx] : r && typeof r === "object" ? (r as Record<string, unknown>)[str(c.key)] : r;
+        if (v === null || v === undefined || v === "") continue;
+        const s = String(v).trim();
+        const num = Number(s.replace(/^[^\d+-]+|[^\d.]+$/g, "").replace(/,/g, ""));
+        if (!Number.isFinite(num) || !/\d/.test(s)) return false;
+        count++;
+      }
+      return count > 0;
+    };
+    const align = (c: Record<string, unknown>, colIdx: number) => (
+      c.align === "end" ? "a-end" : c.align === "center" ? "a-center" : c.align === "start" ? undefined : isNumCol(c, colIdx) ? "a-end" : undefined
+    );
     const rowEl = (row: unknown, cls?: string) => {
       const tr = h("tr", cls);
       cols.forEach((c, i) => {
         const v = Array.isArray(row) ? row[i] : row && typeof row === "object" ? (row as Record<string, unknown>)[str(c.key)] : row;
-        const td = h("td", align(c), str(v));
+        const td = h("td", align(c, i), str(v));
         td.dataset.label = str(c.label ?? c.key);
         tr.append(td);
       });
@@ -707,8 +727,8 @@ export class VakSurfaceElement extends HTMLElement {
         pager.replaceChildren(prev, h("span", "page-of", `${paged.page + 1} of ${paged.pages} · ${shown.length} rows`), next);
       }
     };
-    for (const c of cols) {
-      const th = h("th", align(c));
+    cols.forEach((c, i) => {
+      const th = h("th", align(c, i));
       th.scope = "col";
       th.dataset.key = str(c.key);
       if (mode.sortable) {
@@ -724,7 +744,7 @@ export class VakSurfaceElement extends HTMLElement {
         th.append(b);
       } else th.textContent = str(c.label ?? c.key);
       hr.append(th);
-    }
+    });
     thead.append(hr);
     table.append(thead, tbody);
     if (totals !== undefined) {
