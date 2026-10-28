@@ -121,6 +121,18 @@ test("ollama: NDJSON with whole tool calls", async () => {
   assert.equal((evs.at(-1) as { stop: string }).stop, "tool_use");
 });
 
+test("ollama: strips <think>...</think> traces and captures thinking", async () => {
+  routes["/l/api/chat"] = [
+    { message: { content: "<think>internal reasoning</think>Public response", thinking: "internal reasoning" } },
+    { done: true, done_reason: "stop", prompt_eval_count: 1, eval_count: 2 },
+  ].map((e) => JSON.stringify(e) + "\n").join("");
+  const evs = await collect(ollama({ host: `${base}/l` }));
+  const texts = evs.filter((e) => e.type === "text").map((e) => (e as { delta: string }).delta);
+  assert.equal(texts.join(""), "Public response");
+  const done = evs.at(-1) as Extract<ProviderEvent, { type: "done" }>;
+  assert.deepEqual(done.native, { thinking: "internal reasoning" });
+});
+
 test("gemini: function calls with signatures replayed verbatim", async () => {
   routes["/g/models/m:streamGenerateContent"] = sse([
     { candidates: [{ content: { role: "model", parts: [{ text: "Ok" }] } }] },

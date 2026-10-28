@@ -118,13 +118,8 @@ function declaredPlan(profile: ModelProfile, canTools: boolean): ProjectionPlan 
   const ctxWindow = profile.facts.contextWindow;
   let tier: ProjectionConfig["tier"] = "extended";
   let examples = false;
-  let maxSteps = 4;
-  if (params !== undefined && params < SMALL_MODEL) {
-    tier = "core";
-    examples = true;
-    maxSteps = 2;
-    reasons.push(`${(params / 1e9).toFixed(1)}B parameters: core components, worked examples, 2 steps`);
-  } else if (params !== undefined && params < MEDIUM_MODEL) {
+  const maxSteps = 4;
+  if (params !== undefined && params < MEDIUM_MODEL) {
     tier = "core";
     examples = true;
     reasons.push(`${(params / 1e9).toFixed(1)}B parameters: core components, worked examples`);

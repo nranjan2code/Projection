@@ -112,6 +112,32 @@ export function renderChart(spec: ChartSpec, doc: Document = document, width = 6
     const note = doc.createElement("div"); note.className = "scale-note";
     note.textContent = "Y-axis fits observed values; baseline may exclude zero."; wrap.append(note);
   }
+  if (["line", "area", "bar", "candlestick"].includes(spec.kind)) {
+    const inspector = doc.createElement("output"); inspector.className = "chart-inspector";
+    inspector.setAttribute("aria-live", "polite");
+    let selected = 0;
+    const inspect = (index: number) => {
+      selected = Math.max(0, Math.min(spec.labels.length - 1, index));
+      const names = spec.kind === "candlestick" ? ["Open", "High", "Low", "Close"] : spec.series.map((s,i) => s.name ?? `Series ${i+1}`);
+      inspector.textContent = `${spec.labels[selected]} · ${spec.series.map((s,i) => `${names[i]}: ${s.values[selected] ?? "Unavailable"}`).join(" · ")}`;
+      wrap.querySelectorAll("[data-observation]").forEach(mark => mark.setAttribute("data-selected", String(Number(mark.getAttribute("data-observation")) === selected)));
+    };
+    wrap.setAttribute("tabindex", "0");
+    wrap.setAttribute("aria-label", `${spec.title ?? "Chart"}. Use left and right arrows to inspect observations.`);
+    wrap.addEventListener("keydown", event => {
+      const next = event.key === "ArrowRight" ? selected + 1 : event.key === "ArrowLeft" ? selected - 1 : event.key === "Home" ? 0 : event.key === "End" ? spec.labels.length - 1 : undefined;
+      if (next === undefined) return; event.preventDefault(); inspect(next);
+    });
+    wrap.addEventListener("pointermove", event => {
+      const mark = (event.target as Element).closest?.("[data-observation]");
+      if (mark) inspect(Number(mark.getAttribute("data-observation")));
+    });
+    wrap.addEventListener("click", event => {
+      const mark = (event.target as Element).closest?.("[data-observation]");
+      if (mark) inspect(Number(mark.getAttribute("data-observation")));
+    });
+    wrap.append(inspector); inspect(spec.labels.length - 1);
+  }
   return wrap;
 }
 
@@ -154,7 +180,7 @@ function horizontalBars(spec: ChartSpec, doc: Document, width: number): SVGSVGEl
     spec.series.forEach((series,si)=>{
       const value=series.values[i];if(value===undefined)return;
       const h=Math.min(16,band*0.7/spec.series.length), top=cy-band*0.35+si*h;
-      svg.append(titled(doc,svgEl(doc,"rect",{x:Math.min(x(0),x(value)),y:top,width:Math.max(0.5,Math.abs(x(value)-x(0))),height:h-1,rx:2,fill:valueColor(spec,value,si)}),`${label} · ${series.name??"Value"}: ${value}`));
+      svg.append(titled(doc,svgEl(doc,"rect",{x:Math.min(x(0),x(value)),y:top,width:Math.max(0.5,Math.abs(x(value)-x(0))),height:h-1,rx:2,fill:valueColor(spec,value,si),"data-observation":i}),`${label} · ${series.name??"Value"}: ${value}`));
       const val=svgEl(doc,"text",{x:W-2,y:top+h-3,"text-anchor":"end",class:"axis"});val.textContent=(spec.colorBy==="sign" && value>0?"+":"")+fmt(value);svg.append(val);
     });
   });
@@ -202,7 +228,7 @@ function cartesian(spec: ChartSpec, doc: Document, width: number): SVGSVGElement
       if (![open,high,low,close].every(Number.isFinite) || low!>Math.min(open!,close!) || high!<Math.max(open!,close!) || low!>high!) return;
       const x=L+band*(i+0.5), bw=Math.max(1,Math.min(18,band*0.65));
       const tone=close!>=open!?"var(--vak-success, var(--_vak-success))":"var(--vak-danger, var(--_vak-danger))";
-      const mark=svgEl(doc,"g",{"aria-label":`${label}: open ${open}, high ${high}, low ${low}, close ${close}`});
+      const mark=svgEl(doc,"g",{"data-observation":i,"aria-label":`${label}: open ${open}, high ${high}, low ${low}, close ${close}`});
       mark.append(svgEl(doc,"line",{x1:x,x2:x,y1:y(high!),y2:y(low!),stroke:tone,"stroke-width":1.25}));
       mark.append(svgEl(doc,"rect",{x:x-bw/2,y:y(Math.max(open!,close!)),width:bw,height:Math.max(1,Math.abs(y(open!)-y(close!))),fill:tone,stroke:tone}));
       svg.append(titled(doc,mark,`${label}: Open ${open} · High ${high} · Low ${low} · Close ${close}`));
@@ -230,7 +256,7 @@ function cartesian(spec: ChartSpec, doc: Document, width: number): SVGSVGElement
         const x = L + band * i + (band - inner) / 2 + bw * si;
         const y0 = y(Math.max(v, 0));
         const h = Math.abs(y(v) - y(0));
-        svg.append(titled(doc, svgEl(doc, "rect", { x: x + 1, y: y0, width: Math.max(bw - 2, 1), height: Math.max(h, 0.5), rx: 3, fill: valueColor(spec, v, si) }), `${s.name ? `${s.name} · ` : ""}${spec.labels[i]}: ${v}`));
+        svg.append(titled(doc, svgEl(doc, "rect", { x: x + 1, y: y0, width: Math.max(bw - 2, 1), height: Math.max(h, 0.5), rx: 3, fill: valueColor(spec, v, si), "data-observation": i }), `${s.name ? `${s.name} · ` : ""}${spec.labels[i]}: ${v}`));
       });
     });
   } else {
@@ -242,7 +268,7 @@ function cartesian(spec: ChartSpec, doc: Document, width: number): SVGSVGElement
         svg.append(svgEl(doc, "path", { d: `${d}L${pts[pts.length - 1]![0]},${base}L${pts[0]![0]},${base}Z`, fill: color(si), "fill-opacity": 0.18 }));
       }
       svg.append(svgEl(doc, "path", { d, fill: "none", stroke: color(si), "stroke-width": 2.5, "stroke-linejoin": "round", "vector-effect": "non-scaling-stroke" }));
-      pts.forEach(([x, yy], i) => svg.append(titled(doc, svgEl(doc, "circle", { cx: x, cy: yy, r: 3.5, fill: color(si) }), `${s.name ? `${s.name} · ` : ""}${spec.labels[i]}: ${s.values[i]}`)));
+      pts.forEach(([x, yy], i) => svg.append(titled(doc, svgEl(doc, "circle", { cx: x, cy: yy, r: 3.5, fill: color(si), "data-observation": i }), `${s.name ? `${s.name} · ` : ""}${spec.labels[i]}: ${s.values[i]}`)));
     });
   }
   return svg;

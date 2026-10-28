@@ -47,3 +47,12 @@ Finish the app pin/caller cleanup, verify ordinary task input/continuation/expor
 The market reference app exposed general geometry gaps: zero-baseline price trends concealed variation, long signed rankings lost category labels, and all surfaces shared loose spacing. The public catalog/projector now supports validated OHLC candlesticks, fitted/disclosed line/candle scales, horizontal signed bars with exact values, semantic plot heights/axis context and inherited compact density. Implemented in the framework owner, with no app-specific branches, dependency or source calculation.
 
 403 framework tests/replay and typecheck pass at this checkpoint; WebKit/source-backed app evidence is recorded by Vakyartha after adopting the pin. No new primary-model outcome or reliability pass is implied. Existing provider/source/value/interaction failures remain open. No installed app or public release is produced by this commit.
+
+## Edge model thinking and step policy — 2026-10-28
+
+Investigation into edge model execution (LFM3 1.7B) identified that setting `think: false` by default forced models with native reasoning traces to emit their internal monologue into the user-facing text stream. Furthermore, the capability policy clamped models under 2B parameters to 2 steps, causing premature step-limit exits.
+
+Changes made in Projection:
+1. Removed the 2-step chokehold in `policy.ts`: models under 2B now receive the standard 4-step budget with core-tier worked examples.
+2. `ollama.ts` automatically enables `think: true` for models reporting thinking support, routes thinking to `native`, and adds a streaming `ThinkFilter` to strip raw `<think>...</think>` tags from content. Non-thinking models safely fall back if Ollama returns 400.
+3. 404 framework tests/replay and typecheck pass with zero errors. No installed app or public release is produced.

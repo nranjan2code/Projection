@@ -21,6 +21,7 @@ class El {
   append(...nodes: (El | Txt | Frag | string)[]) {
     for (const n of nodes) this.kids.push(typeof n === "string" ? new Txt(n) : n);
   }
+  addEventListener(_name: string, _handler: unknown): void {}
   setAttribute(name: string, value: string) {
     this.attrs[name] = value;
   }

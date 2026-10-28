@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased: edge model thinking and step policy
+
+- Capability policy removes the artificial 2-step limit on models under 2B parameters; edge models receive standard 4-step allocation with core tier components.
+- Ollama provider activates native thinking for models declaring thinking capability (`describeModel`), isolating reasoning into native thinking context without leaking into the user content stream.
+- Graceful HTTP 400 fallback automatically retries without `think` when an unflagged Ollama model rejects thinking.
+- Streaming `ThinkFilter` sanitizes inline `<think>...</think>` traces from raw content deltas.
+
 ## Unreleased: private streaming transports
 
 - `createFetchHandler` adapts the canonical host and app routes to Web Request/Response streams without opening a socket. It preserves admission checks, binary responses, streaming headers, producer backpressure, cancellation and close cleanup; slow-consumer buffering is bounded at 8 MiB.

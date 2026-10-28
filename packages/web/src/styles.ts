@@ -182,6 +182,9 @@ pre code { background: none; padding: 0; }
 .density-compact :is(td, th) { padding-block: 7px; }
 .density-compact .chart { padding: 10px; }
 .density-compact .form { gap: 10px; }
+.chart:focus-visible { outline: 2px solid var(--vak-accent, var(--_vak-accent)); outline-offset: 2px; }
+.chart-inspector { display: block; min-height: 2.4em; margin-top: 8px; color: var(--vak-fg, var(--_vak-fg)); font-size: 0.82em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.chart [data-observation][data-selected="true"] { filter: brightness(1.12); stroke: var(--vak-fg, var(--_vak-fg)); stroke-width: 1; }
 .chart-heading { display: block; margin: 0 0 8px; font-size: 0.9em; font-weight: var(--vak-weight-heading, var(--_vak-weight-heading)); }
 .chart .axis-label { fill: var(--vak-muted, var(--_vak-muted)); font: 11px var(--vak-font, var(--_vak-font)); }
 .chart .zero-line { stroke: var(--vak-muted, var(--_vak-muted)); stroke-width: 1; }

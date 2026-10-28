@@ -12,6 +12,65 @@ export interface OllamaOptions {
   think?: boolean;
 }
 
+const thinkingCache = new Map<string, boolean>();
+
+/** Strips inline <think>...</think> reasoning traces from raw content streams. */
+export class ThinkFilter {
+  private inThink = false;
+  private buffer = "";
+
+  filter(delta: string): string {
+    let out = "";
+    let text = this.buffer + delta;
+    this.buffer = "";
+
+    while (text.length > 0) {
+      if (!this.inThink) {
+        const startIdx = text.indexOf("<think>");
+        if (startIdx !== -1) {
+          out += text.slice(0, startIdx);
+          text = text.slice(startIdx + 7);
+          this.inThink = true;
+        } else {
+          const partial = text.match(/<t?(h?(i?(n?k?)?)?)?$/);
+          if (partial && partial[0].length > 0) {
+            this.buffer = partial[0];
+            out += text.slice(0, partial.index);
+            break;
+          } else {
+            out += text;
+            break;
+          }
+        }
+      } else {
+        const endIdx = text.indexOf("</think>");
+        if (endIdx !== -1) {
+          text = text.slice(endIdx + 8);
+          this.inThink = false;
+          if (text.startsWith("\n")) text = text.slice(1);
+        } else {
+          const partial = text.match(/<\/t?(h?(i?(n?k?)?)?)?$/);
+          if (partial && partial[0].length > 0) {
+            this.buffer = partial[0];
+          }
+          break;
+        }
+      }
+    }
+    return out;
+  }
+
+  flush(): string {
+    if (!this.inThink && this.buffer) {
+      const res = this.buffer;
+      this.buffer = "";
+      return res;
+    }
+    this.buffer = "";
+    return "";
+  }
+}
+
 export function ollamaMessages(system: string | undefined, messages: Message[]): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
   if (system) out.push({ role: "system", content: system });
@@ -55,10 +114,12 @@ export function ollama(opts: OllamaOptions = {}): Provider {
       const tags = (await getJson("ollama", `${host}/api/tags`, {}, signal)) as { models?: { name: string; digest?: string }[] };
       const caps = new Set(show.capabilities ?? []);
       const ctxKey = Object.keys(show.model_info ?? {}).find((k) => k.endsWith(".context_length"));
+      const thinking = caps.has("thinking");
+      thinkingCache.set(model, thinking);
       return {
         // Ollama lists every capability a model has, so absence means no.
         tools: caps.has("tools"),
-        thinking: caps.has("thinking"),
+        thinking,
         vision: caps.has("vision"),
         contextWindow: ctxKey ? Number(show.model_info![ctxKey]) : undefined,
         parameters: parseParameterSize(show.details?.parameter_size),
@@ -70,10 +131,15 @@ export function ollama(opts: OllamaOptions = {}): Provider {
     async *stream(req: ChatRequest): AsyncGenerator<ProviderEvent> {
       const { options, ...extra } = req.extra ?? {};
       if (req.responseSchema && req.tools?.length) throw new ProviderError("ollama", "responseSchema and tools are exclusive");
+      const think = typeof extra.think === "boolean"
+        ? extra.think
+        : typeof opts.think === "boolean"
+          ? opts.think
+          : thinkingCache.get(req.model) ?? false;
       const body: Record<string, unknown> = {
         model: req.model,
         stream: true,
-        think: opts.think ?? false,
+        think,
         messages: ollamaMessages(req.system, req.messages),
         ...(req.tools?.length
           ? { tools: req.tools.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.inputSchema } })) }
@@ -89,28 +155,40 @@ export function ollama(opts: OllamaOptions = {}): Provider {
       try {
         res = await postJson("ollama", `${host}/api/chat`, {}, body, req.signal, 0);
       } catch (err) {
-        // The local comparison transcript hit Ollama's generated-tool XML parser.
-        // Classify only that rejection; the runner owns retries and their budgets.
-        if (req.tools?.length && err instanceof ProviderError && err.status === 500) {
+        if (body.think && err instanceof ProviderError && err.status === 400 && typeof err.message === "string" && err.message.includes("does not support thinking")) {
+          thinkingCache.set(req.model, false);
+          body.think = false;
+          res = await postJson("ollama", `${host}/api/chat`, {}, body, req.signal, 0);
+        } else if (req.tools?.length && err instanceof ProviderError && err.status === 500) {
           const prefix = "ollama: HTTP 500: ";
           let detail: unknown;
           try { detail = JSON.parse(err.message.slice(prefix.length)).error; } catch {}
           if (typeof detail === "string" && /^XML syntax error on line \d+:/.test(detail)) {
             throw new ToolGenerationError("ollama", `HTTP 500: ${JSON.stringify({ error: detail })}`, 500);
           }
+          throw err;
+        } else {
+          throw err;
         }
-        throw err;
       }
 
       let stop: StopReason = "end";
       let usage: Usage | undefined;
       let sawTools = false;
       let n = 0;
+      let nativeThinking = "";
+      const filter = new ThinkFilter();
       for await (const raw of readNdjson(res.body!)) {
         const chunk = raw as Record<string, any>;
         if (chunk.error) throw new Error(`ollama: ${chunk.error}`);
         const m = chunk.message ?? {};
-        if (typeof m.content === "string" && m.content) yield { type: "text", delta: m.content };
+        if (typeof m.thinking === "string" && m.thinking) {
+          nativeThinking += m.thinking;
+        }
+        if (typeof m.content === "string" && m.content) {
+          const delta = filter.filter(m.content);
+          if (delta) yield { type: "text", delta };
+        }
         for (const tc of m.tool_calls ?? []) {
           const fn = tc.function ?? {};
           const id = tc.id ?? `ollama_${Date.now().toString(36)}_${n++}`;
@@ -121,11 +199,13 @@ export function ollama(opts: OllamaOptions = {}): Provider {
           yield { type: "tool_end", id };
         }
         if (chunk.done) {
+          const tail = filter.flush();
+          if (tail) yield { type: "text", delta: tail };
           stop = chunk.done_reason === "length" ? "max_tokens" : sawTools ? "tool_use" : "end";
           usage = { input: chunk.prompt_eval_count, output: chunk.eval_count };
         }
       }
-      yield { type: "done", stop, usage };
+      yield { type: "done", stop, usage, ...(nativeThinking ? { native: { thinking: nativeThinking } } : {}) };
     },
   };
 }
