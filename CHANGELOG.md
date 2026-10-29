@@ -2,7 +2,7 @@
 
 ## Scoped local procedure context — 2026-10-29
 
-Trusted `kind: "context"` tools can declare `instructions: true` to load reviewed procedures. The engine supplies their complete accepted text once in current-run system context, keeps tool history as acknowledgements and omits old procedure payloads from later wire history without deleting canonical messages. References remain data; external output remains untrusted and clipped. Local context has a separate 65,536-character admission bound and retains answer-step accounting. Oversized results fail explicitly. Catalog examples now use numeric data and explicit unit labels rather than formatted numeric strings. Existing schemas, policies, validation and multiple-surface support are unchanged.
+Trusted `kind: "context"` tools can declare `instructions: true` to load reviewed procedures. The engine supplies their complete accepted text once in current-run system context, keeps tool history as acknowledgements and omits old procedure payloads from later wire history without deleting canonical messages. References remain data; external output remains untrusted and clipped. Local context has a separate 65,536-character admission bound and retains answer-step accounting. Oversized results fail explicitly. Catalog examples now use numeric data and explicit unit labels rather than formatted numeric strings. ChatRequest also exposes callerInstructions to local wrappers, separate from the generated system protocol; provider adapters do not send it as an extra wire field. Existing schemas, policies, validation and multiple-surface support are unchanged.
 
 ## Local collection paging — 2026-10-29
 

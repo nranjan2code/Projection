@@ -37,6 +37,8 @@ export interface ToolSpec {
 export interface ChatRequest {
   model: string;
   system?: string;
+  /** Caller-supplied run instructions before generated protocol; local wrappers may use this bounded context. */
+  callerInstructions?: string;
   messages: Message[];
   tools?: ToolSpec[];
   maxTokens?: number;

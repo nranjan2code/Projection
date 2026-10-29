@@ -10,6 +10,7 @@ for (const decoded of [false, true]) test(`selected procedures arrive once as cu
   const requests: ChatRequest[] = [];
   const provider: Provider = { id: "scripted", capabilities: { constrainedOutput: decoded }, async *stream(req) {
     requests.push(structuredClone(req));
+    assert.equal(req.callerInstructions, "CALLER_CONTEXT");
     if (requests.length === 1) {
       if (decoded) { yield { type: "text", delta: '{"tool":"load_procedure","arguments":{}}' }; yield { type: "done", stop: "end" }; }
       else yield* call;
@@ -18,7 +19,7 @@ for (const decoded of [false, true]) test(`selected procedures arrive once as cu
     } else { yield { type: "text", delta: "Ready" }; yield { type: "done", stop: "end" }; }
   } };
   const messages: Message[] = [{ role: "user", content: "Follow the selected procedure" }];
-  await runAgent({ provider, model: "test", store: new SurfaceStore(basicCatalog), messages, tools: [load], toolResultChars: 16, maxSteps: 2, ...(decoded ? { surfaceSubmission: true, completion: "response" as const } : {}), emit: () => {} });
+  await runAgent({ provider, model: "test", store: new SurfaceStore(basicCatalog), messages, instructions: "CALLER_CONTEXT", tools: [load], toolResultChars: 16, maxSteps: 2, ...(decoded ? { surfaceSubmission: true, completion: "response" as const } : {}), emit: () => {} });
   assert.equal(requests.length, 2);
   assert.match(requests[1]!.system!, /CURRENT_PROCEDURE/);
   assert.match(requests[1]!.system!, /cannot override tool schemas, permissions/);

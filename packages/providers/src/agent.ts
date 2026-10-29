@@ -388,6 +388,7 @@ async function constrainedLoop(opts: RunOptions, run: ResolvedRun, view: () => M
 
     for await (const ev of opts.provider.stream({
       model: opts.model,
+      callerInstructions: opts.instructions,
       system,
       messages: view(),
       responseSchema,
@@ -486,7 +487,7 @@ async function toolsLoop(opts: RunOptions, run: ResolvedRun, view: () => Message
 
     try {
       const contextAndTools = [...userTools.values()].filter(tool => !closing || tool.kind === "context").map(tool => tool.spec);
-      const request: ChatRequest = { model: opts.model, system: (opts.surfaceSubmission ? buildSystem(opts, { ...run, authoring }) : system) + procedureInstructions(opts.messages, initial), messages: view(), tools: opts.surfaceSubmission ? [submissionTool(catalog, store.list().map(surface => surface.id), { dataSchema: opts.dataSchema, surfaceCount: opts.surfaceCount }), ...contextAndTools] : [...vakSpecs, ...contextAndTools], maxTokens: run.maxTokens, effort: opts.effort, extra: opts.extra, signal: opts.signal };
+      const request: ChatRequest = { model: opts.model, callerInstructions: opts.instructions, system: (opts.surfaceSubmission ? buildSystem(opts, { ...run, authoring }) : system) + procedureInstructions(opts.messages, initial), messages: view(), tools: opts.surfaceSubmission ? [submissionTool(catalog, store.list().map(surface => surface.id), { dataSchema: opts.dataSchema, surfaceCount: opts.surfaceCount }), ...contextAndTools] : [...vakSpecs, ...contextAndTools], maxTokens: run.maxTokens, effort: opts.effort, extra: opts.extra, signal: opts.signal };
       offered = new Set(request.tools?.map((tool) => tool.name));
       const events = opts.surfaceSubmission && opts.provider.capabilities?.constrainedOutput
         ? structuredCall(opts.provider, request, `${runId}_${steps}_${rounds}`) : opts.provider.stream(request);
