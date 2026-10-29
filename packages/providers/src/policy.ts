@@ -85,7 +85,7 @@ function chooseConfig(profile: ModelProfile, ctx: { userTools?: boolean }): Proj
           (ranked.length > 1 ? ` (best of ${ranked.length} configurations)` : ""),
       );
       const weak = rate(best, "complete") < 0.5;
-      return { ...best.config, maxSteps: weak ? 2 : 4, maxTokens: 6000, reasons };
+      return { ...best.config, maxSteps: weak ? 6 : 10, maxTokens: 6000, reasons };
     }
     reasons.push("calibration has no usable configuration for this run; using declared facts");
   } else if (profile.calibration) {
@@ -118,10 +118,11 @@ function declaredPlan(profile: ModelProfile, canTools: boolean): ProjectionPlan 
   const ctxWindow = profile.facts.contextWindow;
   let tier: ProjectionConfig["tier"] = "extended";
   let examples = false;
-  const maxSteps = 4;
+  let maxSteps = 12;
   if (params !== undefined && params < MEDIUM_MODEL) {
     tier = "core";
     examples = true;
+    maxSteps = 8;
     reasons.push(`${(params / 1e9).toFixed(1)}B parameters: core components, worked examples`);
   } else {
     reasons.push(params === undefined ? "size not published: full catalog" : `${(params / 1e9).toFixed(0)}B parameters: full catalog`);

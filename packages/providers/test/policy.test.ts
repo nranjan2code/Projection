@@ -24,7 +24,7 @@ const calibration = (fingerprint: string): Calibration => ({
 
 test("declared only: small models get the core tier and examples", () => {
   const plan = choosePlan(local(0.85e9));
-  assert.deepEqual([plan.generation, plan.tier, plan.examples, plan.maxSteps], ["tools", "core", true, 4]);
+  assert.deepEqual([plan.generation, plan.tier, plan.examples, plan.maxSteps], ["tools", "core", true, 8]);
   assert.match(plan.reasons.join(" "), /not calibrated/);
 });
 

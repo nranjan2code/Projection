@@ -9,6 +9,8 @@ export interface TurnRequest {
   model: string;
   message?: string;
   action?: { surface: string; source: string; data: Record<string, unknown> };
+  maxSteps?: number;
+  toolRounds?: number;
   [key: string]: unknown;
 }
 

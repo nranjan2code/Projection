@@ -141,6 +141,8 @@ export interface HostTurn {
   generation?: string;
   effort?: string;
   history?: number;
+  maxSteps?: number;
+  toolRounds?: number;
 }
 
 export interface HostRunOptions {
@@ -544,8 +546,8 @@ export function createHost(opts: HostOptions): VakHost {
         completion: controls.completion,
         validateCompletion: controls.validateCompletion,
         validateEdits: controls.validateEdits,
-        maxSteps: controls.maxSteps,
-        toolRounds: controls.toolRounds,
+        maxSteps: controls.maxSteps ?? (typeof body.maxSteps === "number" && body.maxSteps > 0 ? body.maxSteps : undefined),
+        toolRounds: controls.toolRounds ?? (typeof body.toolRounds === "number" && body.toolRounds > 0 ? body.toolRounds : undefined),
         maxTokens: controls.maxTokens,
         surfaceSubmission: controls.surfaceSubmission,
         dataSchema: controls.dataSchema,

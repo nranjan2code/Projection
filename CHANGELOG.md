@@ -1,5 +1,11 @@
 # Changelog
 
+## Configurable agent execution limits and modern step policy — 2026-10-29
+
+- `HostTurn` and `/api/chat` now accept optional `maxSteps` and `toolRounds` in the turn request body, allowing callers and user settings to configure step limits and tool budgets per provider or globally.
+- Standard step allocation across capability plans is updated for modern models: standard/hosted models receive 12 steps (was 4), small/edge models (< 15B) receive 8 steps (was 4), and weak calibrated configurations receive 6 steps (was 2).
+- Default integration tool budget (`TOOL_ROUNDS`) is increased to 12 rounds (was 6), preventing premature tool exhaustion during multi-query or multi-source research turns.
+
 ## Scoped local procedure context — 2026-10-29
 
 Trusted `kind: "context"` tools can declare `instructions: true` to load reviewed procedures. The engine supplies their complete accepted text once in current-run system context, keeps tool history as acknowledgements and omits old procedure payloads from later wire history without deleting canonical messages. References remain data; external output remains untrusted and clipped. Local context has a separate 65,536-character admission bound and retains answer-step accounting. Oversized results fail explicitly. Catalog examples now use numeric data and explicit unit labels rather than formatted numeric strings. ChatRequest also exposes callerInstructions to local wrappers, separate from the generated system protocol; provider adapters do not send it as an extra wire field. Existing schemas, policies, validation and multiple-surface support are unchanged.

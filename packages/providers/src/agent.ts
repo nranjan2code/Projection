@@ -133,7 +133,7 @@ interface ResolvedRun {
 }
 
 /** Default integration rounds per turn: a host policy, not a model capability. */
-export const TOOL_ROUNDS = 6;
+export const TOOL_ROUNDS = 12;
 
 /** How a run ended, and which budget (if any) ended it or forced its closing round. */
 export interface RunResult {
@@ -174,7 +174,7 @@ export function resolveRun(opts: RunOptions): ResolvedRun {
     generation,
     examples: opts.plan?.examples ?? false,
     authoring: generation === "tools" ? (opts.plan?.authoring ?? "flat") : "flat",
-    maxSteps: opts.maxSteps ?? opts.plan?.maxSteps ?? (generation === "constrained" ? 3 : 6),
+    maxSteps: opts.maxSteps ?? opts.plan?.maxSteps ?? (generation === "constrained" ? 6 : 10),
     toolRounds: opts.toolRounds ?? TOOL_ROUNDS,
     toolResultChars: opts.toolResultChars ?? opts.plan?.toolResultChars,
     maxTokens: opts.maxTokens ?? opts.plan?.maxTokens,
