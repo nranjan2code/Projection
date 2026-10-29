@@ -18,9 +18,9 @@ test("projection: catalog examples become rich-message HTML with tokenized butto
   for (const ex of basicCatalog.examples) store.render(structuredClone(ex.render));
   const sales = projectTelegram(store.resolve("sales")!, tokens());
   assert.match(sales.html, /^<h2>Sales this month<\/h2>/);
-  assert.match(sales.html, /<table compact><tr><td>Revenue<\/td><td align="right"><b>\$198k<\/b><\/td><td>\+8%<\/td><\/tr>/, "stats grouped into one table");
+  assert.match(sales.html, /<table compact><tr><td>Revenue \(\$k\)<\/td><td align="right"><b>198<\/b><\/td><td>\+8%<\/td><\/tr>/, "stats grouped into one table");
   assert.match(sales.html, /<tr><th><\/th><th>Revenue \(\$k\)<\/th><\/tr><tr><td>W1<\/td><td align="right">42<\/td><\/tr>/, "chart degraded to a data table");
-  assert.match(sales.html, /<table bordered striped compact><tr><th>Product<\/th><th>Sales<\/th><\/tr><tr><td>Desk lamp<\/td><td align="right">\$24k<\/td><\/tr>/);
+  assert.match(sales.html, /<table bordered striped compact><tr><th>Product<\/th><th>Sales \(\$k\)<\/th><\/tr><tr><td>Desk lamp<\/td><td align="right">24<\/td><\/tr>/);
   const trips = projectTelegram(store.resolve("trips")!, tokens());
   assert.equal((trips.html.match(/<tg-button type="callback_data" data="t\d" style="primary">Choose<\/tg-button>/g) ?? []).length, 3);
   assert.deepEqual(trips.controls.map((c) => c.kind), ["button", "button", "button"]);

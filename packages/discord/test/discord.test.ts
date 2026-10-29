@@ -28,8 +28,8 @@ test("catalog examples become a Components V2 container: text, monospace tables,
   assert.deepEqual(sales.message.allowed_mentions, { parse: [] });
   const body = text(inner(sales));
   assert.match(body, /^## Sales this month/);
-  assert.match(body, /\*\*\$198k\*\* · Revenue · \+8%/);
-  assert.match(body, /```\nProduct\s+Sales\n─+\s+─+\nDesk lamp\s+\$24k/);
+  assert.match(body, /\*\*198\*\* · Revenue \\\(\$k\\\) · \+8%/);
+  assert.match(body, /```\nProduct\s+Sales \(\$k\)\n─+\s+─+\nDesk lamp\s+24/);
   const trips = projectDiscord(s.resolve("trips")!, tokens());
   const rows = inner(trips).filter((c) => c.type === C.ActionRow);
   assert.equal(rows.length, 3);

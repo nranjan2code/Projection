@@ -21,10 +21,10 @@ test("catalog examples become Block Kit: header, stat fields, native tables, but
   const sales = projectSlack(s.resolve("sales")!, tokens());
   assert.deepEqual(sales.blocks[0], { type: "header", text: { type: "plain_text", text: "Sales this month", emoji: true } });
   const fields = sales.blocks.find((b) => b.type === "section" && Array.isArray(b.fields))!;
-  assert.match(JSON.stringify(fields), /Revenue\\n\*\$198k\*  \+8%/);
+  assert.match(JSON.stringify(fields), /Revenue \(\$k\)\\n\*198\*  \+8%/);
   const tables = sales.blocks.filter((b) => b.type === "table");
   assert.equal(tables.length, 2, "the chart's data and the product table");
-  assert.deepEqual((tables[1]!.rows as { text: string }[][])[0]!.map((c) => c.text), ["Product", "Sales"]);
+  assert.deepEqual((tables[1]!.rows as { text: string }[][])[0]!.map((c) => c.text), ["Product", "Sales ($k)"]);
   const trips = projectSlack(s.resolve("trips")!, tokens());
   const actions = trips.blocks.filter((b) => b.type === "actions");
   assert.equal(actions.length, 3);

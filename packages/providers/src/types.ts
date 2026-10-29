@@ -18,6 +18,8 @@ export interface Message {
   toolCallId?: string;
   toolName?: string;
   isError?: boolean;
+  /** Host-marked procedure result; promoted to system context only in its loading run. */
+  instructions?: boolean;
   /**
    * Provider-native assistant content to replay verbatim on the next request
    * (Anthropic thinking blocks, Gemini thought signatures). Ignored by other

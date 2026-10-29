@@ -319,9 +319,9 @@ test("text projector reads a surface the way a user would", async () => {
   for (const ex of basicCatalog.examples) store.render(structuredClone(ex.render));
   const sales = projectText(store.resolve("sales")!);
   assert.match(sales, /^# Sales this month/);
-  assert.match(sales, /Revenue: \$198k \(\+8%\)/);
+  assert.match(sales, /Revenue \(\$k\): 198 \(\+8%\)/);
   assert.match(sales, /\[line chart\] W1, W2, W3, W4\n\s+Revenue \(\$k\): 42, 51, 47, 58/);
-  assert.match(sales, /Desk lamp \| \$24k/);
+  assert.match(sales, /Desk lamp \| 24/);
   const beta = projectText(store.resolve("beta")!);
   assert.match(beta, /\[Input \(email\)\] Email\*/);
   assert.match(beta, /\[Select\] Role: Developer \/ Designer \/ Other/);

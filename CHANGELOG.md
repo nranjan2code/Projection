@@ -1,5 +1,9 @@
 # Changelog
 
+## Scoped local procedure context — 2026-10-29
+
+Trusted `kind: "context"` tools can declare `instructions: true` to load reviewed procedures. The engine supplies their complete accepted text once in current-run system context, keeps tool history as acknowledgements and omits old procedure payloads from later wire history without deleting canonical messages. References remain data; external output remains untrusted and clipped. Local context has a separate 65,536-character admission bound and retains answer-step accounting. Oversized results fail explicitly. Catalog examples now use numeric data and explicit unit labels rather than formatted numeric strings. Existing schemas, policies, validation and multiple-surface support are unchanged.
+
 ## Local collection paging — 2026-10-29
 
 Web card grids and lists now page long collections locally (12 items by default beyond 12), with count, previous/next controls, filter-to-first-page behavior and retained local state. An explicit pageSize controls the count; 0 shows all. Tables retain their existing default threshold/size and share the accessible paging implementation. Canonical nodes/data remain complete, local browsing never emits an action, and other projections keep their full semantic source. This adds pageSize to grid/list public catalog props; no domain compiler or external request path.

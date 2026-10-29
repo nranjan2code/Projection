@@ -1,5 +1,9 @@
 # Projection handover — 2026-10-27
 
+## Procedure context — 2026-10-29
+
+Added explicit host-owned instruction-loader metadata, current-run system delivery, historical payload omission and finite full-context admission. Five focused regressions cover native/decoded delivery, old unmarked loader history, complete reference data and oversized refusal. Canonical history, permissions, external clipping and counted steps remain. The primary local free-form contract passes 3/3 with original numeric data and two independent surfaces; receipt `.vak/contracts/primary-provider-2026-10-29T04-54-25.386Z.json`. Each case repaired a rejected root ID within the unchanged two requests. Earlier provider/source/interaction failures remain historical/open at their scopes. 410 framework tests/replay, typecheck and package generation pass. The first full run retained four expected example-projection failures after changing the sample to raw numeric values and unit labels; the matching example assertions were updated without changing real-output regressions.
+
 ## Shared content density — 2026-10-29
 
 A real installed root-card/text-child graph exposed a selector collision: `.card .body` also matched descendant text variant body, doubling padding and applying flex container rules to prose. Container selectors are now direct-child scoped. Standalone cards/alerts size to content with a responsive reading cap; semantic data panels, peers and explicit measures preserve available width. Metrics and forms no longer force a boxed card appearance. Vakyartha retains the original native failed geometry check and owns its independent wide/narrow content/collection UI checks. Source, values, interactivity and authority are unchanged; model authoring reliability remains open.

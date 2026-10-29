@@ -1218,13 +1218,13 @@ export const basicCatalog = defineCatalog(
           nodes: [
             { id: "root", type: "stack", children: ["kpis", "trend", "top"] },
             { id: "kpis", type: "grid", props: { columns: 3 }, children: ["k1", "k2", "k3"] },
-            { id: "k1", type: "stat", props: { label: "Revenue", value: "{/revenue}", delta: "+8%", trend: "up" } },
+            { id: "k1", type: "stat", props: { label: "Revenue ($k)", value: "{/revenue}", delta: "+8%", trend: "up" } },
             { id: "k2", type: "stat", props: { label: "Orders", value: "{/orders}", delta: "+3%", trend: "up" } },
-            { id: "k3", type: "stat", props: { label: "Refund rate", value: "{/refunds}", delta: "-0.2%", trend: "down" } },
+            { id: "k3", type: "stat", props: { label: "Refund rate (%)", value: "{/refunds}", delta: "-0.2%", trend: "down" } },
             { id: "trend", type: "chart", props: { kind: "line", labels: ["W1", "W2", "W3", "W4"], series: [{ name: "Revenue ($k)", values: [42, 51, 47, 58] }] } },
-            { id: "top", type: "table", props: { columns: [{ key: "name", label: "Product" }, { key: "sales", label: "Sales", align: "end" }], rows: "{/products}" } },
+            { id: "top", type: "table", props: { columns: [{ key: "name", label: "Product" }, { key: "sales", label: "Sales ($k)", align: "end" }], rows: { records: "{/products}", fields: ["name", "sales"] } } },
           ],
-          data: { revenue: "$198k", orders: "1,284", refunds: "0.9%", products: [{ name: "Desk lamp", sales: "$24k" }, { name: "Chair", sales: "$19k" }] },
+          data: { revenue: 198, orders: 1284, refunds: 0.9, products: [{ name: "Desk lamp", sales: 24 }, { name: "Chair", sales: 19 }] },
         },
       },
       {
