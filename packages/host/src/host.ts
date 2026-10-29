@@ -71,8 +71,8 @@ export interface HostOptions {
   /** Read on every request, so key changes apply without a restart. */
   providers: () => ProviderEntry[];
   profiles: ProfileCache;
-  /** System instructions for the agent; a function is re-read per turn (dates). */
-  instructions: string | (() => string);
+  /** System instructions for the agent; a function is re-read per turn (dates, session context). */
+  instructions: string | ((context?: { session?: string }) => string);
   catalog?: Catalog;
   /** Directory for per-session .jsonl transcripts of raw model output; none: not recorded. */
   transcripts?: string;
@@ -265,7 +265,7 @@ export function createHost(opts: HostOptions): VakHost {
   const log = opts.log ?? ((line: string) => console.log(line));
   const sessions = new Map<string, Session>();
   const detached = new Map<string, AbortController>();
-  const instructions = () => (typeof opts.instructions === "function" ? opts.instructions() : opts.instructions);
+  const instructions = (context?: { session?: string }) => (typeof opts.instructions === "function" ? opts.instructions(context) : opts.instructions);
   const provider = (id: unknown) => opts.providers().find((p) => p.id === id);
   const approvals = new Map<string, (d: "allow" | "allow-chat" | "deny") => void>();
 
@@ -542,7 +542,7 @@ export function createHost(opts: HostOptions): VakHost {
         store: s.store,
         messages: s.messages,
         emit,
-        instructions: controls.instructions ?? instructions(),
+        instructions: controls.instructions ?? instructions({ session: s.id }),
         completion: controls.completion,
         validateCompletion: controls.validateCompletion,
         validateEdits: controls.validateEdits,

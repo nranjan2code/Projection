@@ -457,3 +457,24 @@ test("only the newest ten versions of a surface keep their copy", () => {
   keepVersions(timeline);
   assert.deepEqual(timeline.map((t) => t.versions?.[0]?.version), [undefined, undefined, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
 });
+
+test("instructions function receives per-turn session context", async () => {
+  let seenSession: string | undefined;
+  const p: Provider = { ...scripted(), async *stream(req) {
+    if (req.callerInstructions?.includes("session:test-session-123")) {
+      yield { type: "text", delta: "Session matched." };
+    }
+    yield { type: "done", stop: "end" };
+  } };
+  const { host, server } = await serve({
+    instructions: (ctx) => {
+      seenSession = ctx?.session;
+      return `Instruction for session:${ctx?.session ?? "unknown"}`;
+    },
+  }, p);
+  try {
+    const res = await host.run({ session: "test-session-123", provider: "scripted", model: "m", message: "Hi" });
+    assert.equal(seenSession, "test-session-123");
+    assert.equal(res.stop, "end");
+  } finally { server.close(); }
+});
