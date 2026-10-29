@@ -1,5 +1,10 @@
 # Changelog
 
+## Content-sized cards and quiet form/metric structure — 2026-10-29
+
+Card container padding is scoped to its direct body wrapper; ordinary text with variant body no longer receives a second card layout/padding. Standalone reading cards and alerts use intrinsic width with a readable responsive maximum, while peer grids, data panels and explicit measures retain their track/authoring intent. Empty card child hosts reserve no gap. Metrics and forms use open structure instead of mandatory nested boxes; controls retain their borders, labels, validation and density. Default form measure is readable and explicit small/large/full measures remain honored. No string-length/domain heuristics or special handling of particular status text.
+
+
 ## Intrinsic actions and consistent control density — 2026-10-29
 
 Ordinary web action buttons keep their content width in vertical stacks and grid tracks instead of inheriting panel stretch. Explicit common maxWidth measures and stack stretch alignment remain available. Compact density now reduces input, choice and action padding consistently while comfortable descendants restore their own spacing. Single-line inputs use the same control rhythm; long labels wrap, and coarse-pointer targets retain their 44px minimum. No domain-specific CSS or new component API.

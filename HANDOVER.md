@@ -1,5 +1,10 @@
 # Projection handover — 2026-10-27
 
+## Shared content density — 2026-10-29
+
+A real installed root-card/text-child graph exposed a selector collision: `.card .body` also matched descendant text variant body, doubling padding and applying flex container rules to prose. Container selectors are now direct-child scoped. Standalone cards/alerts size to content with a responsive reading cap; semantic data panels, peers and explicit measures preserve available width. Metrics and forms no longer force a boxed card appearance. Vakyartha retains the original native failed geometry check and owns its independent wide/narrow content/collection UI checks. Source, values, interactivity and authority are unchanged; model authoring reliability remains open.
+
+
 ## Shared action sizing — 2026-10-29
 
 The installed reference app exposed ordinary actions stretching across vertical panels and compact input padding exceeding the intended 32px rhythm. The web projector now uses intrinsic button width, consistent inherited control padding and input line-height, preserves explicit measures/alignment, and wraps long labels. Vakyartha retains the original failing native control fixture (`vak-controls-hq11Mg`) and owns the adoption/end-to-end WebKit evidence. Mechanism verification and adoption results must be recorded separately; this change does not certify general authored-layout quality.

@@ -192,18 +192,29 @@ pre code { background: none; padding: 0; }
 /* ---- content --------------------------------------------------------- */
 .card {
   position: relative; display: flex; flex-direction: column; min-width: 0; overflow: hidden;
+  width: fit-content; max-width: min(100%, 720px);
   background: var(--vak-surface, var(--_vak-surface)); border: 1px solid var(--vak-border, var(--_vak-border)); border-radius: var(--vak-radius, var(--_vak-radius));
   box-shadow: var(--vak-shadow, var(--_vak-shadow)); transition: border-color 160ms ease;
 }
+/* Reading cards follow their content; data panels and peer grid items use
+ * their available track. Measures remain explicit semantic overrides. */
+.card:has(.table-box, .chart-box, .form-box, .grid-box, .split-box) { width: 100%; }
+.grid > .card { width: 100%; max-width: none; }
+.card.measure-sm { width: 100%; max-width: 320px; }
+.card.measure-md { width: 100%; max-width: 720px; }
+.card.measure-lg { width: 100%; max-width: 1040px; }
+.card.measure-full { width: 100%; max-width: none; }
+.stack.align-stretch > .card:not([class*="measure-"]) { width: 100%; }
 /* Informational cards stay still; hover feedback belongs to their controls. */
 .card > img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: var(--vak-surface-2, var(--_vak-surface-2)); }
-.card .body { display: flex; flex-direction: column; gap: var(--gap-sm); padding: var(--vak-card-padding, var(--_vak-card-padding)); flex: 1; }
-.card .head { display: flex; align-items: flex-start; gap: 10px; justify-content: space-between; }
+.card > .body { display: flex; flex-direction: column; gap: var(--gap-sm); padding: var(--vak-card-padding, var(--_vak-card-padding)); flex: 1; }
+.card > .body > .head { display: flex; align-items: flex-start; gap: 10px; justify-content: space-between; }
 .card h3 { margin: 0; font-size: 1em; font-weight: var(--vak-weight-heading, var(--_vak-weight-heading)); letter-spacing: -0.01em; line-height: 1.3; }
 .card .sub { margin: 2px 0 0; color: var(--vak-muted, var(--_vak-muted)); font-size: 0.9em; }
 .card .md { color: var(--vak-fg, var(--_vak-fg)); font-size: 0.95em; }
-.card .kids { display: flex; flex-direction: column; align-items: flex-start; gap: var(--gap-sm); margin-top: auto; }
-.card .kids > :not(.btn) { align-self: stretch; }
+.card > .body > .kids:empty { display: none; }
+.card > .body > .kids { display: flex; flex-direction: column; align-items: flex-start; gap: var(--gap-sm); margin-top: auto; }
+.card > .body > .kids > :not(.btn) { align-self: stretch; }
 .card.tone-info { border-top: 3px solid var(--vak-info, var(--_vak-info)); }
 .card.tone-success { border-top: 3px solid var(--vak-success, var(--_vak-success)); }
 .card.tone-warning { border-top: 3px solid var(--vak-warning, var(--_vak-warning)); }
@@ -220,7 +231,7 @@ pre code { background: none; padding: 0; }
 
 .stat {
   display: flex; flex-direction: column; gap: 4px; min-width: 0;
-  padding: var(--vak-card-padding, var(--_vak-card-padding)); background: var(--vak-surface, var(--_vak-surface)); border: 1px solid var(--vak-border, var(--_vak-border)); border-radius: var(--vak-radius, var(--_vak-radius));
+  padding: 8px 0; background: transparent; border: 0; align-self: stretch;
 }
 .card .stat { padding: 0; border: 0; background: none; }
 .stat .label { color: var(--vak-muted, var(--_vak-muted)); font-size: 0.86em; font-weight: var(--vak-weight-label, var(--_vak-weight-label)); }
@@ -230,6 +241,7 @@ pre code { background: none; padding: 0; }
 .stat .delta.up { color: var(--vak-success, var(--_vak-success)); } .stat .delta.down { color: var(--vak-danger, var(--_vak-danger)); }
 
 .alert {
+  width: fit-content; max-width: min(100%, 720px);
   display: flex; gap: 12px; padding: 12px 14px; border-radius: var(--vak-radius-sm, var(--_vak-radius-sm));
   background: var(--vak-surface-2, var(--_vak-surface-2)); border: 1px solid var(--vak-border, var(--_vak-border)); border-left: 4px solid var(--vak-muted, var(--_vak-muted));
 }
@@ -574,10 +586,13 @@ tr:last-child td { border-bottom: 0; }
 
 .form {
   display: flex; flex-direction: column; gap: var(--gap-md); min-width: 0;
-  padding: var(--vak-card-padding, var(--_vak-card-padding)); background: var(--vak-surface, var(--_vak-surface)); border: 1px solid var(--vak-border, var(--_vak-border)); border-radius: var(--vak-radius, var(--_vak-radius));
+  padding: 0; background: transparent; border: 0;
 }
 .card .form { padding: 0; border: 0; background: none; }
-.form-box { container-type: inline-size; }
+.form-box { container-type: inline-size; width: 100%; max-width: 720px; }
+.form-box.measure-sm { max-width: 320px; }
+.form-box.measure-lg { max-width: 1040px; }
+.form-box.measure-full { max-width: none; }
 .fields { display: grid; gap: 14px 16px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); }
 .fields > .wide { grid-column: 1 / -1; }
 .form .actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
