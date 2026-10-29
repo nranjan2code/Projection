@@ -2,7 +2,7 @@
 
 ## Host-owned provider transport seam — 2026-10-29
 
-Provider constructors and `ProviderEntry.make` accept an optional `fetcher`, used for model discovery and request/stream traffic. This gives embedding hosts a public way to own provider egress policy while leaving default Node `fetch` behavior unchanged. HTTP retry and response-stream behavior remain in the shared adapters. Focused provider tests, all 412 framework tests/replay, typecheck and package build pass. This exposes a transport seam only; it does not implement or certify a native broker, credential isolation, approval UX, endpoint policy, or user outcome.
+Provider constructors and `ProviderEntry.make` accept an optional provider-aware `transport`, used for model discovery and request/stream traffic. The callback receives adapter identity and request details, letting embedding hosts enforce provider-specific egress policy while leaving default Node `fetch` behavior unchanged. HTTP retry and response-stream behavior remain in the shared adapters. Focused provider tests, all 412 framework tests/replay, typecheck and package build pass. This exposes a transport seam only; it does not implement or certify a native broker, credential isolation, approval UX, endpoint policy, or user outcome.
 
 ## Procedure context — 2026-10-29
 

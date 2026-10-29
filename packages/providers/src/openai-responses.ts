@@ -8,11 +8,11 @@
 
 import { createHash } from "node:crypto";
 import type { Usage } from "@vak/core";
-import { getJson, postJson, readSse, type ProviderFetch } from "./http.ts";
+import { getJson, postJson, readSse, type ProviderTransport } from "./http.ts";
 import { type ChatRequest, type Message, type ModelFacts, type Provider, ProviderError, type ProviderEvent, type StopReason } from "./types.ts";
 
 export interface OpenAIResponsesOptions {
-  fetcher?: ProviderFetch;
+  transport?: ProviderTransport;
   apiKey: string;
   baseUrl?: string;
   id?: string;
@@ -43,13 +43,13 @@ export function openaiResponses(opts: OpenAIResponsesOptions): Provider {
     id,
 
     async listModels(signal) {
-      const body = (await getJson(id, `${base}/models`, headers, signal, opts.fetcher)) as { data?: { id: string }[] };
+      const body = (await getJson(id, `${base}/models`, headers, signal, opts.transport)) as { data?: { id: string }[] };
       return (body.data ?? []).map((m) => m.id).sort();
     },
 
     async describeModel(model, signal): Promise<ModelFacts> {
       // The models endpoint confirms the id exists but publishes no capabilities.
-      const m = (await getJson(id, `${base}/models/${encodeURIComponent(model)}`, headers, signal, opts.fetcher)) as { id: string; created?: number };
+      const m = (await getJson(id, `${base}/models/${encodeURIComponent(model)}`, headers, signal, opts.transport)) as { id: string; created?: number };
       return { fingerprint: `${m.id}@${m.created ?? ""}`, source: `${id} /v1/models (no capability data)` };
     },
 
@@ -71,7 +71,7 @@ export function openaiResponses(opts: OpenAIResponsesOptions): Provider {
         ...(req.effort ? { reasoning: { effort: req.effort } } : {}),
         ...req.extra,
       };
-      const res = await postJson(id, `${base}/responses`, headers, body, req.signal, 2, opts.fetcher);
+      const res = await postJson(id, `${base}/responses`, headers, body, req.signal, 2, opts.transport);
 
       // item id → call_id, for argument deltas (which carry item_id).
       const callIds = new Map<string, string>();

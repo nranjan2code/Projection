@@ -2,12 +2,12 @@
 // Model parts are replayed verbatim: function-call parts can carry thought
 // signatures that must be echoed back for multi-turn tool use.
 
-import { getJson, postJson, readSse, type ProviderFetch } from "./http.ts";
+import { getJson, postJson, readSse, type ProviderTransport } from "./http.ts";
 import type { Usage } from "@vak/core";
 import type { ChatRequest, Message, ModelFacts, Provider, ProviderEvent, StopReason } from "./types.ts";
 
 export interface GeminiOptions {
-  fetcher?: ProviderFetch;
+  transport?: ProviderTransport;
   apiKey: string;
   baseUrl?: string;
 }
@@ -57,7 +57,7 @@ export function gemini(opts: GeminiOptions): Provider {
     id: "gemini",
 
     async listModels(signal) {
-      const body = (await getJson("gemini", `${base}/models?pageSize=200`, headers, signal, opts.fetcher)) as {
+      const body = (await getJson("gemini", `${base}/models?pageSize=200`, headers, signal, opts.transport)) as {
         models?: { name: string; supportedGenerationMethods?: string[] }[];
       };
       return (body.models ?? [])
@@ -66,7 +66,7 @@ export function gemini(opts: GeminiOptions): Provider {
     },
 
     async describeModel(model, signal): Promise<ModelFacts> {
-      const m = (await getJson("gemini", `${base}/models/${encodeURIComponent(model.replace(/^models\//, ""))}`, headers, signal, opts.fetcher)) as {
+      const m = (await getJson("gemini", `${base}/models/${encodeURIComponent(model.replace(/^models\//, ""))}`, headers, signal, opts.transport)) as {
         name: string;
         version?: string;
         inputTokenLimit?: number;
@@ -95,7 +95,7 @@ export function gemini(opts: GeminiOptions): Provider {
         ...req.extra,
       };
       const model = encodeURIComponent(req.model.replace(/^models\//, ""));
-      const res = await postJson("gemini", `${base}/models/${model}:streamGenerateContent?alt=sse`, headers, body, req.signal, 2, opts.fetcher);
+      const res = await postJson("gemini", `${base}/models/${model}:streamGenerateContent?alt=sse`, headers, body, req.signal, 2, opts.transport);
 
       const parts: Part[] = [];
       let stop: StopReason = "other";
