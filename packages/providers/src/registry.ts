@@ -7,6 +7,7 @@ import { gemini } from "./gemini.ts";
 import { ollama } from "./ollama.ts";
 import { openai } from "./openai.ts";
 import { openaiResponses } from "./openai-responses.ts";
+import type { ProviderFetch } from "./http.ts";
 import type { Provider } from "./types.ts";
 
 /** Load KEY=VALUE lines into process.env; variables already set win. */
@@ -31,7 +32,7 @@ export interface ProviderEntry {
   local?: boolean;
   /** The variable holding its key, so a settings screen can tie a key to its provider. */
   keyVar?: string;
-  make(opts?: { think?: boolean }): Provider;
+  make(opts?: { think?: boolean; fetcher?: ProviderFetch }): Provider;
 }
 
 /**
@@ -110,7 +111,7 @@ export function providersFromEnv(env: Record<string, string | undefined> = proce
       // The primary target (AGENTS.md). Without it the first installed model was
       // picked, and that was the 0.8B one.
       defaultModel: env.OLLAMA_MODEL ?? "qwen3.5:4b-mlx",
-      make: (o = {}) => ollama({ host: ollamaHost, think: o.think }),
+      make: (o = {}) => ollama({ host: ollamaHost, think: o.think, fetcher: o.fetcher }),
     },
     {
       id: "anthropic",
@@ -119,7 +120,7 @@ export function providersFromEnv(env: Record<string, string | undefined> = proce
       reason: "set ANTHROPIC_API_KEY",
       keyVar: "ANTHROPIC_API_KEY",
       defaultModel: "claude-opus-5-5",
-      make: () => anthropic({ apiKey: env.ANTHROPIC_API_KEY!, baseUrl: env.ANTHROPIC_BASE_URL }),
+      make: (o = {}) => anthropic({ apiKey: env.ANTHROPIC_API_KEY!, baseUrl: env.ANTHROPIC_BASE_URL, fetcher: o.fetcher }),
     },
     {
       id: "openai",
@@ -128,7 +129,7 @@ export function providersFromEnv(env: Record<string, string | undefined> = proce
       reason: "set OPENAI_API_KEY",
       keyVar: "OPENAI_API_KEY",
       // OpenAI's own API uses Responses; compatible endpoints keep Chat Completions.
-      make: () => openaiResponses({ apiKey: env.OPENAI_API_KEY!, baseUrl: env.OPENAI_BASE_URL }),
+      make: (o = {}) => openaiResponses({ apiKey: env.OPENAI_API_KEY!, baseUrl: env.OPENAI_BASE_URL, fetcher: o.fetcher }),
     },
     {
       id: "gemini",
@@ -136,7 +137,7 @@ export function providersFromEnv(env: Record<string, string | undefined> = proce
       available: Boolean(geminiKey),
       reason: "set GEMINI_API_KEY",
       keyVar: "GEMINI_API_KEY",
-      make: () => gemini({ apiKey: geminiKey! }),
+      make: (o = {}) => gemini({ apiKey: geminiKey!, fetcher: o.fetcher }),
     },
     ...COMPATIBLE_PRESETS.map((p): ProviderEntry => {
       const apiKey = p.keyVar ? env[p.keyVar] : undefined;
@@ -148,7 +149,7 @@ export function providersFromEnv(env: Record<string, string | undefined> = proce
         keyVar: p.keyVar,
         defaultModel: p.defaultModel,
         local: p.local,
-        make: () => openai({ id: p.id, apiKey, baseUrl: (p.baseVar && env[p.baseVar]) || p.baseUrl, maxTokensParam: p.maxTokensParam, streamUsage: p.streamUsage }),
+        make: (o = {}) => openai({ id: p.id, apiKey, baseUrl: (p.baseVar && env[p.baseVar]) || p.baseUrl, maxTokensParam: p.maxTokensParam, streamUsage: p.streamUsage, fetcher: o.fetcher }),
       };
     }),
     {
@@ -157,7 +158,7 @@ export function providersFromEnv(env: Record<string, string | undefined> = proce
       available: Boolean(env.OPENAI_COMPAT_BASE_URL),
       reason: "set OPENAI_COMPAT_BASE_URL",
       keyVar: "OPENAI_COMPAT_API_KEY",
-      make: () => openai({ id: "compatible", apiKey: env.OPENAI_COMPAT_API_KEY, baseUrl: env.OPENAI_COMPAT_BASE_URL }),
+      make: (o = {}) => openai({ id: "compatible", apiKey: env.OPENAI_COMPAT_API_KEY, baseUrl: env.OPENAI_COMPAT_BASE_URL, fetcher: o.fetcher }),
     },
   ];
 }

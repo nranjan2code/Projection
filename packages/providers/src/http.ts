@@ -17,6 +17,9 @@ export function hardenNetwork(attemptTimeoutMs = 2500): void {
 
 const RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 504, 529]);
 
+/** Fetch boundary supplied by a host that owns outbound-network policy. */
+export type ProviderFetch = typeof fetch;
+
 /** POST JSON; retries connection failures and retryable statuses before any body is read. */
 export async function postJson(
   provider: string,
@@ -25,12 +28,13 @@ export async function postJson(
   body: unknown,
   signal?: AbortSignal,
   retries = 2,
+  fetcher: ProviderFetch = fetch,
 ): Promise<Response> {
   let attempt = 0;
   for (;;) {
     let res: Response;
     try {
-      res = await fetch(url, {
+      res = await fetcher(url, {
         method: "POST",
         headers: { "content-type": "application/json", ...headers },
         body: JSON.stringify(body),
@@ -57,8 +61,8 @@ export async function postJson(
   }
 }
 
-export async function getJson(provider: string, url: string, headers: Record<string, string>, signal?: AbortSignal): Promise<unknown> {
-  const res = await fetch(url, { headers, signal });
+export async function getJson(provider: string, url: string, headers: Record<string, string>, signal?: AbortSignal, fetcher: ProviderFetch = fetch): Promise<unknown> {
+  const res = await fetcher(url, { headers, signal });
   if (!res.ok) throw new ProviderError(provider, `HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`, res.status);
   return res.json();
 }

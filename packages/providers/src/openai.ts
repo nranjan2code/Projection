@@ -1,11 +1,12 @@
 // OpenAI Chat Completions over raw fetch + SSE. Also serves every
 // OpenAI-compatible endpoint (OpenRouter, vLLM, LM Studio, Ollama's /v1, ...).
 
-import { getJson, postJson, readSse } from "./http.ts";
+import { getJson, postJson, readSse, type ProviderFetch } from "./http.ts";
 import type { Usage } from "@vak/core";
 import type { ChatRequest, Message, ModelFacts, Provider, ProviderEvent, StopReason } from "./types.ts";
 
 export interface OpenAIOptions {
+  fetcher?: ProviderFetch;
   apiKey?: string;
   baseUrl?: string;
   /** Provider id reported in events, e.g. "openai" or "openrouter". */
@@ -49,7 +50,7 @@ export function openai(opts: OpenAIOptions = {}): Provider {
 
     async listModels(signal) {
       // `{data: [...]}` per OpenAI; some servers (Together) answer with the bare list.
-      const body = (await getJson(id, `${base}/models`, headers, signal)) as { data?: { id: string }[] } | { id: string }[];
+      const body = (await getJson(id, `${base}/models`, headers, signal, opts.fetcher)) as { data?: { id: string }[] } | { id: string }[];
       return (Array.isArray(body) ? body : (body.data ?? [])).map((m) => m.id).sort();
     },
 
@@ -71,7 +72,7 @@ export function openai(opts: OpenAIOptions = {}): Provider {
         ...(req.effort ? { reasoning_effort: req.effort } : {}),
         ...req.extra,
       };
-      const res = await postJson(id, `${base}/chat/completions`, headers, body, req.signal);
+      const res = await postJson(id, `${base}/chat/completions`, headers, body, req.signal, 2, opts.fetcher);
 
       // Tool-call deltas are keyed by index; the id arrives only on the first.
       const calls = new Map<number, { id: string; name: string; started: boolean; pending: string }>();

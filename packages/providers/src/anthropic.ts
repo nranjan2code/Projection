@@ -4,10 +4,11 @@
 // models) and assistant content is replayed verbatim so thinking blocks survive.
 
 import type { Usage } from "@vak/core";
-import { getJson, postJson, readSse } from "./http.ts";
+import { getJson, postJson, readSse, type ProviderFetch } from "./http.ts";
 import { type ChatRequest, type Message, type ModelFacts, type Provider, type ProviderEvent, ProviderError, type StopReason } from "./types.ts";
 
 export interface AnthropicOptions {
+  fetcher?: ProviderFetch;
   apiKey: string;
   baseUrl?: string;
   version?: string;
@@ -74,12 +75,12 @@ export function anthropic(opts: AnthropicOptions): Provider {
     id: "anthropic",
 
     async listModels(signal) {
-      const body = (await getJson("anthropic", `${base}/v1/models?limit=100`, headers, signal)) as { data?: { id: string }[] };
+      const body = (await getJson("anthropic", `${base}/v1/models?limit=100`, headers, signal, opts.fetcher)) as { data?: { id: string }[] };
       return (body.data ?? []).map((m) => m.id);
     },
 
     async describeModel(model, signal): Promise<ModelFacts> {
-      const m = (await getJson("anthropic", `${base}/v1/models/${encodeURIComponent(model)}`, headers, signal)) as {
+      const m = (await getJson("anthropic", `${base}/v1/models/${encodeURIComponent(model)}`, headers, signal, opts.fetcher)) as {
         id: string;
         created_at?: string;
         max_input_tokens?: number;
@@ -119,7 +120,7 @@ export function anthropic(opts: AnthropicOptions): Provider {
         ...(req.effort ? { output_config: { effort: req.effort } } : {}),
         ...req.extra,
       };
-      const res = await postJson("anthropic", `${base}/v1/messages`, headers, body, req.signal);
+      const res = await postJson("anthropic", `${base}/v1/messages`, headers, body, req.signal, 2, opts.fetcher);
 
       const blocks: Block[] = [];
       const partialJson = new Map<number, string>();

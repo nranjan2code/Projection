@@ -3,10 +3,11 @@
 // the agent loop treats every provider the same.
 
 import { toWireSchema, type Usage } from "@vak/core";
-import { getJson, postJson, readNdjson } from "./http.ts";
+import { getJson, postJson, readNdjson, type ProviderFetch } from "./http.ts";
 import { type ChatRequest, type Message, type ModelFacts, parseParameterSize, type Provider, ProviderError, ToolGenerationError, type ProviderEvent, type StopReason } from "./types.ts";
 
 export interface OllamaOptions {
+  fetcher?: ProviderFetch;
   host?: string;
   /** Model thinking (`think`); off by default for UI latency, overridable per request via `extra.think`. */
   think?: boolean;
@@ -104,14 +105,14 @@ export function ollama(opts: OllamaOptions = {}): Provider {
     capabilities: { constrainedOutput: true },
 
     async listModels(signal) {
-      const body = (await getJson("ollama", `${host}/api/tags`, {}, signal)) as { models?: { name: string }[] };
+      const body = (await getJson("ollama", `${host}/api/tags`, {}, signal, opts.fetcher)) as { models?: { name: string }[] };
       return (body.models ?? []).map((m) => m.name);
     },
 
     async describeModel(model, signal): Promise<ModelFacts> {
-      const res = await postJson("ollama", `${host}/api/show`, {}, { model }, signal, 0);
+      const res = await postJson("ollama", `${host}/api/show`, {}, { model }, signal, 0, opts.fetcher);
       const show = (await res.json()) as { capabilities?: string[]; details?: { parameter_size?: string }; model_info?: Record<string, unknown> };
-      const tags = (await getJson("ollama", `${host}/api/tags`, {}, signal)) as { models?: { name: string; digest?: string }[] };
+      const tags = (await getJson("ollama", `${host}/api/tags`, {}, signal, opts.fetcher)) as { models?: { name: string; digest?: string }[] };
       const caps = new Set(show.capabilities ?? []);
       const ctxKey = Object.keys(show.model_info ?? {}).find((k) => k.endsWith(".context_length"));
       const thinking = caps.has("thinking");
@@ -153,12 +154,12 @@ export function ollama(opts: OllamaOptions = {}): Provider {
       };
       let res: Response;
       try {
-        res = await postJson("ollama", `${host}/api/chat`, {}, body, req.signal, 0);
+        res = await postJson("ollama", `${host}/api/chat`, {}, body, req.signal, 0, opts.fetcher);
       } catch (err) {
         if (body.think && err instanceof ProviderError && err.status === 400 && typeof err.message === "string" && err.message.includes("does not support thinking")) {
           thinkingCache.set(req.model, false);
           body.think = false;
-          res = await postJson("ollama", `${host}/api/chat`, {}, body, req.signal, 0);
+          res = await postJson("ollama", `${host}/api/chat`, {}, body, req.signal, 0, opts.fetcher);
         } else if (req.tools?.length && err instanceof ProviderError && err.status === 500) {
           const prefix = "ollama: HTTP 500: ";
           let detail: unknown;

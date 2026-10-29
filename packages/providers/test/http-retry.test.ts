@@ -19,3 +19,16 @@ test("aborting Retry-After does not start another request", async () => {
     assert.equal(attempts, 1);
   } finally { globalThis.fetch = original; }
 });
+
+test("an explicit host fetch boundary receives provider requests and preserves the response stream", async () => {
+  const calls: string[] = [];
+  const fetcher = async (input: RequestInfo | URL, init?: RequestInit) => {
+    calls.push(String(input));
+    assert.equal(init?.method, "POST");
+    return new Response("event: done\ndata: [DONE]\n\n", { headers: { "content-type": "text/event-stream" } });
+  };
+  const response = await postJson("fake", "https://provider.example/v1", {}, { prompt: "fixture" }, undefined, 0, fetcher);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0], "https://provider.example/v1");
+  assert.equal(await response.text(), "event: done\ndata: [DONE]\n\n");
+});
