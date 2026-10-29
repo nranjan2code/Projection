@@ -69,3 +69,7 @@ Changes made in Projection:
 ## Exact observation and OHLC integrity checkpoint — 2026-10-29
 
 The analytical reference revealed that native SVG hover titles were insufficient for keyboard/touch inspection. Line/area/bar/candlestick figures now expose canonical exact observations through an output readout and pointer/touch/keyboard controls without agent dispatch. A final shorthand audit found null/boolean/blank nested OHLC prices could become zero; these now retain missingness for canonical rejection, with direct-projector rejection too. No source fact synthesis or new dependency. 405 tests/replay, typecheck and package builds pass. The narrow local mapped-table gate on preceding `fae8a41` passed 3/3 (receipt `.vak/contracts/record-view-2026-10-28T15-52-05.942Z.json`); this does not establish candle/graph model-authoring reliability. Vakyartha owns full live source/interaction/WebKit and installed-delivery evidence.
+
+## Local collection navigation — 2026-10-29
+
+Long web grids/lists now expose local 12-item pages and exact filtered count, with explicit pageSize/0 overrides. Tables reuse the same pager with their established 20-row default beyond 25. Filtering resets page; revisions retain local state and clamp after population changes. No model/tool action is dispatched and canonical records remain complete for other projections. Vakyartha owns real WebKit repeated-card/list and host-library checks. Existing model/source gates remain open.

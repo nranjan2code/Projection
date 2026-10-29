@@ -1,5 +1,10 @@
 # Changelog
 
+## Local collection paging — 2026-10-29
+
+Web card grids and lists now page long collections locally (12 items by default beyond 12), with count, previous/next controls, filter-to-first-page behavior and retained local state. An explicit pageSize controls the count; 0 shows all. Tables retain their existing default threshold/size and share the accessible paging implementation. Canonical nodes/data remain complete, local browsing never emits an action, and other projections keep their full semantic source. This adds pageSize to grid/list public catalog props; no domain compiler or external request path.
+
+
 ## Content-sized cards and quiet form/metric structure — 2026-10-29
 
 Card container padding is scoped to its direct body wrapper; ordinary text with variant body no longer receives a second card layout/padding. Standalone reading cards and alerts use intrinsic width with a readable responsive maximum, while peer grids, data panels and explicit measures retain their track/authoring intent. Empty card child hosts reserve no gap. Metrics and forms use open structure instead of mandatory nested boxes; controls retain their borders, labels, validation and density. Default form measure is readable and explicit small/large/full measures remain honored. No string-length/domain heuristics or special handling of particular status text.

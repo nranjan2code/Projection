@@ -97,7 +97,7 @@ export function pageRows<T>(rows: T[], page: number, size: number): { rows: T[];
  * once a table no longer fits. An explicit prop (sortable, searchable,
  * pageSize) always wins.
  */
-export const INTERACT = { sortFrom: 2, searchTableFrom: 8, searchListFrom: 12, searchItemsFrom: 8, pageOver: 25, pageSize: 20 } as const;
+export const INTERACT = { sortFrom: 2, searchTableFrom: 8, searchListFrom: 12, searchItemsFrom: 8, pageOver: 25, pageSize: 20, pageItemsOver: 12, pageItemsSize: 12 } as const;
 
 export interface TableInteraction {
   sortable: boolean;

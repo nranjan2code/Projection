@@ -304,22 +304,24 @@ export class VakSurfaceElement extends HTMLElement {
         grid.style.setProperty("--gap", gap);
         const view = this.#view(node.key);
         const searchable = typeof p.searchable === "boolean" ? p.searchable : node.children.length >= INTERACT.searchItemsFrom;
-        // Cards filter by their own text; the grid's children stay the model's nodes.
+        const size = p.pageSize === undefined ? node.children.length > INTERACT.pageItemsOver ? INTERACT.pageItemsSize : 0 : tableInteraction(p, node.children.length).pageSize;
+        const pager = h("div", "pager");
+        // Paging/filtering changes only local visibility, never canonical children.
         const apply = () => {
           const words = view.query.toLowerCase().split(/\s+/).filter(Boolean);
-          let shown = 0;
-          for (const child of grid.children) {
-            const hit = words.every((w) => (child.textContent ?? "").toLowerCase().includes(w));
-            (child as HTMLElement).hidden = !hit;
-            if (hit) shown++;
-          }
-          empty.hidden = shown > 0;
+          const children = [...grid.children] as HTMLElement[];
+          const matches = children.filter(child => words.every(w => (child.textContent ?? "").toLowerCase().includes(w)));
+          const page = size ? pageRows(matches, view.page, size) : { rows: matches, page: 0, pages: 1 };
+          view.page = page.page; const shown = new Set(page.rows);
+          for (const child of children) child.hidden = !shown.has(child);
+          empty.hidden = matches.length > 0;
+          this.#fillPager(pager, view, page.pages, matches.length, apply, 'items');
         };
         const empty = h("p", "none", "No matches");
         empty.hidden = true;
         if (searchable) box.append(this.#search(view, apply, `Filter ${node.children.length} items`));
-        box.append(grid, empty);
-        return { el: box, host: grid, after: searchable ? apply : undefined };
+        box.append(grid, empty, pager);
+        return { el: box, host: grid, after: apply };
       }
       case "split": {
         const box = h("div", "split-box");
@@ -407,26 +409,25 @@ export class VakSurfaceElement extends HTMLElement {
         return { el: this.#table(node.key, p) };
       case "list": {
         const items = Array.isArray(p.items) ? p.items : [];
-        const view = this.#view(node.key);
-        const el = h(p.ordered ? "ol" : "ul", "list");
+        const view = this.#view(node.key), size = p.pageSize === undefined ? items.length > INTERACT.pageItemsOver ? INTERACT.pageItemsSize : 0 : tableInteraction(p, items.length).pageSize;
+        const el = h(p.ordered ? "ol" : "ul", "list"), pager = h("div", "pager");
+        const searchable = typeof p.searchable === "boolean" ? p.searchable : items.length >= INTERACT.searchListFrom;
         const fill = () => {
-          const shown = new Set(filterItems(items, view.query));
-          el.replaceChildren();
-          for (const item of items) {
-            if (!shown.has(item)) continue;
-            const li = h("li");
-            li.append(renderMarkdown(str(item)));
-            // renderMarkdown wraps text in <p>; unwrap single paragraphs.
+          const matches = searchable ? filterItems(items, view.query) : items;
+          const page = size ? pageRows(matches, view.page, size) : { rows: matches, page: 0, pages: 1 };
+          view.page = page.page; el.replaceChildren();
+          if (p.ordered) el.setAttribute('start', String(page.page * size + 1));
+          for (const item of page.rows) {
+            const li = h("li"); li.append(renderMarkdown(str(item)));
             if (li.childNodes.length === 1 && li.firstElementChild?.tagName === "P") li.replaceChildren(...li.firstElementChild.childNodes);
             el.append(li);
           }
           if (!el.children.length) el.append(h("li", "none", "No matches"));
+          this.#fillPager(pager, view, page.pages, matches.length, fill, 'items');
         };
-        fill();
-        if (!(typeof p.searchable === "boolean" ? p.searchable : items.length >= INTERACT.searchListFrom)) return { el };
         const box = h("div", "list-box");
-        box.append(this.#search(view, fill, `Filter ${items.length} items`), el);
-        return { el: box };
+        if (searchable) box.append(this.#search(view, fill, `Filter ${items.length} items`));
+        box.append(el, pager); fill(); return { el: box };
       }
       case "chart":
         return this.#chart(normalizeChart(p));
@@ -650,6 +651,22 @@ export class VakSurfaceElement extends HTMLElement {
     return input;
   }
 
+  #fillPager(pager: HTMLElement, view: View, pages: number, count: number, fill: () => void, unit: string): void {
+    pager.hidden = pages <= 1;
+    if (pages <= 1) { pager.replaceChildren(); return; }
+    const prev = h("button", "page", "‹"), next = h("button", "page", "›");
+    prev.type = next.type = "button";
+    prev.setAttribute("aria-label", "Previous page"); next.setAttribute("aria-label", "Next page");
+    prev.disabled = view.page === 0; next.disabled = view.page >= pages - 1;
+    const move = (delta: number, label: string) => {
+      view.page += delta; fill();
+      const candidate = pager.querySelector<HTMLButtonElement>(`[aria-label="${label}"]`);
+      (candidate && !candidate.disabled ? candidate : pager.querySelector<HTMLButtonElement>('button:not(:disabled)'))?.focus();
+    };
+    prev.onclick = () => move(-1, 'Previous page'); next.onclick = () => move(1, 'Next page');
+    pager.replaceChildren(prev, h("span", "page-of", `${view.page + 1} of ${pages} · ${count} ${unit}`), next);
+  }
+
   #table(key: string, p: Record<string, unknown>): HTMLElement {
     const box = h("div", "table-box");
     let rows = (Array.isArray(p.rows) ? p.rows : []) as unknown[];
@@ -714,19 +731,7 @@ export class VakSurfaceElement extends HTMLElement {
         const k = (th as HTMLElement).dataset.key;
         th.setAttribute("aria-sort", sort && sort.key === k ? (sort.dir === "asc" ? "ascending" : "descending") : "none");
       }
-      pager.hidden = paged.pages <= 1;
-      if (paged.pages > 1) {
-        const prev = h("button", "page", "‹");
-        const next = h("button", "page", "›");
-        prev.type = next.type = "button";
-        prev.setAttribute("aria-label", "Previous page");
-        next.setAttribute("aria-label", "Next page");
-        prev.disabled = paged.page === 0;
-        next.disabled = paged.page >= paged.pages - 1;
-        prev.addEventListener("click", () => ((view.page -= 1), fill()));
-        next.addEventListener("click", () => ((view.page += 1), fill()));
-        pager.replaceChildren(prev, h("span", "page-of", `${paged.page + 1} of ${paged.pages} · ${shown.length} rows`), next);
-      }
+      this.#fillPager(pager, view, paged.pages, shown.length, fill, 'rows');
     };
     cols.forEach((c, i) => {
       const th = h("th", align(c, i));
