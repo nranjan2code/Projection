@@ -1,5 +1,9 @@
 # Changelog
 
+## Isolated host candidates — 2026-10-29
+
+`VakHost.runCandidate` runs a single objective against only caller-selected surface snapshots in a separate `SurfaceStore`. It forces transactional submission, permits only explicitly supplied local context tools, bounds context to 16 unique surfaces and 8 MiB, and returns base versions plus candidate surfaces. It writes no canonical session/history and emits no viewer broadcast; callers must perform their own version-fenced commit and outcome checks. Typecheck and 413 framework tests/replay pass under Node 26.13.0. No dependency or persisted format changed.
+
 ## Configurable agent execution limits and modern step policy — 2026-10-29
 
 - `HostTurn` and `/api/chat` now accept optional `maxSteps` and `toolRounds` in the turn request body, allowing callers and user settings to configure step limits and tool budgets per provider or globally.

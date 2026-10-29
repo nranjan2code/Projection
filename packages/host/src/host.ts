@@ -162,11 +162,28 @@ export interface HostRunOptions {
   maxTokens?: number;
 }
 
+/** An isolated agent turn. Context is explicit and never copied from the session history. */
+export interface HostCandidateTurn extends Omit<HostTurn, "action" | "continue"> {
+  message: string;
+  initialSurfaces?: SurfaceSnapshot[];
+}
+
+export type HostCandidateOptions = Omit<HostRunOptions, "completion" | "surfaceSubmission" | "validateEdits">;
+
+export interface HostCandidateResult {
+  result: RunResult;
+  reply: string;
+  baseVersions: { id: string; version: number }[];
+  surfaces: SurfaceSnapshot[];
+}
+
 export interface VakHost {
   /** Publish through the canonical store, persistence and viewer events. No model work. */
   project(input: { session: string; tool?: string; args: Record<string, unknown>; external?: boolean }): Promise<{ diagnostics: ReturnType<SurfaceStore["apply"]>; surface: string; text: string; viewers: number; url?: string }>;
   /** Runs on the canonical session/store, independent of any UI connection. Busy sessions reject. */
   run(input: HostTurn, options?: HostRunOptions): Promise<RunResult>;
+  /** Run with an explicit context snapshot; return a candidate without canonical writes or saved chat history. */
+  runCandidate(input: HostCandidateTurn, options?: HostCandidateOptions): Promise<HostCandidateResult>;
   /** A detached copy of the canonical view; never exposes mutable session internals. */
   view(id: string): Promise<SessionView>;
   /** Delete an idle session and its raw transcript; running sessions must be stopped first. */
@@ -463,7 +480,7 @@ export function createHost(opts: HostOptions): VakHost {
   }
 
   // --- chat -------------------------------------------------------------------
-  async function executeTurn(body: HostTurn, s: Session, ctrl: AbortController, controls: HostRunOptions, broadcast: boolean): Promise<RunResult> {
+  async function executeTurn(body: HostTurn, s: Session, ctrl: AbortController, controls: HostRunOptions, broadcast: boolean, persist = true): Promise<RunResult> {
     const entry = provider(body.provider);
     if (!entry?.available) throw new Error(`provider ${body.provider} unavailable`);
     if (!body.model) throw new Error("model required");
@@ -572,8 +589,10 @@ export function createHost(opts: HostOptions): VakHost {
       reply.stop = "error";
       s.timeline.push(reply);
       s.updated = now();
-      await record(s.id, s.messages.slice(from));
-      await save(s, broadcast);
+      if (persist) {
+        await record(s.id, s.messages.slice(from));
+        await save(s, broadcast);
+      }
       return { stop: "error" };
     }
     const secs = ((Date.now() - started) / 1000).toFixed(1);
@@ -587,8 +606,10 @@ export function createHost(opts: HostOptions): VakHost {
     if (versions.length) reply.versions = versions;
     s.timeline.push(reply);
     s.updated = now();
-    await record(s.id, s.messages.slice(from));
-    await save(s, broadcast);
+    if (persist) {
+      await record(s.id, s.messages.slice(from));
+      await save(s, broadcast);
+    }
     return result;
   }
 
@@ -607,6 +628,55 @@ export function createHost(opts: HostOptions): VakHost {
       s.pending = undefined;
       controls.signal?.removeEventListener("abort", abort);
       if (s.busy === ctrl) s.busy = undefined;
+    }
+  }
+
+  async function runCandidate(input: HostCandidateTurn, controls: HostCandidateOptions = {}): Promise<HostCandidateResult> {
+    if (typeof input.session !== "string" || !input.session || input.session.length > 120 || typeof input.provider !== "string" || !input.provider || input.provider.length > 120 || typeof input.model !== "string" || !input.model || input.model.length > 256 || typeof input.message !== "string" || !input.message.trim() || input.message.length > 8000 || "action" in input || "continue" in input) {
+      throw new Error("A candidate turn requires one bounded objective and cannot submit a chat action or continuation");
+    }
+    if ("validateEdits" in controls) throw new Error("Candidate turns use whole-candidate completion checks, not progressive edit checks");
+    if (controls.tools?.some((tool) => tool.kind !== "context")) throw new Error("Candidate turns accept trusted context tools only; external actions are not part of candidate generation");
+    const source = input.initialSurfaces ?? [];
+    if (!Array.isArray(source) || source.length > 16) throw new Error("Candidate context must contain at most 16 uniquely identified, versioned surfaces");
+    let encoded: string | undefined;
+    try { encoded = JSON.stringify(source); } catch { /* rejected below */ }
+    if (!encoded || new TextEncoder().encode(encoded).byteLength > 8 * 1024 * 1024) throw new Error("Candidate context must be serializable and at most 8 MiB");
+    const snapshots = structuredClone(source);
+    if (new Set(snapshots.map((surface) => surface.id)).size !== snapshots.length || snapshots.some((surface) => !surface.id || !Number.isInteger(surface.version) || surface.version < 1)) {
+      throw new Error("Candidate context must contain at most 16 uniquely identified, versioned surfaces");
+    }
+    const store = new SurfaceStore(catalog);
+    snapshots.forEach((snapshot) => store.load(snapshot));
+    const at = now();
+    const isolated: Session = {
+      id: input.session,
+      title: titleOf(input.message),
+      created: at,
+      updated: at,
+      messages: [],
+      timeline: [],
+      store,
+      viewers: new Set(),
+      external: new Set(),
+      inbox: [],
+      waiters: new Set(),
+    };
+    const ctrl = new AbortController();
+    const abort = () => ctrl.abort(controls.signal?.reason);
+    if (controls.signal?.aborted) throw new Error("candidate run cancelled");
+    controls.signal?.addEventListener("abort", abort, { once: true });
+    try {
+      const result = await executeTurn(input, isolated, ctrl, { ...controls, tools: controls.tools ?? [], surfaceSubmission: true, completion: "response" }, false, false);
+      const reply = [...isolated.timeline].reverse().find((entry) => entry.kind === "assistant");
+      return {
+        result,
+        reply: reply?.kind === "assistant" ? reply.text : "",
+        baseVersions: snapshots.map(({ id, version }) => ({ id, version })),
+        surfaces: store.list().map((surface) => store.snapshot(surface.id)!),
+      };
+    } finally {
+      controls.signal?.removeEventListener("abort", abort);
     }
   }
 
@@ -810,6 +880,7 @@ export function createHost(opts: HostOptions): VakHost {
 
   return {
     run,
+    runCandidate,
     project,
     view,
     remove: dropSession,

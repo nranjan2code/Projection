@@ -1,5 +1,9 @@
 # Projection handover — 2026-10-27
 
+## Isolated host candidate API — 2026-10-29
+
+Added public `VakHost.runCandidate` for bounded single-turn candidate generation on explicit surface snapshots. It starts with no session history, inherits no host-global tools, allows only caller-provided local context tools, forces transactional `vak_submit`, and returns base versions plus isolated candidate surfaces without canonical persistence or broadcasts. The caller remains responsible for version-fenced commit and semantic/outcome review. Test `packages/host/test/host.test.ts` proves the existing session view and reload stay unchanged after candidate completion, while a host-global external tool is not inherited. Under bundled Node 26.13.0: `npm run typecheck`, `npm test` (413/413), targeted host tests (19/19) and package build pass. This is a proposal mechanism only; it adds no native authority, commit protocol, isolation, budget scheduler or end-to-end agent runtime.
+
 ## Host-owned provider transport seam — 2026-10-29
 
 Provider constructors and `ProviderEntry.make` accept an optional provider-aware `transport`, used for model discovery and request/stream traffic. The callback receives adapter identity and request details, letting embedding hosts enforce provider-specific egress policy while leaving default Node `fetch` behavior unchanged. HTTP retry and response-stream behavior remain in the shared adapters. Focused provider tests, all 412 framework tests/replay, typecheck and package build pass. This exposes a transport seam only; it does not implement or certify a native broker, credential isolation, approval UX, endpoint policy, or user outcome.

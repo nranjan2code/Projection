@@ -41,6 +41,20 @@ function scripted(): Provider {
   };
 }
 
+function candidateScripted(): Provider {
+  return {
+    id: "scripted",
+    async describeModel() { return { tools: true, fingerprint: "candidate-test", source: "test" }; },
+    async *stream(): AsyncGenerator<ProviderEvent> {
+      const args = JSON.stringify({ reply: "Candidate ready.", surfaces: [{ op: "replace", surface: "owned", title: "Candidate title", root: { type: "stat", props: { label: "Candidate metric", value: 42 } }, data: {} }] });
+      yield { type: "tool_start", id: "candidate-1", name: "vak_submit" };
+      yield { type: "tool_args", id: "candidate-1", delta: args };
+      yield { type: "tool_end", id: "candidate-1" };
+      yield { type: "done", stop: "tool_use" };
+    },
+  };
+}
+
 async function serve(extra: Partial<HostOptions> = {}, provider: Provider = scripted()): Promise<{ base: string; server: Server; dir: string; host: VakHost }> {
   const dir = mkdtempSync(path.join(tmpdir(), "vak-host-"));
   const entry: ProviderEntry = { id: "scripted", label: "Scripted", available: true, make: () => provider };
@@ -69,6 +83,28 @@ async function chat(base: string, body: Record<string, unknown>, headers: Record
   for await (const msg of readSse(res.body!)) types.push(msg.event ?? "");
   return types;
 }
+
+test("isolated candidate runs return versioned proposals without canonical history or surface writes", async () => {
+  let externalCalls = 0;
+  const app = await serve({ tools: () => [{ spec: { name: "external_write", description: "external effect", inputSchema: { type: "object" } }, execute: () => { externalCalls++; return "written"; } }] }, candidateScripted());
+  try {
+    await app.host.project({ session: "root-session", tool: "vak_render", args: { surface: "owned", title: "Original title", data: {}, nodes: [{ id: "root", type: "stat", props: { label: "Original metric", value: 7 } }] } });
+    const before = await app.host.view("root-session");
+    await assert.rejects(app.host.runCandidate({ session: "root-session", provider: "scripted", model: "m", message: "Too much context", initialSurfaces: [{ id: "oversized", version: 1, nodes: [], data: { value: "x".repeat(8 * 1024 * 1024 + 1) } }] }), /8 MiB/);
+    const candidate = await app.host.runCandidate({ session: "root-session", provider: "scripted", model: "m", message: "Prepare an updated metric.", initialSurfaces: before.surfaces });
+
+    assert.equal(candidate.result.stop, "end");
+    assert.equal(candidate.reply, "Candidate ready.");
+    assert.deepEqual(candidate.baseVersions, [{ id: "owned", version: before.surfaces[0]!.version }]);
+    assert.equal(candidate.surfaces[0]?.title, "Candidate title");
+    assert.equal(candidate.surfaces[0]?.nodes[0]?.props?.value, 42);
+    assert.equal(externalCalls, 0);
+    assert.deepEqual(await app.host.view("root-session"), before);
+
+    const reloaded = createHost({ providers: () => [], profiles: new ProfileCache(path.join(app.dir, "models.json")), instructions: "test", sessionsDir: path.join(app.dir, "sessions") });
+    assert.deepEqual(await reloaded.view("root-session"), before);
+  } finally { app.server.close(); }
+});
 
 test("a conversation is saved with its timeline and surfaces, and reloads in a new host", async () => {
   const first = await serve();
