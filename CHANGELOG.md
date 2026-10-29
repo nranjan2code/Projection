@@ -1,5 +1,9 @@
 # Changelog
 
+## Intrinsic actions and consistent control density — 2026-10-29
+
+Ordinary web action buttons keep their content width in vertical stacks and grid tracks instead of inheriting panel stretch. Explicit common maxWidth measures and stack stretch alignment remain available. Compact density now reduces input, choice and action padding consistently while comfortable descendants restore their own spacing. Single-line inputs use the same control rhythm; long labels wrap, and coarse-pointer targets retain their 44px minimum. No domain-specific CSS or new component API.
+
 ## Unreleased: edge model thinking and step policy
 
 - Capability policy removes the artificial 2-step limit on models under 2B parameters; edge models receive standard 4-step allocation with core tier components.

@@ -1,5 +1,9 @@
 # Projection handover — 2026-10-27
 
+## Shared action sizing — 2026-10-29
+
+The installed reference app exposed ordinary actions stretching across vertical panels and compact input padding exceeding the intended 32px rhythm. The web projector now uses intrinsic button width, consistent inherited control padding and input line-height, preserves explicit measures/alignment, and wraps long labels. Vakyartha retains the original failing native control fixture (`vak-controls-hq11Mg`) and owns the adoption/end-to-end WebKit evidence. Mechanism verification and adoption results must be recorded separately; this change does not certify general authored-layout quality.
+
 ## Private transport boundary — 2026-10-27
 
 `createFetchHandler` exposes the existing admitted host/app request path as streaming Web Request/Response without a listener. The transport-neutral structural request/response types also accept the existing Node HTTP adapter. `VakClient` has optional fetch injection. App-specific process pipes, native IPC, pricing and product routes remain outside Projection. 398 framework tests/replay, typecheck and package generation pass. Four adapter regressions cover JSON/admission inputs, binary streaming, early headers, cancellation and failures without a network listener. This changes transport only; existing model/source/interaction/receipt failures remain open.

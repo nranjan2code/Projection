@@ -176,8 +176,8 @@ pre code { background: none; padding: 0; }
 .tablist button[aria-selected="true"] { color: var(--vak-fg, var(--_vak-fg)); border-bottom-color: var(--vak-accent, var(--_vak-accent)); }
 
 /* Density is an inherited semantic choice, independent of theme and font size. */
-.density-compact { --vak-card-padding: 10px; --vak-control-height: 32px; --gap-sm: 6px; --gap-md: 10px; --gap-lg: 16px; }
-.density-comfortable { --vak-card-padding: 16px; --vak-control-height: 36px; --gap-sm: 8px; --gap-md: 12px; --gap-lg: 20px; }
+.density-compact { --vak-card-padding: 10px; --vak-control-height: 32px; --vak-control-padding-block: 4px; --gap-sm: 6px; --gap-md: 10px; --gap-lg: 16px; }
+.density-comfortable { --vak-card-padding: 16px; --vak-control-height: 36px; --vak-control-padding-block: 7px; --gap-sm: 8px; --gap-md: 12px; --gap-lg: 20px; }
 .density-compact .stat .value { font-size: 1.35em; }
 .density-compact :is(td, th) { padding-block: 7px; }
 .density-compact .chart { padding: 10px; }
@@ -247,7 +247,7 @@ hr.divider { border: 0; border-top: 1px solid var(--vak-border, var(--_vak-borde
 .table-box { container-type: inline-size; border: 1px solid var(--vak-border, var(--_vak-border)); border-radius: var(--vak-radius, var(--_vak-radius)); background: var(--vak-surface, var(--_vak-surface)); overflow: hidden; }
 .table-scroll { overflow-x: auto; }
 /* Local interactions: filter, sort, page (no model turn). */
-.filter { display: block; width: calc(100% - 16px); margin: 8px; font: inherit; font-size: 0.88em; color: var(--vak-fg, var(--_vak-fg)); background: var(--vak-bg, var(--_vak-bg)); border: 1px solid var(--vak-border, var(--_vak-border)); border-radius: var(--vak-radius-sm, var(--_vak-radius-sm)); padding: 6px 10px; min-height: var(--vak-control-height, var(--_vak-control-height)); transition: border-color 120ms ease, box-shadow 120ms ease; }
+.filter { display: block; width: calc(100% - 16px); margin: 8px; font: inherit; font-size: 0.88em; color: var(--vak-fg, var(--_vak-fg)); background: var(--vak-bg, var(--_vak-bg)); border: 1px solid var(--vak-border, var(--_vak-border)); border-radius: var(--vak-radius-sm, var(--_vak-radius-sm)); padding: var(--vak-control-padding-block, 6px) 10px; min-height: var(--vak-control-height, var(--_vak-control-height)); transition: border-color 120ms ease, box-shadow 120ms ease; }
 .list-box > .filter, .grid-box > .filter { width: 100%; margin: 0 0 var(--gap-sm); }
 .filter:hover { border-color: color-mix(in srgb, var(--vak-muted, var(--_vak-muted)) 45%, var(--vak-border, var(--_vak-border))); }
 .filter:focus, .filter:focus-visible { outline: 2px solid var(--vak-accent, var(--_vak-accent)); outline-offset: 1px; }
@@ -549,10 +549,18 @@ tr:last-child td { border-bottom: 0; }
 /* ---- interaction ----------------------------------------------------- */
 .btn {
   appearance: none; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  font: inherit; font-weight: var(--vak-weight-heading, var(--_vak-weight-heading)); font-size: 0.92em; line-height: 1.3; padding: 7px 12px; min-height: var(--vak-control-height, var(--_vak-control-height));
+  width: fit-content; max-width: 100%; min-width: 0; overflow-wrap: anywhere;
+  font: inherit; font-weight: var(--vak-weight-heading, var(--_vak-weight-heading)); font-size: 0.92em; line-height: 1.3; padding: var(--vak-control-padding-block, 7px) 12px; min-height: var(--vak-control-height, var(--_vak-control-height));
   border-radius: var(--vak-radius-sm, var(--_vak-radius-sm)); border: 1px solid var(--vak-border, var(--_vak-border)); background: var(--vak-surface, var(--_vak-surface)); color: var(--vak-fg, var(--_vak-fg));
   cursor: pointer; transition: background 120ms ease, border-color 120ms ease, transform 80ms ease;
 }
+/* Ordinary actions keep their intrinsic measure in flex/grid tracks. Explicit
+ * semantic measures remain intentional, including an opted-in full-width CTA. */
+.btn.measure-sm { width: 100%; max-width: 320px; }
+.btn.measure-md { width: 100%; max-width: 720px; }
+.btn.measure-lg { width: 100%; max-width: 1040px; }
+.btn.measure-full { width: 100%; max-width: none; }
+.stack.align-stretch > .btn:not([class*="measure-"]) { width: auto; }
 .btn:hover { background: var(--vak-surface-2, var(--_vak-surface-2)); }
 .btn:active { transform: translateY(1px); }
 .btn:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, .chip:focus-visible, .seg button:focus-visible {
@@ -580,7 +588,7 @@ tr:last-child td { border-bottom: 0; }
 .field .req { color: var(--vak-danger, var(--_vak-danger)); margin-left: 2px; }
 input, select, textarea {
   font: inherit; color: var(--vak-fg, var(--_vak-fg)); background: var(--vak-surface, var(--_vak-surface)); width: 100%;
-  border: 1px solid var(--vak-border, var(--_vak-border)); border-radius: var(--vak-radius-sm, var(--_vak-radius-sm)); padding: 7px 10px; min-height: var(--vak-control-height, var(--_vak-control-height));
+  border: 1px solid var(--vak-border, var(--_vak-border)); border-radius: var(--vak-radius-sm, var(--_vak-radius-sm)); line-height: 1.4; padding: var(--vak-control-padding-block, 7px) 10px; min-height: var(--vak-control-height, var(--_vak-control-height));
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 input::placeholder, select::placeholder, textarea::placeholder, .filter::placeholder { color: var(--vak-muted, var(--_vak-muted)); opacity: 0.65; }
@@ -594,7 +602,7 @@ textarea { min-height: 92px; resize: vertical; }
 
 .seg { display: flex; flex-wrap: wrap; gap: 6px; }
 .seg button, .chip {
-  appearance: none; font: inherit; font-size: 0.9em; font-weight: var(--vak-weight-label, var(--_vak-weight-label)); padding: 7px 12px; border-radius: var(--vak-radius-sm, var(--_vak-radius-sm));
+  appearance: none; font: inherit; font-size: 0.9em; font-weight: var(--vak-weight-label, var(--_vak-weight-label)); min-height: var(--vak-control-height, var(--_vak-control-height)); padding: var(--vak-control-padding-block, 7px) 12px; border-radius: var(--vak-radius-sm, var(--_vak-radius-sm));
   border: 1px solid var(--vak-border, var(--_vak-border)); background: var(--vak-surface, var(--_vak-surface)); color: var(--vak-fg, var(--_vak-fg)); cursor: pointer;
 }
 .seg button[aria-pressed="true"], .chip[aria-pressed="true"] { background: var(--vak-accent-soft, var(--_vak-accent-soft)); border-color: var(--vak-accent, var(--_vak-accent)); color: var(--vak-accent, var(--_vak-accent)); }
