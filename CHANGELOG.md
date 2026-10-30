@@ -1,5 +1,9 @@
 # Changelog
 
+## Canonical publication preparation — 2026-10-30
+
+The public `@vak/host.prepareCandidatePublication` revalidates a JSON candidate against an explicit canonical base, checks version vectors and strict complete graph/binding/wire semantics, and returns a detached canonical session snapshot without model work, repairs, persistence or broadcasts. Failed/partial stops, stale bases, cyclic/disconnected/duplicate graphs, non-JSON values and changed content at an unchanged version are refused. Existing interactive snapshots and exact data values remain unchanged. Native consent, fences, durability, publication acknowledgement and task acceptance remain the application's responsibility. Focused tests, typecheck, all 422 framework tests/replay and package generation pass under Node 26.13.0.
+
 ## 2026-10-30: revisioned host session stores
 
 - `@vak/host` exports `HostSessionSnapshot` and `HostSessionStore` so apps can own canonical session persistence through load, compare-and-set save, list and revision-checked removal. `sessionStore` and `sessionsDir` are mutually exclusive. Failed adapter writes fence the in-memory session until host reload. This adds a public persistence seam without changing the existing filesystem-backed default.

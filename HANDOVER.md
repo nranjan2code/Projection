@@ -1,5 +1,9 @@
 # Projection handover — 2026-10-27
 
+## Canonical publication preparation — 2026-10-30
+
+The public `@vak/host.prepareCandidatePublication` revalidates a JSON candidate against an explicit canonical base, checks version vectors and strict complete graph/binding/wire semantics, and returns a detached canonical session snapshot without model work, repairs, persistence or broadcasts. Failed/partial stops, stale bases, cyclic/disconnected/duplicate graphs, non-JSON values and changed content at an unchanged version are refused. Existing interactive snapshots and exact data values remain unchanged. Native consent, fences, durability, publication acknowledgement and task acceptance remain the application's responsibility. Focused tests, typecheck, all 422 framework tests/replay and package generation pass under Node 26.13.0.
+
 ## Revisioned canonical session owner — 2026-10-30
 
 `@vak/host` now exports `HostSessionSnapshot` and `HostSessionStore` for an app-owned canonical persistence boundary. The optional `sessionStore` host option supports load, compare-and-set save, list and revision-checked removal; it is mutually exclusive with `sessionsDir`, so the host does not create a second canonical writer. A failed save fences that in-memory session until host reload, avoiding continuation from a stale view. The adapter owns atomicity, durable revision checks and deletion semantics. Regression coverage proves write, reload, summaries, surface restoration and deletion without creating a sessions directory. The full framework suite/replay passes 418/418, typecheck and package generation pass. This is the general persistence seam only: Vakyartha has not adopted it yet, and native authorization, task-state recovery, concurrent-host behavior and product outcome checks remain open.
