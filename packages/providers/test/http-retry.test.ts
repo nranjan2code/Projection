@@ -33,3 +33,20 @@ test("an explicit host transport receives provider identity and preserves the re
   assert.equal(calls[0], "https://provider.example/v1");
   assert.equal(await response.text(), "event: done\ndata: [DONE]\n\n");
 });
+
+test("retry attempts share one operation identity and expose the attempt number", async () => {
+  const calls: { operationId: string; attempt: number }[] = [];
+  const transport = async (_provider: string, _input: RequestInfo | URL, _init?: RequestInit, context?: { operationId: string; attempt: number }) => {
+    assert.ok(context);
+    calls.push(context);
+    return calls.length === 1
+      ? new Response("busy", { status: 429, headers: { "retry-after": "0.001" } })
+      : new Response("ok");
+  };
+  const response = await postJson("fake", "https://unused.invalid", {}, {}, undefined, 1, transport);
+  assert.equal(await response.text(), "ok");
+  assert.equal(calls.length, 2);
+  assert.match(calls[0]!.operationId, /^[0-9a-f-]{36}$/);
+  assert.equal(calls[1]!.operationId, calls[0]!.operationId);
+  assert.deepEqual(calls.map((call) => call.attempt), [0, 1]);
+});

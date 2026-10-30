@@ -5,6 +5,7 @@ import { ProviderError } from "./types.ts";
 export { readNdjson, readSse, type SseMessage } from "@vak/core";
 
 import { setDefaultAutoSelectFamilyAttemptTimeout } from "node:net";
+import { randomUUID } from "node:crypto";
 
 /**
  * Node tries each resolved address (IPv6/IPv4 "happy eyeballs") with a 250 ms
@@ -17,8 +18,15 @@ export function hardenNetwork(attemptTimeoutMs = 2500): void {
 
 const RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 504, 529]);
 
+/** Stable identity for one logical HTTP operation, including any adapter retries. */
+export interface ProviderTransportContext {
+  /** Retries of one POST keep this ID so hosts can refuse duplicate effects. */
+  operationId: string;
+  attempt: number;
+}
+
 /** Provider-aware boundary supplied by a host that owns outbound-network policy. */
-export type ProviderTransport = (provider: string, input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+export type ProviderTransport = (provider: string, input: RequestInfo | URL, init?: RequestInit, context?: ProviderTransportContext) => Promise<Response>;
 
 const defaultTransport: ProviderTransport = (_provider, input, init) => fetch(input, init);
 
@@ -33,6 +41,7 @@ export async function postJson(
   transport: ProviderTransport = defaultTransport,
 ): Promise<Response> {
   let attempt = 0;
+  const operationId = randomUUID();
   for (;;) {
     let res: Response;
     try {
@@ -41,7 +50,7 @@ export async function postJson(
         headers: { "content-type": "application/json", ...headers },
         body: JSON.stringify(body),
         signal,
-      });
+      }, { operationId, attempt });
     } catch (err) {
       if (signal?.aborted || attempt >= retries) {
         throw new ProviderError(provider, `request failed: ${(err as Error).message}`);
@@ -64,7 +73,7 @@ export async function postJson(
 }
 
 export async function getJson(provider: string, url: string, headers: Record<string, string>, signal?: AbortSignal, transport: ProviderTransport = defaultTransport): Promise<unknown> {
-  const res = await transport(provider, url, { headers, signal });
+  const res = await transport(provider, url, { headers, signal }, { operationId: randomUUID(), attempt: 0 });
   if (!res.ok) throw new ProviderError(provider, `HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`, res.status);
   return res.json();
 }

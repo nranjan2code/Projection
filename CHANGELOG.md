@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased: stable provider transport operation identities
+
+- Provider transport callbacks receive a stable `operationId` and zero-based `attempt` for each logical HTTP operation. Provider POST retries reuse the ID and advance the attempt number so a host can prevent duplicate effects and attribute retries. GET discovery calls receive a unique identity. Default `fetch` behavior is unchanged.
+
 ## Isolated host candidates — 2026-10-29
 
 `VakHost.runCandidate` runs a single objective against only caller-selected surface snapshots in a separate `SurfaceStore`. It forces transactional submission, permits only explicitly supplied local context tools, bounds context to 16 unique surfaces and 8 MiB, and returns base versions plus candidate surfaces. It writes no canonical session/history and emits no viewer broadcast; callers must perform their own version-fenced commit and outcome checks. Typecheck and 413 framework tests/replay pass under Node 26.13.0. No dependency or persisted format changed.
