@@ -71,14 +71,14 @@ function passes(check: Check, ctx: CheckContext): boolean {
     case "count": {
       let n = 0;
       walkTree(root, (node) => {
-        if (check.types.includes(node.type)) n++;
+        if (check.types.includes(node.type) || (check.types.includes("graph") && node.type === "diagram")) n++;
       });
       return n >= (check.min ?? 1) && (check.max === undefined || n <= check.max);
     }
     case "prop": {
       let found = false;
       walkTree(root, (node) => {
-        if (node.type !== check.type) return;
+        if (node.type !== check.type && !(check.type === "graph" && node.type === "diagram")) return;
         let value: unknown = node.props;
         for (const key of check.path) {
           if (value === null || typeof value !== "object" || !Object.hasOwn(value, key)) {

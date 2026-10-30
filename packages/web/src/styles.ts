@@ -334,8 +334,8 @@ tr:last-child td { border-bottom: 0; }
 .chart svg.pie { aspect-ratio: 1; max-width: 240px; margin: 0 auto; }
 .chart .gridline { stroke: var(--vak-border, var(--_vak-border)); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .chart .axis { fill: var(--vak-muted, var(--_vak-muted)); font-size: 11px; font-family: var(--vak-font, var(--_vak-font)); }
-.graph { margin: 0; padding: 14px; background: var(--vak-surface, var(--_vak-surface)); border: 1px solid var(--vak-border, var(--_vak-border)); border-radius: var(--vak-radius, var(--_vak-radius)); min-width: 0; }
-.card .graph { padding: 0; border: 0; }
+.graph, .diagram { margin: 0; padding: 14px; background: var(--vak-surface, var(--_vak-surface)); border: 1px solid var(--vak-border, var(--_vak-border)); border-radius: var(--vak-radius, var(--_vak-radius)); min-width: 0; }
+.card .graph, .card .diagram { padding: 0; border: 0; }
 .graph-tools { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-bottom: 8px; }
 .graph-btn { font: inherit; font-size: 0.82em; min-width: 30px; min-height: var(--vak-control-height, var(--_vak-control-height)); padding: 0 8px; border: 1px solid var(--vak-border, var(--_vak-border)); border-radius: var(--vak-radius-sm, var(--_vak-radius-sm)); background: var(--vak-surface, var(--_vak-surface)); color: var(--vak-fg, var(--_vak-fg)); cursor: pointer; transition: background 120ms ease, border-color 120ms ease; }
 .graph-btn:hover { border-color: var(--vak-muted, var(--_vak-muted)); background: var(--vak-surface-2, var(--_vak-surface-2)); }
@@ -347,16 +347,22 @@ tr:last-child td { border-bottom: 0; }
 .graph-frame.dragging { cursor: grabbing; }
 .graph-frame:focus-visible { outline: 2px solid var(--vak-accent, var(--_vak-accent)); outline-offset: 2px; }
 .graph-frame svg { display: block; width: 100%; height: 100%; font-family: var(--vak-font, var(--_vak-font)); }
-.graph .dim { opacity: 0.22; }
-.graph-node.match rect { stroke: var(--vak-accent, var(--_vak-accent)); stroke-width: 3; }
+.graph .dim, .diagram .dim { opacity: 0.22; }
+.graph-node.match rect, .graph-node.match polygon, .graph-node.match .graph-shape-cylinder { stroke: var(--vak-accent, var(--_vak-accent)); stroke-width: 3; }
 .graph-edge { stroke: var(--vak-muted, var(--_vak-muted)); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .graph-arrow { fill: var(--vak-muted, var(--_vak-muted)); }
-.graph-edge-label { font-size: 11px; fill: var(--vak-muted, var(--_vak-muted)); paint-order: stroke; stroke: var(--vak-surface, var(--_vak-surface)); stroke-width: 4px; stroke-linejoin: round; }
+.graph-edge-label-bg { fill: var(--vak-surface, var(--_vak-surface)); stroke: var(--vak-border, var(--_vak-border)); stroke-width: 1px; }
+.graph-edge-label { font-size: 11px; font-weight: 500; fill: var(--vak-muted, var(--_vak-muted)); }
+.graph-subgraph { fill: color-mix(in srgb, var(--vak-surface-2, var(--_vak-surface-2)) 35%, transparent); stroke: var(--vak-border, var(--_vak-border)); stroke-width: 1.2px; stroke-dasharray: 4 3; }
+.graph-subgraph-label { font-size: 10px; font-weight: 600; fill: var(--vak-muted, var(--_vak-muted)); letter-spacing: 0.05em; text-transform: uppercase; }
 .graph-node { cursor: pointer; outline: none; transition: opacity 0.15s; }
-.graph-node rect { --node: var(--vak-accent, var(--_vak-accent)); fill: color-mix(in srgb, var(--node) 14%, var(--vak-surface, var(--_vak-surface))); stroke: var(--node); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.graph-node rect, .graph-shape-diamond, .graph-shape-cylinder { --node: var(--vak-accent, var(--_vak-accent)); fill: color-mix(in srgb, var(--node) 14%, var(--vak-surface, var(--_vak-surface))); stroke: var(--node); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.graph-shape-rim { fill: none; stroke: var(--node); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .graph-node text { font-size: 12.5px; font-weight: var(--vak-weight-heading, var(--_vak-weight-heading)); fill: var(--vak-fg, var(--_vak-fg)); pointer-events: none; }
-.graph-node:hover rect, .graph-node.selected rect { stroke-width: 2.5; fill: color-mix(in srgb, var(--node) 26%, var(--vak-surface, var(--_vak-surface))); }
-.graph-node:focus-visible rect { stroke-width: 3; }
+.graph-node:hover rect, .graph-node.selected rect,
+.graph-node:hover polygon, .graph-node.selected polygon,
+.graph-node:hover .graph-shape-cylinder, .graph-node.selected .graph-shape-cylinder { stroke-width: 2.5; fill: color-mix(in srgb, var(--node) 26%, var(--vak-surface, var(--_vak-surface))); }
+.graph-node:focus-visible rect, .graph-node:focus-visible polygon, .graph-node:focus-visible .graph-shape-cylinder { stroke-width: 3; }
 .graph-detail { margin-top: 10px; font-size: 0.88em; color: var(--vak-muted, var(--_vak-muted)); text-align: center; }
 .graph-detail b { color: var(--vak-fg, var(--_vak-fg)); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 8px; font-size: 0.84em; color: var(--vak-muted, var(--_vak-muted)); justify-content: center; }

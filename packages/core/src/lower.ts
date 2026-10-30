@@ -6,7 +6,7 @@
 
 import type { ResolvedNode, ResolvedSurface } from "./surface.ts";
 
-export const LOWERED = new Set(["timeline", "steps", "code", "map", "gallery", "graph", "calendar", "board", "progress", "accordion", "compare", "timer", "tree", "math", "diff", "gantt", "media"]);
+export const LOWERED = new Set(["timeline", "steps", "code", "map", "gallery", "diagram", "graph", "calendar", "board", "progress", "accordion", "compare", "timer", "tree", "math", "diff", "gantt", "media"]);
 
 const s = (v: unknown) => (v === undefined || v === null ? "" : String(v));
 const items = (p: Record<string, unknown>) => (Array.isArray(p.items) ? p.items : []) as Record<string, unknown>[];
@@ -99,6 +99,7 @@ export function lowerNode(n: ResolvedNode): ResolvedNode {
         images.map((im, i) => ({ key: `${n.key}#img${i}`, id: `${n.id}_img${i}`, type: "image", props: { src: s(im.src), alt: s(im.alt ?? im.caption) }, children: [] })),
       );
     }
+    case "diagram":
     case "graph": {
       // One line per connection, then the nodes nothing connects, so every
       // node and edge reads on a target that cannot draw.

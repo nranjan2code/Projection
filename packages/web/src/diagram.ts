@@ -6,9 +6,10 @@
 const NS = "http://www.w3.org/2000/svg";
 
 export interface GraphSpec {
-  nodes: { id: string; label: string; group?: string; note?: string }[];
+  nodes: { id: string; label: string; group?: string; note?: string; shape?: string }[];
   edges: { from: string; to: string; label?: string }[];
   directed: boolean;
+  subgraphs?: { id: string; label: string; nodes: string[] }[];
 }
 
 interface Placed {
@@ -34,44 +35,105 @@ const str = (v: unknown) => (typeof v === "string" ? v : typeof v === "number" ?
 export function normalizeGraph(props: Record<string, unknown>): GraphSpec {
   const nodes = (Array.isArray(props.nodes) ? props.nodes : [])
     .filter((n): n is Record<string, unknown> => !!n && typeof n === "object")
-    .map((n) => ({ id: str(n.id), label: str(n.label) || str(n.id), group: str(n.group) || undefined, note: str(n.note) || undefined }))
+    .map((n) => ({
+      id: str(n.id),
+      label: str(n.label) || str(n.id),
+      group: str(n.group) || undefined,
+      note: str(n.note) || undefined,
+      shape: str(n.shape) || undefined,
+    }))
     .filter((n) => n.id);
   const ids = new Set(nodes.map((n) => n.id));
   const edges = (Array.isArray(props.edges) ? props.edges : [])
     .filter((e): e is Record<string, unknown> => !!e && typeof e === "object")
     .map((e) => ({ from: str(e.from), to: str(e.to), label: str(e.label) || undefined }))
     .filter((e) => ids.has(e.from) && ids.has(e.to));
-  return { nodes, edges, directed: props.directed !== false };
+  const subgraphs = Array.isArray(props.subgraphs)
+    ? (props.subgraphs as unknown[])
+        .filter((s): s is Record<string, unknown> => !!s && typeof s === "object")
+        .map((s) => ({
+          id: str(s.id) || str(s.label),
+          label: str(s.label) || str(s.id),
+          nodes: (Array.isArray(s.nodes) ? (s.nodes as unknown[]).map(str) : []).filter((id) => ids.has(id)),
+        }))
+        .filter((s) => s.id && s.nodes.length)
+    : undefined;
+  return { nodes, edges, directed: props.directed !== false, ...(subgraphs?.length ? { subgraphs } : {}) };
 }
 
-/** Longest-path layers when the directed graph has no cycle; undefined otherwise. */
-function layers(spec: GraphSpec): string[][] | undefined {
+interface LayerResult {
+  rows: string[][];
+  backEdges: Set<string>;
+}
+
+/** Longest-path layers with cycle-breaking via DFS. Feedback loops remain structured in layers. */
+function layers(spec: GraphSpec): LayerResult | undefined {
   if (!spec.directed || !spec.edges.length) return undefined;
-  const indeg = new Map(spec.nodes.map((n) => [n.id, 0]));
-  for (const e of spec.edges) if (e.from !== e.to) indeg.set(e.to, indeg.get(e.to)! + 1);
+
+  // 1. Cycle detection & cycle-breaking via 3-color DFS
+  const state = new Map<string, number>();
+  const backEdges = new Set<string>();
+  const adj = new Map<string, string[]>();
+  for (const n of spec.nodes) adj.set(n.id, []);
+  for (const e of spec.edges) {
+    if (e.from !== e.to) adj.get(e.from)?.push(e.to);
+  }
+
+  const dfs = (u: string) => {
+    state.set(u, 1);
+    for (const v of adj.get(u) || []) {
+      const s = state.get(v) ?? 0;
+      if (s === 1) {
+        backEdges.add(`${u}\0${v}`);
+      } else if (s === 0) {
+        dfs(v);
+      }
+    }
+    state.set(u, 2);
+  };
+
+  const rawIndeg = new Map(spec.nodes.map((n) => [n.id, 0]));
+  for (const e of spec.edges) if (e.from !== e.to) rawIndeg.set(e.to, rawIndeg.get(e.to)! + 1);
+  for (const n of spec.nodes) if (rawIndeg.get(n.id) === 0 && (state.get(n.id) ?? 0) === 0) dfs(n.id);
+  for (const n of spec.nodes) if ((state.get(n.id) ?? 0) === 0) dfs(n.id);
+
+  // 2. Longest-path layering on the acyclic DAG (back-edges excluded for depth calculation)
+  const dagIndeg = new Map(spec.nodes.map((n) => [n.id, 0]));
+  for (const e of spec.edges) {
+    if (e.from !== e.to && !backEdges.has(`${e.from}\0${e.to}`)) {
+      dagIndeg.set(e.to, dagIndeg.get(e.to)! + 1);
+    }
+  }
   const depth = new Map<string, number>();
-  const queue = spec.nodes.filter((n) => indeg.get(n.id) === 0).map((n) => n.id);
+  const queue = spec.nodes.filter((n) => dagIndeg.get(n.id) === 0).map((n) => n.id);
   for (const id of queue) depth.set(id, 0);
+
   for (let i = 0; i < queue.length; i++) {
     const id = queue[i]!;
     for (const e of spec.edges) {
-      if (e.from !== id || e.from === e.to) continue;
+      if (e.from !== id || e.from === e.to || backEdges.has(`${e.from}\0${e.to}`)) continue;
       depth.set(e.to, Math.max(depth.get(e.to) ?? 0, depth.get(id)! + 1));
-      indeg.set(e.to, indeg.get(e.to)! - 1);
-      if (indeg.get(e.to) === 0) queue.push(e.to);
+      dagIndeg.set(e.to, dagIndeg.get(e.to)! - 1);
+      if (dagIndeg.get(e.to) === 0) queue.push(e.to);
     }
   }
-  if (queue.length < spec.nodes.length) return undefined;
+
+  // Safety fallback for any isolated nodes
+  for (const n of spec.nodes) {
+    if (!depth.has(n.id)) depth.set(n.id, 0);
+  }
+
   const rows: string[][] = [];
   for (const n of spec.nodes) (rows[depth.get(n.id)!] ??= []).push(n.id);
-  // A few barycenter sweeps so edges between layers cross less.
+
+  // 3. Barycenter sweeps so edges between layers cross less
   const pos = new Map<string, number>();
   const index = () => rows.forEach((r) => r.forEach((id, i) => pos.set(id, i / Math.max(r.length - 1, 1))));
   index();
   for (let sweep = 0; sweep < 4; sweep++) {
     for (const row of rows.slice(1)) {
       const bary = (id: string) => {
-        const ps = spec.edges.filter((e) => e.to === id && depth.get(e.from)! < depth.get(id)!).map((e) => pos.get(e.from)!);
+        const ps = spec.edges.filter((e) => e.to === id && !backEdges.has(`${e.from}\0${e.to}`) && depth.get(e.from)! < depth.get(id)!).map((e) => pos.get(e.from)!);
         return ps.length ? ps.reduce((a, b) => a + b, 0) / ps.length : pos.get(id)!;
       };
       const keyed = new Map(row.map((id) => [id, bary(id)]));
@@ -79,7 +141,7 @@ function layers(spec: GraphSpec): string[][] | undefined {
       index();
     }
   }
-  return rows;
+  return { rows, backEdges };
 }
 
 function widthOf(label: string): number {
@@ -157,6 +219,19 @@ function forced(spec: GraphSpec): Map<string, Placed> {
   return new Map(spec.nodes.map((nd, i) => [nd.id, p[i]!]));
 }
 
+export type DiagramSpec = GraphSpec;
+
+function shapeOf(n: { shape?: string; group?: string; label?: string }): "box" | "pill" | "diamond" | "cylinder" {
+  if (n.shape === "diamond" || n.shape === "decision") return "diamond";
+  if (n.shape === "cylinder" || n.shape === "database" || n.shape === "storage") return "cylinder";
+  if (n.shape === "pill" || n.shape === "event" || n.shape === "terminal") return "pill";
+  const s = `${n.group ?? ""} ${n.label ?? ""}`.toLowerCase();
+  if (/\b(decision|check|review|approve|gate|condition|policy|guardrails?)\b/.test(s)) return "diamond";
+  if (/\b(database|dataset|records|storage|store|context|memory|data)\b/.test(s)) return "cylinder";
+  if (/\b(start|end|event|trigger|output|goal)\b/.test(s)) return "pill";
+  return "box";
+}
+
 /** Where the segment from a node's center toward (tx, ty) leaves its box. */
 function boxEdge(c: Placed, tx: number, ty: number): [number, number] {
   const dx = tx - c.x, dy = ty - c.y;
@@ -185,13 +260,15 @@ const PAD = 28;
  */
 export function renderGraph(spec: GraphSpec, doc: Document = document): HTMLElement {
   const wrap = doc.createElement("figure");
-  wrap.className = "graph";
+  wrap.className = "diagram graph";
   if (!spec.nodes.length) {
     wrap.textContent = "No data";
     return wrap;
   }
   const byId = new Map(spec.nodes.map((n) => [n.id, n]));
-  const rows = layers(spec);
+  const layout = layers(spec);
+  const rows = layout?.rows;
+  const backEdges = layout?.backEdges ?? new Set<string>();
   let dir: "tb" | "lr" = "tb";
   let pos = rows ? layered(spec, rows, dir) : forced(spec);
   let moved = false, interacted = false, selected: string | undefined;
@@ -214,7 +291,7 @@ export function renderGraph(spec: GraphSpec, doc: Document = document): HTMLElem
   const frame = el("div", "graph-frame");
   frame.tabIndex = 0;
   frame.title = "Drag to pan · pinch or Ctrl/⌘-scroll to zoom · drag a node to move it";
-  const svg = svgEl(doc, "svg", { role: "group", "aria-label": `Graph of ${spec.nodes.length} ${spec.nodes.length === 1 ? "node" : "nodes"} and ${spec.edges.length} ${spec.edges.length === 1 ? "connection" : "connections"}` });
+  const svg = svgEl(doc, "svg", { role: "group", "aria-label": `Diagram of ${spec.nodes.length} ${spec.nodes.length === 1 ? "node" : "nodes"} and ${spec.edges.length} ${spec.edges.length === 1 ? "connection" : "connections"}` });
   const marker = `vak-arrow-${++seq}`;
   if (spec.directed) {
     const defs = svgEl(doc, "defs");
@@ -223,20 +300,45 @@ export function renderGraph(spec: GraphSpec, doc: Document = document): HTMLElem
     defs.append(m);
     svg.append(defs);
   }
-  const edgeLayer = svgEl(doc, "g"), labelLayer = svgEl(doc, "g"), nodeLayer = svgEl(doc, "g");
-  svg.append(edgeLayer, labelLayer, nodeLayer);
+  const subgraphLayer = svgEl(doc, "g", { class: "graph-subgraphs" });
+  const edgeLayer = svgEl(doc, "g", { class: "graph-edges" });
+  const labelLayer = svgEl(doc, "g", { class: "graph-labels" });
+  const nodeLayer = svgEl(doc, "g", { class: "graph-nodes" });
+  svg.append(subgraphLayer, edgeLayer, labelLayer, nodeLayer);
   frame.append(svg);
   const detail = el("figcaption", "graph-detail");
   detail.hidden = true;
   const groups = [...new Set(spec.nodes.map((n) => n.group).filter((g): g is string => !!g))];
 
+  const drawSubgraphs = () => {
+    if (subgraphLayer.replaceChildren) subgraphLayer.replaceChildren();
+    else subgraphLayer.textContent = "";
+    if (!spec.subgraphs?.length) return;
+    for (const sg of spec.subgraphs) {
+      const nodePos = sg.nodes.map((id) => pos.get(id)).filter((p): p is Placed => !!p);
+      if (!nodePos.length) continue;
+      const x0 = Math.min(...nodePos.map((p) => p.x - p.w / 2)) - 14;
+      const x1 = Math.max(...nodePos.map((p) => p.x + p.w / 2)) + 14;
+      const y0 = Math.min(...nodePos.map((p) => p.y - NODE_H / 2)) - 22;
+      const y1 = Math.max(...nodePos.map((p) => p.y + NODE_H / 2)) + 14;
+      const box = svgEl(doc, "rect", { x: x0, y: y0, width: x1 - x0, height: y1 - y0, rx: 10, class: "graph-subgraph" });
+      const label = svgEl(doc, "text", { x: x0 + 10, y: y0 + 14, class: "graph-subgraph-label" });
+      label.textContent = sg.label;
+      subgraphLayer.append(box, label);
+    }
+  };
+
   const edgeEls: SVGPathElement[] = [];
   const drawEdges = () => {
-    edgeLayer.replaceChildren();
-    labelLayer.replaceChildren();
+    if (edgeLayer.replaceChildren) edgeLayer.replaceChildren();
+    else edgeLayer.textContent = "";
+    if (labelLayer.replaceChildren) labelLayer.replaceChildren();
+    else labelLayer.textContent = "";
     edgeEls.length = 0;
-    // Parallel edges between the same pair bend apart so each label stays readable.
     const pairCount = new Map<string, number>();
+    const bnd = bounds(pos);
+    const midX = bnd.x0 + bnd.w / 2;
+
     for (const e of spec.edges) {
       const a = pos.get(e.from)!, b = pos.get(e.to)!;
       let d: string, lx: number, ly: number;
@@ -244,6 +346,26 @@ export function renderGraph(spec: GraphSpec, doc: Document = document): HTMLElem
         const top = a.y - NODE_H / 2;
         d = `M${a.x - 10},${top}C${a.x - 30},${top - 42} ${a.x + 30},${top - 42} ${a.x + 10},${top}`;
         lx = a.x; ly = top - 36;
+      } else if (backEdges.has(`${e.from}\0${e.to}`) || (dir === "tb" && b.y < a.y - NODE_H) || (dir === "lr" && b.x < a.x - 20)) {
+        // Feedback loop / backward edge: route along the outer perimeter to prevent cutting through intermediate layers
+        const isRight = ((a.x + b.x) / 2) >= midX;
+        const key = [e.from, e.to].sort().join("\u0000");
+        const nth = pairCount.get(key) ?? 0;
+        pairCount.set(key, nth + 1);
+        const bendOffset = nth * 16;
+        if (dir === "tb") {
+          const margin = isRight ? (bnd.x0 + bnd.w + 40 + bendOffset) : (bnd.x0 - 40 - bendOffset);
+          const [sx, sy] = boxEdge(a, isRight ? a.x + 100 : a.x - 100, a.y);
+          const [tx, ty] = boxEdge(b, isRight ? b.x + 100 : b.x - 100, b.y);
+          d = `M${sx},${sy}C${margin},${sy} ${margin},${ty} ${tx},${ty}`;
+          lx = margin; ly = (sy + ty) / 2;
+        } else {
+          const margin = (a.y + b.y) / 2 >= (bnd.y0 + bnd.h / 2) ? (bnd.y0 + bnd.h + 36 + bendOffset) : (bnd.y0 - 36 - bendOffset);
+          const [sx, sy] = boxEdge(a, a.x, margin);
+          const [tx, ty] = boxEdge(b, b.x, margin);
+          d = `M${sx},${sy}C${sx},${margin} ${tx},${margin} ${tx},${ty}`;
+          lx = (sx + tx) / 2; ly = margin;
+        }
       } else {
         const key = [e.from, e.to].sort().join("\u0000");
         const nth = pairCount.get(key) ?? 0;
@@ -265,9 +387,20 @@ export function renderGraph(spec: GraphSpec, doc: Document = document): HTMLElem
       edgeLayer.append(path);
       edgeEls.push(path);
       if (e.label) {
-        const text = svgEl(doc, "text", { x: lx, y: ly + 4, "text-anchor": "middle", class: "graph-edge-label" });
-        text.textContent = clip(e.label);
-        labelLayer.append(text);
+        const textLabel = clip(e.label);
+        const tw = Math.max(28, textLabel.length * 6.5 + 10);
+        const th = 16;
+        const bg = svgEl(doc, "rect", {
+          x: lx - tw / 2,
+          y: ly - th / 2,
+          width: tw,
+          height: th,
+          rx: 4,
+          class: "graph-edge-label-bg",
+        });
+        const text = svgEl(doc, "text", { x: lx, y: ly + 3.5, "text-anchor": "middle", class: "graph-edge-label" });
+        text.textContent = textLabel;
+        labelLayer.append(bg, text);
       }
     }
     mark();
@@ -278,7 +411,26 @@ export function renderGraph(spec: GraphSpec, doc: Document = document): HTMLElem
     const g = svgEl(doc, "g", { class: "graph-node", tabindex: 0, role: "button", "data-id": n.id, "aria-label": [n.label, n.group, n.note].filter(Boolean).join(", ") });
     const gi = n.group ? groups.indexOf(n.group) : -1;
     const w = widthOf(n.label);
-    g.append(svgEl(doc, "rect", { x: -w / 2, y: -NODE_H / 2, width: w, height: NODE_H, rx: 9, ...(gi >= 0 ? { style: `--node: ${color(gi)}` } : {}) }));
+    const shape = shapeOf(n);
+    const nodeStyle: Record<string, string | number> = gi >= 0 ? { style: `--node: ${color(gi)}` } : {};
+
+    if (shape === "diamond") {
+      const dw = w / 2 + 8, dh = NODE_H / 2 + 4;
+      g.append(svgEl(doc, "polygon", { points: `0,${-dh} ${dw},0 0,${dh} ${-dw},0`, class: "graph-shape-diamond", ...nodeStyle }));
+    } else if (shape === "cylinder") {
+      const ch = NODE_H;
+      const cyBody = svgEl(doc, "path", {
+        d: `M${-w / 2},${-ch / 2 + 5} A${w / 2},5 0 0,1 ${w / 2},${-ch / 2 + 5} L${w / 2},${ch / 2 - 5} A${w / 2},5 0 0,1 ${-w / 2},${ch / 2 - 5} Z`,
+        class: "graph-shape-cylinder",
+        ...nodeStyle,
+      });
+      const cyRim = svgEl(doc, "ellipse", { cx: 0, cy: -ch / 2 + 5, rx: w / 2, ry: 5, class: "graph-shape-rim", ...nodeStyle });
+      g.append(cyBody, cyRim);
+    } else {
+      const rx = shape === "pill" ? NODE_H / 2 : 7;
+      g.append(svgEl(doc, "rect", { x: -w / 2, y: -NODE_H / 2, width: w, height: NODE_H, rx, ...nodeStyle }));
+    }
+
     const text = svgEl(doc, "text", { y: 4.5, "text-anchor": "middle" });
     text.textContent = clip(n.label);
     const t = svgEl(doc, "title");
@@ -293,7 +445,10 @@ export function renderGraph(spec: GraphSpec, doc: Document = document): HTMLElem
     nodeLayer.append(g);
     nodeEls.set(n.id, g);
   }
-  const placeNodes = () => nodeEls.forEach((g, id) => g.setAttribute("transform", `translate(${pos.get(id)!.x},${pos.get(id)!.y})`));
+  const placeNodes = () => {
+    nodeEls.forEach((g, id) => g.setAttribute("transform", `translate(${pos.get(id)!.x},${pos.get(id)!.y})`));
+    drawSubgraphs();
+  };
 
   // Selection dims everything the selected node does not touch; a search highlights matches.
   let query = "";
@@ -302,19 +457,20 @@ export function renderGraph(spec: GraphSpec, doc: Document = document): HTMLElem
     spec.edges.forEach((e, i) => {
       const on = !selected || e.from === selected || e.to === selected;
       if (selected && on) near.add(e.from).add(e.to);
-      edgeEls[i]?.classList.toggle("dim", !on);
+      edgeEls[i]?.classList?.toggle?.("dim", !on);
     });
     nodeEls.forEach((g, id) => {
-      g.classList.toggle("selected", id === selected);
-      g.classList.toggle("dim", !!selected && !near.has(id));
-      g.classList.toggle("match", !!query && byId.get(id)!.label.toLowerCase().includes(query));
+      g.classList?.toggle?.("selected", id === selected);
+      g.classList?.toggle?.("dim", !!selected && !near.has(id));
+      g.classList?.toggle?.("match", !!query && byId.get(id)!.label.toLowerCase().includes(query));
     });
   }
   function select(id: string | undefined) {
     selected = id;
     mark();
     detail.hidden = !id;
-    detail.replaceChildren();
+    if (detail.replaceChildren) detail.replaceChildren();
+    else detail.textContent = "";
     if (!id) return;
     const n = byId.get(id)!;
     const linked = spec.edges.filter((e) => e.from === id || e.to === id).length;
@@ -341,7 +497,7 @@ export function renderGraph(spec: GraphSpec, doc: Document = document): HTMLElem
     apply();
   };
   // The natural height in the chosen direction, within the frame's bounds (CSS clamps it).
-  const sizeFrame = () => frame.style.setProperty("--graph-h", `${Math.round(bounds(pos).h + PAD * 2)}px`);
+  const sizeFrame = () => frame.style?.setProperty?.("--graph-h", `${Math.round(bounds(pos).h + PAD * 2)}px`);
   /** A layered graph turns to whichever direction leaves its nodes larger in this frame. */
   const orient = () => {
     if (!rows || moved) return;
@@ -511,3 +667,6 @@ export function renderGraph(spec: GraphSpec, doc: Document = document): HTMLElem
   }
   return wrap;
 }
+
+export const renderDiagram = renderGraph;
+export const normalizeDiagram = normalizeGraph;

@@ -21,7 +21,7 @@ const memory = {
 test("a knowledge graph in the memory server's own shape becomes canonical nodes and edges", () => {
   const { errors, resolved } = render({ type: "knowledgegraph", props: memory });
   assert.deepEqual(errors, []);
-  assert.equal(resolved.root!.type, "graph");
+  assert.equal(resolved.root!.type, "diagram");
   assert.deepEqual(resolved.root!.props.nodes, [
     { id: "Nisheeth Ranjan", label: "Nisheeth Ranjan", group: "person", note: "Builds Vakyartha; Lives in Pune" },
     { id: "Vakyartha", label: "Vakyartha", group: "project" },

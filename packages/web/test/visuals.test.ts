@@ -5,7 +5,7 @@ import { test } from "node:test";
 // numbers as strings, edges name nodes that do not exist. These normalizers
 // are what the drawing code trusts, and they used to have no tests at all.
 import { normalizeChart } from "../src/chart.ts";
-import { normalizeGraph } from "../src/graph.ts";
+import { normalizeDiagram, renderDiagram, normalizeGraph } from "../src/diagram.ts";
 import { texToMathML } from "../src/math.ts";
 import { fakeDoc, findAll } from "./dom.ts";
 
@@ -23,14 +23,33 @@ test("chart: labels are padded to the longest series, and a pie keeps one series
   assert.equal(spec.kind, "pie");
 });
 
-test("graph: edges to unknown nodes are dropped and labels fall back to ids", () => {
-  const spec = normalizeGraph({
-    nodes: [{ id: "a" }, { id: "b", label: "Bee" }, "nonsense"],
+test("diagram: edges to unknown nodes are dropped, subgraphs normalized, and shapes preserved", () => {
+  const spec = normalizeDiagram({
+    nodes: [{ id: "a", shape: "pill" }, { id: "b", label: "Bee", shape: "diamond" }, "nonsense"],
     edges: [{ from: "a", to: "b" }, { from: "a", to: "missing" }, { from: "b", to: "b", label: "self" }],
+    subgraphs: [{ id: "sg1", label: "Tier 1", nodes: ["a", "b"] }],
   });
   assert.deepEqual(spec.nodes.map((n) => n.label), ["a", "Bee"]);
+  assert.deepEqual(spec.nodes.map((n) => n.shape), ["pill", "diamond"]);
   assert.deepEqual(spec.edges.map((e) => `${e.from}->${e.to}`), ["a->b", "b->b"]);
   assert.equal(spec.directed, true);
+  assert.equal(spec.subgraphs?.length, 1);
+  assert.deepEqual(spec.subgraphs[0]!.nodes, ["a", "b"]);
+});
+
+test("diagram: renders directed feedback loops without crashing into force layout", () => {
+  const doc = fakeDoc();
+  const spec = normalizeDiagram({
+    nodes: [{ id: "goal" }, { id: "model" }, { id: "monitor" }],
+    edges: [
+      { from: "goal", to: "model" },
+      { from: "model", to: "monitor" },
+      { from: "monitor", to: "goal", label: "feedback loop" },
+    ],
+  });
+  const el = renderDiagram(spec, doc as never);
+  assert.ok(el);
+  assert.ok(el.className.includes("diagram"));
 });
 
 test("math: a fraction becomes MathML with the source kept as alttext", () => {

@@ -426,18 +426,18 @@ test("a core-tier run still offers an extended component the user names, or one 
     plan: { generation: "tools" as const, tier: "core" as const, examples: true, authoring: "inline" as const, maxSteps: 2, reasons: [] },
   };
   const types = (content: string, store = base.store) => Object.keys(resolveRun({ ...base, store, messages: [{ role: "user", content }] }).catalog.components);
-  assert.ok(types("show your memory as a graph view").includes("graph"));
-  assert.ok(types("draw an org chart of my team").includes("graph"));
+  assert.ok(types("show your memory as a graph view").includes("diagram"));
+  assert.ok(types("draw an org chart of my team").includes("diagram"));
   assert.ok(types("Use the steps component").includes("steps"));
-  assert.ok(!types("Hello").includes("graph"));
+  assert.ok(!types("Hello").includes("diagram"));
   assert.ok(!types("Hello").includes("timeline"));
   const graph = buildSystem({ ...base, messages: [{ role: "user", content: "show your memory as a graph view" }] });
-  assert.match(graph.split("Requested components:")[1]!, /type: graph/);
+  assert.match(graph.split("Requested components:")[1]!, /type: diagram/);
   // "org chart" is graph's name, not a request for chart's contract.
   assert.doesNotMatch(buildSystem({ ...base, messages: [{ role: "user", content: "draw an org chart" }] }), /Requested components:[\s\S]*type: chart/);
   const shown = new SurfaceStore(basicCatalog);
   shown.render({ surface: "m", nodes: [{ id: "root", type: "graph", props: { nodes: ["You"] } }] } as never);
-  assert.ok(types("add Pune to it", shown).includes("graph"));
+  assert.ok(types("add Pune to it", shown).includes("diagram"));
 });
 
 test("OpenAI registry uses Responses with typed tool replay and never falls back to Chat Completions", async () => {

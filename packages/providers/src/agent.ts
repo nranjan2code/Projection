@@ -200,7 +200,7 @@ export function buildSystem(opts: RunOptions, run: ResolvedRun = resolveRun(opts
   const request = lastRequest(opts);
   // "Use the steps component" is the strongest naming: then only those count.
   const explicit = namedComponents(run.catalog, request, { explicit: true });
-  const names = new Set(explicit.length ? explicit : [...namedComponents(run.catalog, request), ...namedComponents(run.catalog, request, { aliases: true }).filter((n) => namedPresets(run.catalog, request, n).length)]);
+  const names = new Set(explicit.length ? explicit : [...namedComponents(run.catalog, request), ...namedComponents(run.catalog, request, { aliases: true })]);
   const requested = [...names].map((name) => [name, run.catalog.components[name]!] as const);
   if (requested.length) {
     parts.push("Requested components: use these exact types, with every supplied item and verbatim labels, captions and source. Do not replace them with other components.\n" + requested.map(([name, def]) => {

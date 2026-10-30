@@ -245,6 +245,7 @@ const graphNode = props({
   label: str({ aliases: ["name", "title", "text"] }),
   group: str({ aliases: ["type", "entityType", "category", "kind", "role"] }),
   note: { type: ["string", "array"], aliases: ["observations", "description", "details", "notes"] },
+  shape: str({ aliases: ["form", "icon", "nodeType"] }),
 });
 const graphEdge = props(
   {
@@ -878,12 +879,10 @@ export const basicCatalog = defineCatalog(
       }),
       aliases: ["places", "locations", "mapview"],
     },
-    graph: {
+    diagram: {
       tier: "extended",
-      description: "Things and how they connect: nodes joined by labelled edges.",
-      hint: "for relationships, knowledge graphs, org charts, dependencies and flows; props.nodes is [{id, label, group}], props.edges is [{from, to, label}] naming node ids; numbers over categories belong in chart",
-      // "graph" was a chart alias, and models still say it for one: a node
-      // with series is a chart.
+      description: "Any kind of diagram: flows, architectures, sequences, decision trees, state machines, and relational graphs.",
+      hint: "for any kind of diagram: flows, architectures, sequences, decision trees, state machines, relationships; props.nodes is [{id, label, group, shape}], props.edges is [{from, to, label}] naming node ids; subgraphs is [{id, label, nodes}]",
       retype: [{ type: "chart", when: props({}, ["series"]) }],
       props: props(
         {
@@ -897,7 +896,7 @@ export const basicCatalog = defineCatalog(
                 ],
               },
             },
-            { aliases: ["entities", "vertices", "items", "people", "members"] },
+            { aliases: ["entities", "vertices", "items", "components", "people", "members"] },
           ),
           edges: listOr(
             {
@@ -909,15 +908,24 @@ export const basicCatalog = defineCatalog(
                 ],
               },
             },
-            { aliases: ["links", "relations", "relationships", "connections"] },
+            { aliases: ["links", "relations", "relationships", "connections", "transitions", "flows"] },
           ),
           directed: bool({ description: "default true", aliases: ["arrows", "isDirected"] }),
+          subgraphs: {
+            type: "array",
+            items: props({
+              id: str({ aliases: ["key"] }),
+              label: str({ aliases: ["title", "name"] }),
+              nodes: { type: "array", items: { type: "string" } },
+            }),
+            aliases: ["containers", "groups", "clusters", "tiers", "swimlanes"],
+          },
         },
         ["nodes"],
       ),
       normalize: (p) => (p.edges === undefined ? p : { ...p, edges: edgeObjects(p.edges) }),
       finalize: finalizeGraph,
-      aliases: ["network", "networkgraph", "knowledgegraph", "nodegraph", "mindmap", "orgchart", "flowchart", "diagram", "relations"],
+      aliases: ["graph", "diagrams", "flowchart", "architecture", "sequence", "network", "networkgraph", "knowledgegraph", "nodegraph", "mindmap", "orgchart", "relations"],
     },
     gallery: {
       tier: "extended",

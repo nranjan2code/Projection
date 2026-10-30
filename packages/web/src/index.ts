@@ -3,7 +3,7 @@ export * from "./media.ts";
 export * from "./client.ts";
 export * from "./markdown.ts";
 export * from "./chart.ts";
-export * from "./graph.ts";
+export * from "./diagram.ts";
 export * from "./everyday.ts";
 export * from "./math.ts";
 export { surfaceCss } from "./styles.ts";
