@@ -6,7 +6,7 @@ import path from "node:path";
 import { test } from "node:test";
 import { readSse, type SurfaceSnapshot } from "@vak/core";
 import { ProfileCache, type Provider, type ProviderEntry, type ProviderEvent } from "@vak/providers";
-import { createHost, keepVersions, type HostOptions, type SessionSummary, type SessionView, type VakHost } from "@vak/host";
+import { createHost, keepVersions, type HostOptions, type HostSessionStore, type SessionSummary, type SessionView, type VakHost } from "@vak/host";
 
 test("trusted projection uses canonical persistence and respects execution ownership without a model", async () => {
   const { host, server, dir } = await serve({ allowSessionMutation: (id) => id !== "owned" });
@@ -62,7 +62,7 @@ async function serve(extra: Partial<HostOptions> = {}, provider: Provider = scri
     providers: () => [entry],
     profiles: new ProfileCache(path.join(dir, "models.json")),
     instructions: "test",
-    sessionsDir: path.join(dir, "sessions"),
+    ...(extra.sessionStore ? {} : { sessionsDir: path.join(dir, "sessions") }),
     log: () => {},
     ...extra,
   });
@@ -76,6 +76,47 @@ async function serve(extra: Partial<HostOptions> = {}, provider: Provider = scri
   const port = (server.address() as { port: number }).port;
   return { base: `http://127.0.0.1:${port}`, server, dir, host };
 }
+
+test("host uses one revisioned canonical session store for writes, reload, summaries and deletion", async () => {
+  const records = new Map<string, { revision: number; snapshot: import("@vak/host").HostSessionSnapshot }>();
+  const sessionStore: HostSessionStore = {
+    async load(id) { const record = records.get(id); return record && structuredClone(record); },
+    async save(snapshot, expectedRevision) {
+      const current = records.get(snapshot.id);
+      if ((current?.revision ?? 0) !== expectedRevision) throw new Error("canonical revision conflict");
+      const revision = expectedRevision + 1;
+      records.set(snapshot.id, { revision, snapshot: structuredClone(snapshot) });
+      return revision;
+    },
+    async list() {
+      return [...records.values()].map(({ snapshot }) => ({
+        id: snapshot.id, title: snapshot.title, updated: snapshot.updated,
+        surfaceSummaries: snapshot.surfaces.map((surface) => ({ id: surface.id, title: surface.title, types: [...new Set(surface.nodes.map((node) => node.type))] })),
+      }));
+    },
+    async remove(id, expectedRevision) {
+      const current = records.get(id);
+      if ((current?.revision) !== expectedRevision) throw new Error("canonical revision conflict");
+      records.delete(id);
+    },
+  };
+  const first = await serve({ sessionStore });
+  await chat(first.base, { session: "native-session", provider: "scripted", model: "m", message: "Show revenue" });
+  assert.equal(records.get("native-session")?.revision, 1);
+  assert.equal(existsSync(path.join(first.dir, "sessions")), false);
+  first.server.close();
+
+  const second = await serve({ sessionStore });
+  const list = (await (await fetch(`${second.base}/api/sessions`)).json()) as { id: string; title: string }[];
+  assert.deepEqual(list.map(({ id, title }) => [id, title]), [["native-session", "Show revenue"]]);
+  const view = (await (await fetch(`${second.base}/api/sessions/native-session`)).json()) as SessionView;
+  assert.deepEqual(view.timeline.map((entry) => entry.kind), ["user", "assistant"]);
+  assert.equal(view.surfaces[0]?.title, "Revenue");
+  assert.equal(records.get("native-session")?.revision, 1);
+  await fetch(`${second.base}/api/sessions/native-session`, { method: "DELETE" });
+  assert.equal(records.has("native-session"), false);
+  second.server.close();
+});
 
 async function chat(base: string, body: Record<string, unknown>, headers: Record<string, string> = {}): Promise<string[]> {
   const res = await fetch(`${base}/api/chat`, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });

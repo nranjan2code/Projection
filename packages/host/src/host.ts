@@ -67,6 +67,25 @@ export interface SessionView extends SessionSummary {
   pending?: { text: string; surfaces: string[] };
 }
 
+export interface HostSessionSnapshot {
+  id: string;
+  title: string;
+  created: string;
+  updated: string;
+  messages: Message[];
+  timeline: TimelineEntry[];
+  surfaces: SurfaceSnapshot[];
+  external: string[];
+}
+
+/** App-owned durable store for canonical sessions; revisions are compare-and-set tokens. */
+export interface HostSessionStore {
+  load(id: string): Promise<{ revision: number; snapshot: HostSessionSnapshot } | undefined>;
+  save(snapshot: HostSessionSnapshot, expectedRevision: number): Promise<number>;
+  list(): Promise<SessionSummary[]>;
+  remove(id: string, expectedRevision: number | undefined): Promise<void>;
+}
+
 export interface HostOptions {
   /** Read on every request, so key changes apply without a restart. */
   providers: () => ProviderEntry[];
@@ -78,6 +97,8 @@ export interface HostOptions {
   transcripts?: string;
   /** Directory where conversations are saved and reloaded; none: memory only. */
   sessionsDir?: string;
+  /** Alternative sole owner for canonical sessions; cannot be combined with sessionsDir. */
+  sessionStore?: HostSessionStore;
   /** Bearer token every /api request must carry; none: open (loopback-only servers). */
   token?: string;
   /** Host header names accepted (default: loopback names only). */
@@ -117,18 +138,11 @@ interface Session {
   external: Set<string>;
   inbox: VpsAction[];
   waiters: Set<() => void>;
+  persistedRevision: number;
+  persistenceError?: string;
 }
 
-interface SavedSession {
-  id: string;
-  title: string;
-  created: string;
-  updated: string;
-  messages: Message[];
-  timeline: TimelineEntry[];
-  surfaces: SurfaceSnapshot[];
-  external: string[];
-}
+type SavedSession = HostSessionSnapshot;
 
 /** Trusted in-process execution; transport controls never come from a chat request body. */
 export interface HostTurn {
@@ -326,6 +340,7 @@ function savedMessages(messages: readonly Message[]): Message[] {
 }
 
 export function createHost(opts: HostOptions): VakHost {
+  if (opts.sessionStore && opts.sessionsDir) throw new Error("Choose one canonical session persistence owner");
   const catalog = opts.catalog ?? basicCatalog;
   const log = opts.log ?? ((line: string) => console.log(line));
   const sessions = new Map<string, Session>();
@@ -383,14 +398,26 @@ export function createHost(opts: HostOptions): VakHost {
   async function session(id: string): Promise<Session> {
     let s = sessions.get(id);
     if (s) {
+      if (s.persistenceError) throw new Error("Canonical session storage failed; reload the host before continuing");
       // Most recently used last, so eviction takes the stalest.
       sessions.delete(id);
       sessions.set(id, s);
       return s;
     }
     const at = now();
-    s = { id, title: "New chat", created: at, updated: at, messages: [], timeline: [], store: new SurfaceStore(catalog), viewers: new Set(), external: new Set(), inbox: [], waiters: new Set() };
-    if (opts.sessionsDir) {
+    s = { id, title: "New chat", created: at, updated: at, messages: [], timeline: [], store: new SurfaceStore(catalog), viewers: new Set(), external: new Set(), inbox: [], waiters: new Set(), persistedRevision: 0 };
+    if (opts.sessionStore) {
+      const saved = await opts.sessionStore.load(id);
+      if (saved) {
+        if (!Number.isSafeInteger(saved.revision) || saved.revision < 1 || saved.snapshot.id !== id
+          || !Array.isArray(saved.snapshot.messages) || !Array.isArray(saved.snapshot.timeline)
+          || !Array.isArray(saved.snapshot.surfaces) || !Array.isArray(saved.snapshot.external)) {
+          throw new Error("Canonical session store returned an invalid record");
+        }
+        Object.assign(s, { title: saved.snapshot.title, created: saved.snapshot.created, updated: saved.snapshot.updated, messages: saved.snapshot.messages, timeline: saved.snapshot.timeline, external: new Set(saved.snapshot.external), persistedRevision: saved.revision });
+        for (const snap of saved.snapshot.surfaces) s.store.load(snap);
+      }
+    } else if (opts.sessionsDir) {
       try {
         let saved: SavedSession | undefined;
         try {
@@ -423,7 +450,7 @@ export function createHost(opts: HostOptions): VakHost {
    * One with a turn running, a viewer, a waiting agent or queued actions stays.
    */
   function evict(): void {
-    if (!opts.sessionsDir) return;
+    if (!opts.sessionsDir && !opts.sessionStore) return;
     for (const [id, s] of sessions) {
       if (sessions.size <= MAX_LOADED) break;
       if (!s.busy && !s.viewers.size && !s.waiters.size && !s.inbox.length) sessions.delete(id);
@@ -431,7 +458,7 @@ export function createHost(opts: HostOptions): VakHost {
   }
 
   async function save(s: Session, strict = false): Promise<void> {
-    if (!opts.sessionsDir || !s.timeline.length) return;
+    if ((!opts.sessionsDir && !opts.sessionStore) || !s.timeline.length) return;
     const saved: SavedSession = {
       id: s.id,
       title: s.title,
@@ -442,8 +469,21 @@ export function createHost(opts: HostOptions): VakHost {
       surfaces: s.store.list().map((st) => s.store.snapshot(st.id)!),
       external: [...s.external],
     };
+    if (opts.sessionStore) {
+      try {
+        const revision = await opts.sessionStore.save(saved, s.persistedRevision);
+        if (!Number.isSafeInteger(revision) || revision !== s.persistedRevision + 1) throw new Error("Canonical session store returned an invalid revision");
+        s.persistedRevision = revision;
+        (await summaries()).set(s.id, { id: s.id, title: s.title, updated: s.updated, surfaceSummaries: saved.surfaces.map((snap) => surfaceSummary(snap, snap.nodes)) });
+      } catch (err) {
+        s.persistenceError = (err as Error).message;
+        log(`canonical session not saved: ${s.persistenceError}`);
+        throw err;
+      }
+      return;
+    }
     try {
-      await mkdir(opts.sessionsDir, { recursive: true });
+      await mkdir(opts.sessionsDir!, { recursive: true });
       // Write then rename, so a crash mid-write never leaves half a conversation.
       const file = sessionFile(s.id);
       await writeFile(`${file}.tmp`, JSON.stringify(saved));
@@ -463,6 +503,12 @@ export function createHost(opts: HostOptions): VakHost {
   function summaries(): Promise<Map<string, SessionSummary>> {
     index ??= (async () => {
       const out = new Map<string, SessionSummary>();
+      if (opts.sessionStore) {
+        for (const summary of await opts.sessionStore.list()) {
+          if (typeof summary.id === "string" && !out.has(summary.id)) out.set(summary.id, summary);
+        }
+        return out;
+      }
       if (!opts.sessionsDir) return out;
       let files: string[] = [];
       try {
@@ -485,7 +531,7 @@ export function createHost(opts: HostOptions): VakHost {
 
   async function listSessions(): Promise<SessionSummary[]> {
     const out = new Map(await summaries());
-    for (const s of sessions.values()) if (s.timeline.length) out.set(s.id, {
+    for (const s of sessions.values()) if (!s.persistenceError && s.timeline.length) out.set(s.id, {
       id: s.id, title: s.title, updated: s.updated,
       surfaceSummaries: s.store.list().map((st) => surfaceSummary(st, st.nodes.values())),
       ...(s.busy ? { running: true } : {}),
@@ -494,7 +540,12 @@ export function createHost(opts: HostOptions): VakHost {
   }
 
   async function dropSession(id: string): Promise<void> {
-    if (sessions.get(id)?.busy) throw new Error("stop the running session before deleting it");
+    const active = sessions.get(id);
+    if (active?.busy) throw new Error("stop the running session before deleting it");
+    if (opts.sessionStore) {
+      const stored = active ? undefined : await opts.sessionStore.load(id);
+      await opts.sessionStore.remove(id, active?.persistedRevision ?? stored?.revision);
+    }
     sessions.delete(id);
     (await summaries()).delete(id);
     if (opts.sessionsDir) {
@@ -723,6 +774,7 @@ export function createHost(opts: HostOptions): VakHost {
       external: new Set(),
       inbox: [],
       waiters: new Set(),
+      persistedRevision: 0,
     };
     const ctrl = new AbortController();
     const abort = () => ctrl.abort(controls.signal?.reason);
