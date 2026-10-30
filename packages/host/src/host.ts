@@ -15,7 +15,7 @@
 //   GET  /api/sessions/<id>              one conversation: timeline + surfaces
 //   DELETE /api/sessions/<id>, POST /api/reset
 
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { appendFile, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import type { HostRequest, HostResponse } from "./transport.ts";
 import path from "node:path";
@@ -93,6 +93,8 @@ export interface HostOptions {
   tools?: (ctx: { session: string }) => Promise<AgentTool[]> | AgentTool[];
   /** Optional application ownership policy for HTTP session mutations; trusted run() is unaffected. */
   allowSessionMutation?: (session: string) => boolean;
+  /** Native/canonical owner for task candidate commits. Candidate bytes never reach session persistence first. */
+  commitCandidate?: (request: HostCandidateCommitRequest) => Promise<HostCandidateCommitReceipt>;
   /** App-specific routes, run after auth; return true when handled. */
   routes?: (req: HostRequest, res: HostResponse, url: URL) => Promise<boolean>;
   log?: (line: string) => void;
@@ -171,10 +173,39 @@ export interface HostCandidateTurn extends Omit<HostTurn, "action" | "continue">
 export type HostCandidateOptions = Omit<HostRunOptions, "completion" | "surfaceSubmission" | "validateEdits">;
 
 export interface HostCandidateResult {
+  candidateId: string;
+  session: string;
+  provider: string;
+  model: string;
   result: RunResult;
   reply: string;
   baseVersions: { id: string; version: number }[];
   surfaces: SurfaceSnapshot[];
+}
+
+export interface HostCandidateCommitFence {
+  rootId: string;
+  rootRevision: number;
+  contractRevision: number;
+  cancellationEpoch: number;
+}
+
+export interface HostCandidateCommitRequest {
+  candidateId: string;
+  commitId: string;
+  fence: HostCandidateCommitFence;
+  session: string;
+  provider: string;
+  model: string;
+  result: RunResult;
+  reply: string;
+  baseVersions: { id: string; version: number }[];
+  surfaces: SurfaceSnapshot[];
+}
+
+export interface HostCandidateCommitReceipt {
+  canonicalRevision: number;
+  rootRevision: number;
 }
 
 export interface VakHost {
@@ -184,6 +215,10 @@ export interface VakHost {
   run(input: HostTurn, options?: HostRunOptions): Promise<RunResult>;
   /** Run with an explicit context snapshot; return a candidate without canonical writes or saved chat history. */
   runCandidate(input: HostCandidateTurn, options?: HostCandidateOptions): Promise<HostCandidateResult>;
+  /** Submit an unmodified, one-use candidate to the configured canonical owner. */
+  commitCandidate(input: { candidateId: string; commitId: string; fence: HostCandidateCommitFence }): Promise<HostCandidateCommitReceipt>;
+  /** Discard an uncommitted candidate and release its bounded in-memory slot. */
+  discardCandidate(candidateId: string): boolean;
   /** A detached copy of the canonical view; never exposes mutable session internals. */
   view(id: string): Promise<SessionView>;
   /** Delete an idle session and its raw transcript; running sessions must be stopped first. */
@@ -241,6 +276,17 @@ function sameSecret(given: string, expected: string): boolean {
 
 /** Saved sessions kept in memory at once; the rest reload from disk when opened. */
 const MAX_LOADED = 24;
+const MAX_PENDING_CANDIDATES = 4;
+const MAX_CANDIDATE_BYTES = 8 * 1024 * 1024;
+const CANDIDATE_TTL_MS = 10 * 60_000;
+
+interface CandidateSlot {
+  createdAt: number;
+  candidate?: Omit<HostCandidateResult, "candidateId">;
+  commitId?: string;
+  fence?: HostCandidateCommitFence;
+  committing?: boolean;
+}
 
 const safeId = (id: string) => id.replace(/[^\w-]/g, "_").slice(0, 120) || "default";
 
@@ -282,9 +328,17 @@ export function createHost(opts: HostOptions): VakHost {
   const log = opts.log ?? ((line: string) => console.log(line));
   const sessions = new Map<string, Session>();
   const detached = new Map<string, AbortController>();
+  const candidates = new Map<string, CandidateSlot>();
   const instructions = (context?: { session?: string }) => (typeof opts.instructions === "function" ? opts.instructions(context) : opts.instructions);
   const provider = (id: unknown) => opts.providers().find((p) => p.id === id);
   const approvals = new Map<string, (d: "allow" | "allow-chat" | "deny") => void>();
+
+  function expireCandidates(): void {
+    const expired = Date.now() - CANDIDATE_TTL_MS;
+    for (const [id, slot] of candidates) {
+      if (slot.candidate && !slot.commitId && !slot.committing && slot.createdAt < expired) candidates.delete(id);
+    }
+  }
 
   function approve(req: { id: string; server: string; tool: string; title: string; args: unknown }, emit?: (e: AgentEvent) => void, signal?: AbortSignal): Promise<"allow" | "allow-chat" | "deny"> {
     // Without a client to ask there is nobody to say yes; a stopped turn says no.
@@ -646,8 +700,14 @@ export function createHost(opts: HostOptions): VakHost {
     if (new Set(snapshots.map((surface) => surface.id)).size !== snapshots.length || snapshots.some((surface) => !surface.id || !Number.isInteger(surface.version) || surface.version < 1)) {
       throw new Error("Candidate context must contain at most 16 uniquely identified, versioned surfaces");
     }
+    if (controls.signal?.aborted) throw new Error("candidate run cancelled");
     const store = new SurfaceStore(catalog);
     snapshots.forEach((snapshot) => store.load(snapshot));
+    expireCandidates();
+    if (candidates.size >= MAX_PENDING_CANDIDATES) throw new Error("Candidate commit queue is full; commit or discard a pending candidate first");
+    const candidateId = randomUUID();
+    const candidateSlot: CandidateSlot = { createdAt: Date.now() };
+    candidates.set(candidateId, candidateSlot);
     const at = now();
     const isolated: Session = {
       id: input.session,
@@ -664,20 +724,78 @@ export function createHost(opts: HostOptions): VakHost {
     };
     const ctrl = new AbortController();
     const abort = () => ctrl.abort(controls.signal?.reason);
-    if (controls.signal?.aborted) throw new Error("candidate run cancelled");
     controls.signal?.addEventListener("abort", abort, { once: true });
     try {
       const result = await executeTurn(input, isolated, ctrl, { ...controls, tools: controls.tools ?? [], surfaceSubmission: true, completion: "response" }, false, false);
       const reply = [...isolated.timeline].reverse().find((entry) => entry.kind === "assistant");
-      return {
+      const candidate = {
+        session: input.session,
+        provider: input.provider,
+        model: input.model,
         result,
         reply: reply?.kind === "assistant" ? reply.text : "",
         baseVersions: snapshots.map(({ id, version }) => ({ id, version })),
         surfaces: store.list().map((surface) => store.snapshot(surface.id)!),
       };
+      let candidateBytes: string;
+      try { candidateBytes = JSON.stringify(candidate); } catch { throw new Error("Candidate result is not serializable"); }
+      if (new TextEncoder().encode(candidateBytes).byteLength > MAX_CANDIDATE_BYTES) throw new Error("Candidate result exceeds the 8 MiB commit limit");
+      candidateSlot.candidate = structuredClone(candidate);
+      candidateSlot.createdAt = Date.now();
+      return structuredClone({ candidateId, ...candidate });
+    } catch (error) {
+      candidates.delete(candidateId);
+      throw error;
     } finally {
       controls.signal?.removeEventListener("abort", abort);
     }
+  }
+
+  async function commitCandidate(input: { candidateId: string; commitId: string; fence: HostCandidateCommitFence }): Promise<HostCandidateCommitReceipt> {
+    if (!opts.commitCandidate) throw new Error("No canonical candidate commit owner is configured");
+    if (!input || typeof input !== "object" || typeof input.candidateId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.candidateId)
+      || typeof input.commitId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(input.commitId)
+      || !input.fence || typeof input.fence.rootId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(input.fence.rootId)
+      || ![input.fence.rootRevision, input.fence.contractRevision, input.fence.cancellationEpoch].every((n) => Number.isSafeInteger(n) && n >= 0)) {
+      throw new Error("Candidate commit identity or fence is invalid");
+    }
+    expireCandidates();
+    const slot = candidates.get(input.candidateId);
+    if (!slot?.candidate) throw new Error("Candidate is missing, expired or still running");
+    if (!slot.candidate.session) throw new Error("Candidate session identity is invalid");
+    if (!(["end", "projected"] as string[]).includes(slot.candidate.result.stop)
+      || (!slot.candidate.reply && slot.candidate.surfaces.length === 0)) throw new Error("Candidate did not produce a complete output to commit");
+    if (slot.committing) throw new Error("Candidate commit is already in progress");
+    if (slot.commitId && (slot.commitId !== input.commitId || JSON.stringify(slot.fence) !== JSON.stringify(input.fence))) {
+      throw new Error("Candidate is already bound to a different commit identity or fence");
+    }
+    slot.commitId = input.commitId;
+    slot.fence = structuredClone(input.fence);
+    slot.committing = true;
+    try {
+      const candidate = slot.candidate;
+      const receipt = await opts.commitCandidate(structuredClone({
+        ...candidate,
+        candidateId: input.candidateId,
+        commitId: input.commitId,
+        fence: input.fence,
+      }));
+      if (!receipt || !Number.isSafeInteger(receipt.canonicalRevision) || receipt.canonicalRevision < 1
+        || !Number.isSafeInteger(receipt.rootRevision) || receipt.rootRevision < input.fence.rootRevision) {
+        throw new Error("Canonical owner returned an invalid candidate commit receipt");
+      }
+      candidates.delete(input.candidateId);
+      return structuredClone(receipt);
+    } finally {
+      const retained = candidates.get(input.candidateId);
+      if (retained) retained.committing = false;
+    }
+  }
+
+  function discardCandidate(candidateId: string): boolean {
+    const slot = candidates.get(candidateId);
+    if (!slot || slot.committing || slot.commitId) return false;
+    return candidates.delete(candidateId);
   }
 
   async function view(id: string): Promise<SessionView> {
@@ -881,6 +999,8 @@ export function createHost(opts: HostOptions): VakHost {
   return {
     run,
     runCandidate,
+    commitCandidate,
+    discardCandidate,
     project,
     view,
     remove: dropSession,

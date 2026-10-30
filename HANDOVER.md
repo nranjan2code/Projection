@@ -1,5 +1,11 @@
 # Projection handover — 2026-10-27
 
+## Fenced candidate commit handoff — 2026-10-30
+
+`VakHost.runCandidate` now returns a bounded opaque `candidateId` alongside the isolated proposal. The host retains a private copy of the exact candidate with a ten-minute commit deadline, at most four pending candidates and 8 MiB per candidate. Expired uncommitted slots are reclaimed on the next candidate operation. `commitCandidate` submits that copy, its base versions and task fence to an app-provided canonical owner. A commit attempt binds the ticket to one commit identity and fence; a retry after callback failure must reuse both, allowing an idempotent durable owner to return the prior receipt after a lost acknowledgement. A successful receipt consumes the candidate. `discardCandidate` frees candidates that have not entered commit. The framework never writes or broadcasts the candidate through the canonical session store.
+
+Host tests cover exact-copy handoff, caller-side mutation, changed-fence refusal, retry identity, one-use success, count bounds, discard and unchanged canonical state; the focused host suite passes 22/22, the full framework suite/replay passes 417/417, typecheck and package generation pass. The app must still implement the callback with native prepare/fence/durable-commit semantics and a durable commit-receipt lookup. Candidate references are process-local: a restart loses the held bytes, so restart reconciliation and interrupted-commit recovery are not supplied by this API. This checkpoint establishes a public framework handoff, not an enabled app task path or user outcome pass.
+
 ## Provider transport operation identity — 2026-10-30
 
 Provider-aware transport callbacks now receive a stable UUID and attempt number. Retries share one logical operation identity; this lets hosts deduplicate or refuse replayed generation effects while preserving the adapter's retry context. A focused regression covers identity and attempt progression across a retry. This is API metadata only; hosts still must enforce idempotency, approval, budgets and durable receipts.

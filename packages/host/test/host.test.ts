@@ -106,6 +106,73 @@ test("isolated candidate runs return versioned proposals without canonical histo
   } finally { app.server.close(); }
 });
 
+test("candidate commit hands the exact one-use result to the canonical owner and binds retries", async () => {
+  const calls: unknown[] = [];
+  let failOnce = true;
+  const app = await serve({ commitCandidate: async (request) => {
+    calls.push(request);
+    if (failOnce) { failOnce = false; throw new Error("acknowledgement lost"); }
+    return { canonicalRevision: 9, rootRevision: 12 };
+  } }, candidateScripted());
+  try {
+    const base = [{ id: "owned", version: 4, nodes: [], data: {} }];
+    const candidate = await app.host.runCandidate({ session: "session-1", provider: "scripted", model: "m", message: "Prepare the surface.", initialSurfaces: base });
+    const input = {
+      candidateId: candidate.candidateId,
+      commitId: "commit-77",
+      fence: { rootId: "task-1", rootRevision: 11, contractRevision: 3, cancellationEpoch: 5 },
+    };
+    const returned = structuredClone(candidate);
+    returned.surfaces[0]!.title = "caller tampering";
+    await assert.rejects(app.host.commitCandidate(input), /acknowledgement lost/);
+    assert.deepEqual(await app.host.commitCandidate(input), { canonicalRevision: 9, rootRevision: 12 });
+    assert.equal(calls.length, 2);
+    assert.deepEqual(calls[0], calls[1]);
+    const request = calls[1] as { candidateId: string; commitId: string; fence: unknown; session: string; reply: string; baseVersions: unknown; surfaces: { title?: string }[] };
+    assert.equal(request.candidateId, candidate.candidateId);
+    assert.equal(request.commitId, "commit-77");
+    assert.deepEqual(request.fence, input.fence);
+    assert.equal(request.session, "session-1");
+    assert.equal(request.reply, "Candidate ready.");
+    assert.deepEqual(request.baseVersions, [{ id: "owned", version: 4 }]);
+    assert.equal(request.surfaces[0]?.title, "Candidate title");
+    await assert.rejects(app.host.commitCandidate(input), /missing, expired or still running/);
+  } finally { app.server.close(); }
+});
+
+test("candidate commit rejects changed fence or identity and discarding releases a slot", async () => {
+  let calls = 0;
+  let failOnce = true;
+  const app = await serve({ commitCandidate: async () => { calls++; if (failOnce) { failOnce = false; throw new Error("acknowledgement lost"); } return { canonicalRevision: 1, rootRevision: 2 }; } }, candidateScripted());
+  try {
+    const candidate = await app.host.runCandidate({ session: "session-2", provider: "scripted", model: "m", message: "Prepare the surface." });
+    const input = { candidateId: candidate.candidateId, commitId: "commit-a", fence: { rootId: "task-2", rootRevision: 1, contractRevision: 1, cancellationEpoch: 0 } };
+    await assert.rejects(app.host.commitCandidate(input), /acknowledgement lost/);
+    await assert.rejects(app.host.commitCandidate({ ...input, fence: { ...input.fence, cancellationEpoch: 1 } }), /different commit identity or fence/);
+    assert.equal(calls, 1);
+    assert.equal(app.host.discardCandidate(candidate.candidateId), false);
+    await app.host.commitCandidate(input);
+    const discarded = await app.host.runCandidate({ session: "session-2", provider: "scripted", model: "m", message: "Prepare another surface." });
+    assert.equal(app.host.discardCandidate(discarded.candidateId), true);
+    assert.equal(app.host.discardCandidate(discarded.candidateId), false);
+    await assert.rejects(app.host.commitCandidate({ ...input, candidateId: discarded.candidateId, commitId: "commit-b" }), /missing, expired or still running/);
+  } finally { app.server.close(); }
+});
+
+test("candidate retention has a fixed pending-count bound and discard restores capacity", async () => {
+  const app = await serve({}, candidateScripted());
+  try {
+    const pending = [];
+    for (let index = 0; index < 4; index++) {
+      pending.push(await app.host.runCandidate({ session: `session-${index}`, provider: "scripted", model: "m", message: "Prepare the surface." }));
+    }
+    await assert.rejects(app.host.runCandidate({ session: "session-over-limit", provider: "scripted", model: "m", message: "Prepare the surface." }), /queue is full/);
+    assert.equal(app.host.discardCandidate(pending[0]!.candidateId), true);
+    const next = await app.host.runCandidate({ session: "session-after-discard", provider: "scripted", model: "m", message: "Prepare the surface." });
+    assert.equal(typeof next.candidateId, "string");
+  } finally { app.server.close(); }
+});
+
 test("a conversation is saved with its timeline and surfaces, and reloads in a new host", async () => {
   const first = await serve();
   const events = await chat(first.base, { session: "s1", provider: "scripted", model: "m", message: "Show revenue" });
