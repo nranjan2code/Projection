@@ -194,6 +194,7 @@ export interface HostCandidateCommitRequest {
   candidateId: string;
   commitId: string;
   fence: HostCandidateCommitFence;
+  expectedCanonicalRevision: number;
   session: string;
   provider: string;
   model: string;
@@ -216,7 +217,7 @@ export interface VakHost {
   /** Run with an explicit context snapshot; return a candidate without canonical writes or saved chat history. */
   runCandidate(input: HostCandidateTurn, options?: HostCandidateOptions): Promise<HostCandidateResult>;
   /** Submit an unmodified, one-use candidate to the configured canonical owner. */
-  commitCandidate(input: { candidateId: string; commitId: string; fence: HostCandidateCommitFence }): Promise<HostCandidateCommitReceipt>;
+  commitCandidate(input: { candidateId: string; commitId: string; fence: HostCandidateCommitFence; expectedCanonicalRevision: number }): Promise<HostCandidateCommitReceipt>;
   /** Discard an uncommitted candidate and release its bounded in-memory slot. */
   discardCandidate(candidateId: string): boolean;
   /** A detached copy of the canonical view; never exposes mutable session internals. */
@@ -285,6 +286,7 @@ interface CandidateSlot {
   candidate?: Omit<HostCandidateResult, "candidateId">;
   commitId?: string;
   fence?: HostCandidateCommitFence;
+  expectedCanonicalRevision?: number;
   committing?: boolean;
 }
 
@@ -751,11 +753,12 @@ export function createHost(opts: HostOptions): VakHost {
     }
   }
 
-  async function commitCandidate(input: { candidateId: string; commitId: string; fence: HostCandidateCommitFence }): Promise<HostCandidateCommitReceipt> {
+  async function commitCandidate(input: { candidateId: string; commitId: string; fence: HostCandidateCommitFence; expectedCanonicalRevision: number }): Promise<HostCandidateCommitReceipt> {
     if (!opts.commitCandidate) throw new Error("No canonical candidate commit owner is configured");
     if (!input || typeof input !== "object" || typeof input.candidateId !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.candidateId)
       || typeof input.commitId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(input.commitId)
       || !input.fence || typeof input.fence.rootId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(input.fence.rootId)
+      || !Number.isSafeInteger(input.expectedCanonicalRevision) || input.expectedCanonicalRevision < 0
       || ![input.fence.rootRevision, input.fence.contractRevision, input.fence.cancellationEpoch].every((n) => Number.isSafeInteger(n) && n >= 0)) {
       throw new Error("Candidate commit identity or fence is invalid");
     }
@@ -766,11 +769,13 @@ export function createHost(opts: HostOptions): VakHost {
     if (!(["end", "projected"] as string[]).includes(slot.candidate.result.stop)
       || (!slot.candidate.reply && slot.candidate.surfaces.length === 0)) throw new Error("Candidate did not produce a complete output to commit");
     if (slot.committing) throw new Error("Candidate commit is already in progress");
-    if (slot.commitId && (slot.commitId !== input.commitId || JSON.stringify(slot.fence) !== JSON.stringify(input.fence))) {
+    if (slot.commitId && (slot.commitId !== input.commitId || JSON.stringify(slot.fence) !== JSON.stringify(input.fence)
+      || slot.expectedCanonicalRevision !== input.expectedCanonicalRevision)) {
       throw new Error("Candidate is already bound to a different commit identity or fence");
     }
     slot.commitId = input.commitId;
     slot.fence = structuredClone(input.fence);
+    slot.expectedCanonicalRevision = input.expectedCanonicalRevision;
     slot.committing = true;
     try {
       const candidate = slot.candidate;
@@ -779,6 +784,7 @@ export function createHost(opts: HostOptions): VakHost {
         candidateId: input.candidateId,
         commitId: input.commitId,
         fence: input.fence,
+        expectedCanonicalRevision: input.expectedCanonicalRevision,
       }));
       if (!receipt || !Number.isSafeInteger(receipt.canonicalRevision) || receipt.canonicalRevision < 1
         || !Number.isSafeInteger(receipt.rootRevision) || receipt.rootRevision < input.fence.rootRevision) {

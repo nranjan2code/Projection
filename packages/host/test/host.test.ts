@@ -121,6 +121,7 @@ test("candidate commit hands the exact one-use result to the canonical owner and
       candidateId: candidate.candidateId,
       commitId: "commit-77",
       fence: { rootId: "task-1", rootRevision: 11, contractRevision: 3, cancellationEpoch: 5 },
+      expectedCanonicalRevision: 4,
     };
     const returned = structuredClone(candidate);
     returned.surfaces[0]!.title = "caller tampering";
@@ -128,10 +129,11 @@ test("candidate commit hands the exact one-use result to the canonical owner and
     assert.deepEqual(await app.host.commitCandidate(input), { canonicalRevision: 9, rootRevision: 12 });
     assert.equal(calls.length, 2);
     assert.deepEqual(calls[0], calls[1]);
-    const request = calls[1] as { candidateId: string; commitId: string; fence: unknown; session: string; reply: string; baseVersions: unknown; surfaces: { title?: string }[] };
+    const request = calls[1] as { candidateId: string; commitId: string; fence: unknown; expectedCanonicalRevision: number; session: string; reply: string; baseVersions: unknown; surfaces: { title?: string }[] };
     assert.equal(request.candidateId, candidate.candidateId);
     assert.equal(request.commitId, "commit-77");
     assert.deepEqual(request.fence, input.fence);
+    assert.equal(request.expectedCanonicalRevision, 4);
     assert.equal(request.session, "session-1");
     assert.equal(request.reply, "Candidate ready.");
     assert.deepEqual(request.baseVersions, [{ id: "owned", version: 4 }]);
@@ -146,9 +148,10 @@ test("candidate commit rejects changed fence or identity and discarding releases
   const app = await serve({ commitCandidate: async () => { calls++; if (failOnce) { failOnce = false; throw new Error("acknowledgement lost"); } return { canonicalRevision: 1, rootRevision: 2 }; } }, candidateScripted());
   try {
     const candidate = await app.host.runCandidate({ session: "session-2", provider: "scripted", model: "m", message: "Prepare the surface." });
-    const input = { candidateId: candidate.candidateId, commitId: "commit-a", fence: { rootId: "task-2", rootRevision: 1, contractRevision: 1, cancellationEpoch: 0 } };
+    const input = { candidateId: candidate.candidateId, commitId: "commit-a", fence: { rootId: "task-2", rootRevision: 1, contractRevision: 1, cancellationEpoch: 0 }, expectedCanonicalRevision: 0 };
     await assert.rejects(app.host.commitCandidate(input), /acknowledgement lost/);
     await assert.rejects(app.host.commitCandidate({ ...input, fence: { ...input.fence, cancellationEpoch: 1 } }), /different commit identity or fence/);
+    await assert.rejects(app.host.commitCandidate({ ...input, expectedCanonicalRevision: 1 }), /different commit identity or fence/);
     assert.equal(calls, 1);
     assert.equal(app.host.discardCandidate(candidate.candidateId), false);
     await app.host.commitCandidate(input);
