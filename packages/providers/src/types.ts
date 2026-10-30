@@ -34,8 +34,16 @@ export interface ToolSpec {
   inputSchema: JSONSchema;
 }
 
+/** Host-owned correlation metadata. It does not authorize a provider operation. */
+export interface ProviderExecutionIdentity {
+  sessionId: string;
+  runId: string;
+}
+
 export interface ChatRequest {
   model: string;
+  /** Host-owned, non-authoritative identity for binding provider traffic to its source run. */
+  execution?: ProviderExecutionIdentity;
   system?: string;
   /** Caller-supplied run instructions before generated protocol; local wrappers may use this bounded context. */
   callerInstructions?: string;

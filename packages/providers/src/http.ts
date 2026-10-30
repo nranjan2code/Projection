@@ -1,6 +1,6 @@
 // fetch with retry, plus streaming readers for SSE and NDJSON bodies.
 
-import { ProviderError } from "./types.ts";
+import { ProviderError, type ProviderExecutionIdentity } from "./types.ts";
 
 export { readNdjson, readSse, type SseMessage } from "@vak/core";
 
@@ -23,6 +23,9 @@ export interface ProviderTransportContext {
   /** Retries of one POST keep this ID so hosts can refuse duplicate effects. */
   operationId: string;
   attempt: number;
+  /** Present for model generation; absent for provider/model discovery. */
+  sessionId?: string;
+  runId?: string;
 }
 
 /** Provider-aware boundary supplied by a host that owns outbound-network policy. */
@@ -39,6 +42,7 @@ export async function postJson(
   signal?: AbortSignal,
   retries = 2,
   transport: ProviderTransport = defaultTransport,
+  execution?: ProviderExecutionIdentity,
 ): Promise<Response> {
   let attempt = 0;
   const operationId = randomUUID();
@@ -50,7 +54,7 @@ export async function postJson(
         headers: { "content-type": "application/json", ...headers },
         body: JSON.stringify(body),
         signal,
-      }, { operationId, attempt });
+      }, { operationId, attempt, ...execution });
     } catch (err) {
       if (signal?.aborted || attempt >= retries) {
         throw new ProviderError(provider, `request failed: ${(err as Error).message}`);

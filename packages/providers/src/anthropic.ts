@@ -120,7 +120,7 @@ export function anthropic(opts: AnthropicOptions): Provider {
         ...(req.effort ? { output_config: { effort: req.effort } } : {}),
         ...req.extra,
       };
-      const res = await postJson("anthropic", `${base}/v1/messages`, headers, body, req.signal, 2, opts.transport);
+      const res = await postJson("anthropic", `${base}/v1/messages`, headers, body, req.signal, 2, opts.transport, req.execution);
 
       const blocks: Block[] = [];
       const partialJson = new Map<number, string>();

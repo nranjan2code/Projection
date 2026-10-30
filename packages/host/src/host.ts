@@ -661,6 +661,7 @@ export function createHost(opts: HostOptions): VakHost {
       const tools = controls.tools ?? (await opts.tools?.({ session: s.id })) ?? [];
       result = await runAgent({
         plan: planned.plan,
+        sessionId: s.id,
         provider: entry.make({ think: Boolean(body.think) }),
         model: body.model,
         store: s.store,

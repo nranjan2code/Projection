@@ -71,7 +71,7 @@ export function openaiResponses(opts: OpenAIResponsesOptions): Provider {
         ...(req.effort ? { reasoning: { effort: req.effort } } : {}),
         ...req.extra,
       };
-      const res = await postJson(id, `${base}/responses`, headers, body, req.signal, 2, opts.transport);
+      const res = await postJson(id, `${base}/responses`, headers, body, req.signal, 2, opts.transport, req.execution);
 
       // item id → call_id, for argument deltas (which carry item_id).
       const callIds = new Map<string, string>();

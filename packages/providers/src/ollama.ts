@@ -154,12 +154,12 @@ export function ollama(opts: OllamaOptions = {}): Provider {
       };
       let res: Response;
       try {
-        res = await postJson("ollama", `${host}/api/chat`, {}, body, req.signal, 0, opts.transport);
+        res = await postJson("ollama", `${host}/api/chat`, {}, body, req.signal, 0, opts.transport, req.execution);
       } catch (err) {
         if (body.think && err instanceof ProviderError && err.status === 400 && typeof err.message === "string" && err.message.includes("does not support thinking")) {
           thinkingCache.set(req.model, false);
           body.think = false;
-          res = await postJson("ollama", `${host}/api/chat`, {}, body, req.signal, 0, opts.transport);
+          res = await postJson("ollama", `${host}/api/chat`, {}, body, req.signal, 0, opts.transport, req.execution);
         } else if (req.tools?.length && err instanceof ProviderError && err.status === 500) {
           const prefix = "ollama: HTTP 500: ";
           let detail: unknown;

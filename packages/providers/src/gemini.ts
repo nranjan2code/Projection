@@ -95,7 +95,7 @@ export function gemini(opts: GeminiOptions): Provider {
         ...req.extra,
       };
       const model = encodeURIComponent(req.model.replace(/^models\//, ""));
-      const res = await postJson("gemini", `${base}/models/${model}:streamGenerateContent?alt=sse`, headers, body, req.signal, 2, opts.transport);
+      const res = await postJson("gemini", `${base}/models/${model}:streamGenerateContent?alt=sse`, headers, body, req.signal, 2, opts.transport, req.execution);
 
       const parts: Part[] = [];
       let stop: StopReason = "other";

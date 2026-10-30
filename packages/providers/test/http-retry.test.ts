@@ -50,3 +50,22 @@ test("retry attempts share one operation identity and expose the attempt number"
   assert.equal(calls[1]!.operationId, calls[0]!.operationId);
   assert.deepEqual(calls.map((call) => call.attempt), [0, 1]);
 });
+
+test("provider retries carry the originating host session and run identity", async () => {
+  const calls: { operationId: string; attempt: number; sessionId?: string; runId?: string }[] = [];
+  const transport = async (_provider: string, _input: RequestInfo | URL, _init?: RequestInit, context?: typeof calls[number]) => {
+    assert.ok(context);
+    calls.push(context);
+    return calls.length === 1
+      ? new Response("busy", { status: 429, headers: { "retry-after": "0.001" } })
+      : new Response("ok");
+  };
+  const response = await postJson("fake", "https://unused.invalid", {}, {}, undefined, 1, transport, { sessionId: "session-17", runId: "run-4" });
+  assert.equal(await response.text(), "ok");
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls.map(({ sessionId, runId, attempt }) => ({ sessionId, runId, attempt })), [
+    { sessionId: "session-17", runId: "run-4", attempt: 0 },
+    { sessionId: "session-17", runId: "run-4", attempt: 1 },
+  ]);
+  assert.equal(calls[0]!.operationId, calls[1]!.operationId);
+});

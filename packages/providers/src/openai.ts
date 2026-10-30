@@ -72,7 +72,7 @@ export function openai(opts: OpenAIOptions = {}): Provider {
         ...(req.effort ? { reasoning_effort: req.effort } : {}),
         ...req.extra,
       };
-      const res = await postJson(id, `${base}/chat/completions`, headers, body, req.signal, 2, opts.transport);
+      const res = await postJson(id, `${base}/chat/completions`, headers, body, req.signal, 2, opts.transport, req.execution);
 
       // Tool-call deltas are keyed by index; the id arrives only on the first.
       const calls = new Map<number, { id: string; name: string; started: boolean; pending: string }>();

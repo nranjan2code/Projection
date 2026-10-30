@@ -23,6 +23,25 @@ test("trusted projection uses canonical persistence and respects execution owner
   } finally { server.close(); }
 });
 
+test("provider calls inherit their host session and one stable agent run identity", async () => {
+  const scopes: ({ sessionId: string; runId: string } | undefined)[] = [];
+  const base = scripted();
+  const provider: Provider = {
+    ...base,
+    async *stream(request) {
+      scopes.push(request.execution);
+      yield* base.stream(request);
+    },
+  };
+  const app = await serve({}, provider);
+  try {
+    await chat(app.base, { session: "execution-session", provider: "scripted", model: "m", message: "Show revenue" });
+    assert.ok(scopes.length >= 1);
+    assert.ok(scopes.every((scope) => scope?.sessionId === "execution-session"));
+    assert.ok(scopes.every((scope) => scope?.runId && scope.runId === scopes[0]?.runId));
+  } finally { app.server.close(); }
+});
+
 /** A provider that says one sentence and renders one surface (a clean projection ends the turn). */
 function scripted(): Provider {
   return {

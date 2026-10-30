@@ -4,9 +4,9 @@
 
 - `@vak/host` exports `HostSessionSnapshot` and `HostSessionStore` so apps can own canonical session persistence through load, compare-and-set save, list and revision-checked removal. `sessionStore` and `sessionsDir` are mutually exclusive. Failed adapter writes fence the in-memory session until host reload. This adds a public persistence seam without changing the existing filesystem-backed default.
 
-## Unreleased: stable provider transport operation identities
+## Unreleased: provider transport run identity
 
-- Provider transport callbacks receive a stable `operationId` and zero-based `attempt` for each logical HTTP operation. Provider POST retries reuse the ID and advance the attempt number so a host can prevent duplicate effects and attribute retries. GET discovery calls receive a unique identity. Default `fetch` behavior is unchanged.
+- Provider transport callbacks receive a stable `operationId` and zero-based `attempt` for each logical HTTP operation. Generation POSTs also carry the owning host `sessionId` and agent `runId`; retries retain all identities. This is correlation metadata only and grants no authority. GET discovery calls retain their independent operation identity. Default `fetch` behavior is unchanged.
 
 ## Isolated host candidates — 2026-10-29
 
