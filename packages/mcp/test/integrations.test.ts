@@ -73,6 +73,17 @@ test("installs are pinned: exact version, every dependency at least 14 days old,
   assert.doesNotThrow(() => pinnedInstallArgs("@mcp/server-files", "2026.8.31", "/tmp/t", now));
 });
 
+test("a host installer receives exactly the pinned npm arguments instead of the framework running npm", async () => {
+  const calls: { args: string[]; target: string }[] = [];
+  const { list } = setup({ npm: "/nonexistent/npm", installer: async (args, target) => void calls.push({ args, target }) });
+  await list.install("echo");
+  assert.equal(calls.length, 1);
+  assert.ok(calls[0]!.args.includes("--ignore-scripts"));
+  assert.ok(calls[0]!.args.some((a) => /@\d/.test(a)));
+  assert.match(calls[0]!.target, /integrations[\\/]echo[\\/]pkg$/);
+  assert.notEqual(list.view().find((v) => v.entry.id === "echo")?.status, "not-installed");
+});
+
 test("an npm server installs with the pinned arguments, runs in its own folder with only its declared key, and uninstalls cleanly", async () => {
   const { dataDir, secrets, list } = setup();
   process.env.OPENAI_API_KEY = "sk-must-not-leak";

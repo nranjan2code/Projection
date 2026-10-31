@@ -16,6 +16,8 @@
 // (POST, JSON or SSE replies, Mcp-Session-Id kept).
 
 import { type ChildProcess, spawn, execFileSync } from "node:child_process";
+import type { EventEmitter } from "node:events";
+import type { Readable, Writable } from "node:stream";
 import { mkdirSync } from "node:fs";
 import { createInterface } from "node:readline";
 
@@ -40,6 +42,14 @@ export type StdioTransport = {
   /** Private HOME / TMPDIR / working directory for the process. */
   sandboxDir: string;
 };
+/** What a stdio server process must offer; a ChildProcess satisfies it, and so can a host relay. It emits "spawn", "error" and "exit". */
+export interface StdioProcess extends EventEmitter {
+  stdin: Writable | null;
+  stdout: Readable | null;
+  stderr: Readable | null;
+  kill(): boolean | void;
+}
+
 export type HttpTransport = { kind: "http"; url: string; headers?: Record<string, string> };
 
 export interface McpClientOptions {
@@ -50,6 +60,8 @@ export interface McpClientOptions {
   timeoutMs?: number;
   /** Optional vak-sandbox OS-level isolation */
   vakSandbox?: VakSandboxOptions;
+  /** Host-owned stdio launch (for hosts whose own process may not spawn servers); replaces vakSandbox when set. */
+  launch?: (transport: StdioTransport) => StdioProcess;
 }
 
 interface Pending {
@@ -81,7 +93,7 @@ export function minimalEnv(t: StdioTransport): Record<string, string> {
 export class McpClient {
   readonly name: string;
   private opts: McpClientOptions;
-  private child?: ChildProcess;
+  private child?: StdioProcess;
   private nextId = 1;
   private pending = new Map<number, Pending>();
   private sessionId?: string;
@@ -109,9 +121,10 @@ export class McpClient {
     const t = this.opts.transport;
     if (t.kind === "stdio") {
       mkdirSync(t.sandboxDir, { recursive: true });
-      let child: ChildProcess;
-      // Try vak-sandbox if enabled (OS-level isolation)
-      if (this.opts.vakSandbox?.enabled) {
+      let child: StdioProcess;
+      if (this.opts.launch) {
+        child = this.opts.launch(t);
+      } else if (this.opts.vakSandbox?.enabled) {
         const sandboxBin = this.opts.vakSandbox.binaryPath || "vaksb";
         let sandboxAvailable = false;
         try {

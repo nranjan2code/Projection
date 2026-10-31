@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { type AddressInfo } from "node:net";
 import { createServer } from "node:http";
@@ -25,6 +26,21 @@ test("a stdio server starts with a minimal environment: our API keys never reach
     c.close();
     delete process.env.OPENAI_API_KEY;
   }
+});
+
+test("a host launcher replaces the client's own spawn and receives the declared transport", async () => {
+  const sandbox = mkdtempSync(path.join(tmpdir(), "vak-mcp-launch-"));
+  const launched: string[] = [];
+  const c = new McpClient({
+    name: "echo",
+    transport: { kind: "stdio", command: process.execPath, args: [path.join(here, "fixtures/echo-server.mjs")], env: { ECHO_TOKEN: "t" }, sandboxDir: sandbox },
+    vakSandbox: { enabled: true, binaryPath: "/nonexistent/vaksb" },
+    launch: (t) => { launched.push(t.command, ...(t.args ?? [])); return spawn(t.command, t.args ?? [], { cwd: t.sandboxDir, env: { ...t.env, HOME: t.sandboxDir }, stdio: ["pipe", "pipe", "pipe"] }); },
+  });
+  try {
+    assert.deepEqual((await c.listTools()).map((t) => t.name), ["env", "write"]);
+    assert.equal(launched[0], process.execPath);
+  } finally { c.close(); }
 });
 
 test("an http server's event stream is read whatever its line endings, even split across chunks", async () => {

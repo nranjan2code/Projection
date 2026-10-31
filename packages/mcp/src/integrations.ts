@@ -30,7 +30,7 @@ import type { AgentEvent } from "@vak/core";
 import type { AgentTool } from "@vak/providers";
 import { agentTools, type ApprovalRequest, type ToolCallRecord, type ToolPolicy } from "./agent-tools.ts";
 import type { BuiltinServer } from "./builtin.ts";
-import { defaultDecision, McpClient, type McpToolInfo } from "./client.ts";
+import { defaultDecision, McpClient, type McpClientOptions, type McpToolInfo } from "./client.ts";
 
 const run = promisify(execFile);
 
@@ -122,6 +122,10 @@ export interface IntegrationsOptions {
   enabledAtFirstRun?: string[];
   /** Use vak-sandbox for OS-level process isolation of stdio MCP servers (macOS Seatbelt). */
   vakSandbox?: { enabled?: boolean; binaryPath?: string };
+  /** Host-owned stdio launch for every stdio server; see McpClientOptions.launch. */
+  launch?: McpClientOptions["launch"];
+  /** Host-owned install: runs npm with exactly these pinned arguments in `target`. Replaces `npm`. */
+  installer?: (npmArgs: string[], target: string) => Promise<void>;
 }
 
 /** The npm arguments for a pinned, script-free install of `pkg@version` into `target`. */
@@ -264,7 +268,8 @@ export class Integrations {
     const npm = this.opts.npm ?? "npm";
     this.log(`integrations: installing ${e.source.package}@${e.source.version} (${npmArgs.at(-1)})`);
     try {
-      if (/\.[cm]?js$/.test(npm)) await run(process.execPath, [npm, ...npmArgs], { cwd: target, timeout: 300_000 });
+      if (this.opts.installer) await this.opts.installer(npmArgs, target);
+      else if (/\.[cm]?js$/.test(npm)) await run(process.execPath, [npm, ...npmArgs], { cwd: target, timeout: 300_000 });
       else await run(npm, npmArgs, { cwd: target, timeout: 300_000 });
     } catch (err) {
       const msg = (err as { stderr?: string }).stderr?.split("\n").find((l) => /ERR!/.test(l)) ?? (err as Error).message;
@@ -388,9 +393,9 @@ export class Integrations {
       const script = path.join(this.dir, id, "pkg", "node_modules", e.source.package, e.source.bin);
       if (!existsSync(script)) throw new Error("not installed");
       Object.assign(env, e.source.env?.(path.join(this.dir, id)) ?? {});
-      c = new McpClient({ name: e.name, log, transport: { kind: "stdio", command: process.execPath, args: [script, ...(e.source.args?.(st.config, path.join(this.dir, id)) ?? [])], env, sandboxDir: home }, vakSandbox: this.opts.vakSandbox });
+      c = new McpClient({ name: e.name, log, transport: { kind: "stdio", command: process.execPath, args: [script, ...(e.source.args?.(st.config, path.join(this.dir, id)) ?? [])], env, sandboxDir: home }, vakSandbox: this.opts.vakSandbox, launch: this.opts.launch });
     } else if (e.source.kind === "stdio") {
-      c = new McpClient({ name: e.name, log, transport: { kind: "stdio", command: e.source.command, args: e.source.args, env, sandboxDir: home }, vakSandbox: this.opts.vakSandbox });
+      c = new McpClient({ name: e.name, log, transport: { kind: "stdio", command: e.source.command, args: e.source.args, env, sandboxDir: home }, vakSandbox: this.opts.vakSandbox, launch: this.opts.launch });
     } else {
       c = new McpClient({ name: e.name, log, transport: { kind: "http", url: typeof e.source.url === "function" ? e.source.url(structuredClone(st.config)) : e.source.url, headers } });
     }
