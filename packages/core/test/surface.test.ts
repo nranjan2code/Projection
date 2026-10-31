@@ -868,3 +868,16 @@ test("wrapped-list repair preserves literal paths, missing targets, scalars and 
   store.apply("vak_render", { surface: "quoted", data: { evidence: ["one", "two"] }, nodes: [{ id: "root", type: "list", props: { items: ["{/evidence}"] } }] });
   assert.equal(store.snapshot("quoted")!.nodes[0]!.props!.items, "{/evidence}");
 });
+
+test("a field's bind stays its path while its value changes", () => {
+  const store = new SurfaceStore(basicCatalog);
+  store.render({ surface: "s", data: { note: "" }, nodes: [
+    { id: "root", type: "stack", children: ["note", "save"] },
+    { id: "note", type: "textarea", props: { label: "Note", bind: "/note" } },
+    { id: "save", type: "button", props: { label: "Save", action: "save" } },
+  ] });
+  const field = () => store.resolve("s")!.root!.children[0]!;
+  store.setValue("s", "/note", "typed");
+  assert.equal(field().props.bind, "/note");
+  assert.equal(field().props.value, "typed");
+});

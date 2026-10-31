@@ -43,7 +43,9 @@ const checks: JSONSchema = { type: "array", items: { type: "string" }, aliases: 
 
 // Shared property shapes for inputs.
 const fieldLabel = str({ aliases: ["title", "text", "caption"] });
-const fieldBind = str({ description: "/path", aliases: ["path", "key", "field", "model", "name"] });
+// Literal: the path itself, never the value it names. Resolving it made a
+// field's props change with every keystroke, so renderers rebuilt the input.
+const fieldBind = str({ literal: true, description: "/path", aliases: ["path", "key", "field", "model", "name"] });
 const placeholder = str({ aliases: ["hint"] });
 
 /** "/form/firstName" → "First name", "email_address" → "Email address". */
